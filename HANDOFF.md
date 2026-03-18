@@ -78,6 +78,9 @@ This repo is the new implementation base for Supreme Raman AI, a desktop-first l
 - group chat remains manual `@mention` only
 - group member handles are surfaced consistently in Spectrum and Chats
 - Work can open the relevant chat destination directly in addition to send-to-chat
+- Work now supports local search and filter controls across tasks and results
+- Prism transcript now supports search, role filtering, copy, reuse, and clear controls
+- chat surfaces now show clearer runtime/thread status affordances
 
 ### Settings
 

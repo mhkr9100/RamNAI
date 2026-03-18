@@ -1,5 +1,12 @@
 export type ChatMessageRole = 'user' | 'assistant' | 'system';
 
+export type ChatStatusTone = 'ready' | 'active' | 'warning';
+
+export interface ChatStatusBadge {
+  label: string;
+  tone: ChatStatusTone;
+}
+
 export interface ChatTranscriptMessage {
   id: string;
   role: ChatMessageRole;
@@ -16,6 +23,8 @@ export interface PersistentChatbotIdentity {
   modelLabel?: string;
   providerLabel?: string;
   statusLabel?: string;
+  runtimeStatus?: ChatStatusBadge;
+  threadStatus?: ChatStatusBadge;
 }
 
 export interface MentionableParticipant {
@@ -30,5 +39,6 @@ export interface GroupChatIdentity {
   name: string;
   description?: string;
   memberCount?: number;
+  runtimeStatus?: ChatStatusBadge;
+  threadStatus?: ChatStatusBadge;
 }
-

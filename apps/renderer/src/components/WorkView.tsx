@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Copy, MessageSquareMore, Play, Send, Trash2 } from 'lucide-react';
+import { Copy, MessageSquareMore, Play, Search, Send, Trash2, X } from 'lucide-react';
 import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@supreme/shared';
 import type { WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTarget } from './ChatsWorkspace';
@@ -18,9 +18,58 @@ interface WorkViewProps {
 
 export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onRerunTask, onDeleteWorkItem, onSendToChat, onOpenChat, onOpenArtifact }: WorkViewProps) {
   const [expandedWorkId, setExpandedWorkId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | TaskSpec['status']>('all');
+  const [kindFilter, setKindFilter] = useState<'all' | 'task' | 'council' | 'artifact'>('all');
   const taskLookup = useMemo(() => new Map(snapshot.tasks.map((task) => [task.id, task])), [snapshot.tasks]);
   const artifactLookup = useMemo(() => new Map(snapshot.artifacts.map((artifact) => [artifact.id, artifact])), [snapshot.artifacts]);
   const agentLookup = useMemo(() => new Map(snapshot.agents.map((agent) => [agent.id, agent])), [snapshot.agents]);
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredTasks = useMemo(() => {
+    return snapshot.tasks.filter((task) => {
+      if (statusFilter !== 'all' && task.status !== statusFilter) {
+        return false;
+      }
+      if (kindFilter !== 'all' && task.mode !== kindFilter) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const targetLabel = describeTaskTarget(task, agentLookup);
+      const searchBody = [task.title, task.objective, targetLabel, task.lastError ?? '', task.resultSummary ?? '']
+        .join(' ')
+        .toLowerCase();
+      return searchBody.includes(normalizedQuery);
+    });
+  }, [agentLookup, kindFilter, normalizedQuery, snapshot.tasks, statusFilter]);
+
+  const filteredWorkItems = useMemo(() => {
+    return snapshot.workItems.filter((item) => {
+      if (statusFilter !== 'all' && item.status !== statusFilter) {
+        return false;
+      }
+      if (kindFilter !== 'all' && item.type !== kindFilter) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const sourceTask = item.sourceTaskId ? taskLookup.get(item.sourceTaskId) : null;
+      const sourceAgent = item.sourceAgentId ? agentLookup.get(item.sourceAgentId) : null;
+      const searchBody = [item.title, item.summary ?? '', item.lastError ?? '', sourceTask?.title ?? '', sourceAgent?.name ?? '']
+        .join(' ')
+        .toLowerCase();
+      return searchBody.includes(normalizedQuery);
+    });
+  }, [agentLookup, kindFilter, normalizedQuery, snapshot.workItems, statusFilter, taskLookup]);
+
+  const filtersActive = query.trim().length > 0 || statusFilter !== 'all' || kindFilter !== 'all';
 
   return (
     <div className="space-y-8">
@@ -39,16 +88,89 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
         </div>
       </section>
 
+      <section className="rounded-[32px] border border-white/10 bg-white/5 p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Filter Work</div>
+            <div className="mt-2 text-2xl font-semibold text-white">Search tasks, runs, and artifacts</div>
+          </div>
+          {filtersActive ? (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setStatusFilter('all');
+                setKindFilter('all');
+              }}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
+            >
+              <X size={14} />
+              Clear Filters
+            </button>
+          ) : null}
+        </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_0.8fr_0.8fr]">
+          <label className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Search</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/28" size={16} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-black/25 py-4 pl-11 pr-4 text-sm text-white outline-none transition focus:border-white/20"
+                placeholder="Search title, summary, objective, target, or error"
+              />
+            </div>
+          </label>
+          <label className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Status</span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+              className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
+            >
+              <option value="all">All statuses</option>
+              {['draft', 'scheduled', 'queued', 'running', 'done', 'failed', 'cancelled'].map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Kind</span>
+            <select
+              value={kindFilter}
+              onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}
+              className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
+            >
+              <option value="all">All kinds</option>
+              <option value="task">Task</option>
+              <option value="council">Council</option>
+              <option value="artifact">Artifact results</option>
+            </select>
+          </label>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <InfoRow label="Matching Tasks" value={`${filteredTasks.length}`} />
+          <InfoRow label="Matching Results" value={`${filteredWorkItems.length}`} />
+        </div>
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-          <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Tasks</div>
+          <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Tasks · {filteredTasks.length}</div>
           {snapshot.tasks.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
               No scheduled work yet. Use Prism Task or Council to place autonomous runs here.
             </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
+              No tasks match the current filters.
+            </div>
           ) : (
             <div className="space-y-4">
-              {snapshot.tasks.map((task) => (
+              {filteredTasks.map((task) => (
                 <div key={task.id} className="rounded-[28px] border border-white/10 bg-black/25 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
@@ -85,14 +207,18 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
         </div>
 
         <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-          <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Results & Artifacts</div>
+          <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Results & Artifacts · {filteredWorkItems.length}</div>
           {snapshot.workItems.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
               Nothing has run yet. Once a scheduled task executes, its result will appear here.
             </div>
+          ) : filteredWorkItems.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
+              No results or artifacts match the current filters.
+            </div>
           ) : (
             <div className="space-y-4">
-              {snapshot.workItems.map((item) => {
+              {filteredWorkItems.map((item) => {
                 const expanded = expandedWorkId === item.id;
                 const sourceTask = item.sourceTaskId ? taskLookup.get(item.sourceTaskId) : null;
                 const artifacts = item.artifactIds

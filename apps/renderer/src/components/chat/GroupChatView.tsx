@@ -136,6 +136,8 @@ export function GroupChatView({
           </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-2">
+          {group.runtimeStatus ? <StatusBadge {...group.runtimeStatus} /> : null}
+          {group.threadStatus ? <StatusBadge {...group.threadStatus} /> : null}
           {members.length === 0 ? (
             <div className="rounded-full border border-dashed border-white/12 bg-black/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
               No members configured
@@ -174,7 +176,7 @@ export function GroupChatView({
 
         {transcript.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-            {emptyState}
+            {busy ? 'Routing the first local group message…' : emptyState}
           </div>
         ) : (
           <div className="space-y-4">
@@ -272,10 +274,24 @@ export function GroupChatView({
             <div>
               Manual @mention composition is fully local. Use one handle or chain several together, for example: {members.slice(0, 2).map((member) => member.handle || `@${member.label}`).join(' ')}.
             </div>
-            <div>{onSendMessage ? 'Send hook available.' : 'Send hook pending.'}</div>
+            <div>{busy ? 'Local routing in progress.' : onSendMessage ? 'Send hook available.' : 'Send hook pending.'}</div>
           </div>
         </form>
       </section>
     </section>
+  );
+}
+
+function StatusBadge({ label, tone }: NonNullable<GroupChatIdentity['runtimeStatus']>) {
+  const className = tone === 'ready'
+    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+    : tone === 'active'
+      ? 'border-sky-400/20 bg-sky-400/10 text-sky-200'
+      : 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+
+  return (
+    <div className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] ${className}`}>
+      {label}
+    </div>
   );
 }

@@ -106,6 +106,24 @@ export function ChatsWorkspace({
       }));
   }, [selectedGroup, snapshot.agents]);
 
+  const runtimeStatus = snapshot.runtime.openClawReady
+    ? { label: 'OpenClaw-ready', tone: 'ready' as const }
+    : snapshot.runtime.ollamaReady
+      ? { label: 'Ollama-ready', tone: 'ready' as const }
+      : { label: 'Runtime needed', tone: 'warning' as const };
+
+  const agentThreadStatus = busy
+    ? { label: 'Sending', tone: 'active' as const }
+    : transcript.length > 0
+      ? { label: 'Thread active', tone: 'active' as const }
+      : { label: 'Thread empty', tone: 'warning' as const };
+
+  const groupThreadStatus = busy
+    ? { label: 'Routing mentions', tone: 'active' as const }
+    : transcript.length > 0
+      ? { label: 'Thread active', tone: 'active' as const }
+      : { label: 'Thread empty', tone: 'warning' as const };
+
   return (
     <div className="grid min-h-full gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
       <aside className="rounded-[32px] border border-white/10 bg-white/5 p-5">
@@ -143,7 +161,15 @@ export function ChatsWorkspace({
       <div className="min-w-0 space-y-6">
         {!selectedTarget ? (
           <div className="flex min-h-[720px] items-center justify-center rounded-[32px] border border-white/10 bg-white/5 px-8 text-center text-sm leading-7 text-white/45">
-            No chats are available yet. Create a chatbot in Prism and it will appear here automatically.
+            <div className="max-w-2xl">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
+              <div className="mt-3 text-2xl font-semibold text-white">Select a chatbot or group to begin.</div>
+              <div className="mt-4">
+                {snapshot.agents.length === 0 && snapshot.groups.length === 0
+                  ? 'No chats are available yet. Create a chatbot in Prism and it will appear here automatically.'
+                  : 'Choose a thread from the left rail or deep-link into one from Spectrum or Work.'}
+              </div>
+            </div>
           </div>
         ) : selectedAgent ? (
           <>
@@ -154,6 +180,8 @@ export function ChatsWorkspace({
                 role: selectedAgent.persona.role,
                 modelLabel: describeProviderStrategy(selectedAgent),
                 providerLabel: selectedAgent.providerStrategy.mode.replaceAll('_', ' '),
+                runtimeStatus,
+                threadStatus: agentThreadStatus,
                 ...(selectedAgent.description ? { description: selectedAgent.description } : {})
               }}
               transcript={transcript}
@@ -162,7 +190,7 @@ export function ChatsWorkspace({
               onTaskClick={() => setShowTaskComposer((current) => !current)}
               {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
               {...(draftSeed && draftSeed.target.type === 'agent' && draftSeed.target.id === selectedAgent.id ? { draftSeed } : {})}
-              emptyState="Start the first local conversation with this chatbot."
+              emptyState={snapshot.runtime.available ? 'Start the first local conversation with this chatbot.' : 'The local runtime is not available yet. Open Settings, check the runtime, then send the first message.'}
             />
             {showTaskComposer ? (
               <TaskComposerCard
@@ -182,6 +210,8 @@ export function ChatsWorkspace({
               id: selectedGroup.id,
               name: selectedGroup.name,
               memberCount: selectedGroup.memberAgentIds.length,
+              runtimeStatus,
+              threadStatus: groupThreadStatus,
               ...(selectedGroup.description ? { description: selectedGroup.description } : {})
             }}
             members={mentionableMembers}
@@ -189,7 +219,7 @@ export function ChatsWorkspace({
             busy={busy}
             onSendMessage={(message) => onSendGroupMessage({ groupId: selectedGroup.id, message })}
             {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
-            emptyState="Mention one or more member chatbots with @chatbot-name to route the message manually."
+            emptyState={snapshot.runtime.available ? 'Mention one or more member chatbots with @chatbot-name to route the message manually.' : 'The local runtime is not available yet. Open Settings before sending the first group message.'}
             placeholder="Message the group. Use @chatbot-name to route replies."
           />
         ) : null}

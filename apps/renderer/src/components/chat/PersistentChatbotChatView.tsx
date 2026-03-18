@@ -85,6 +85,10 @@ export function PersistentChatbotChatView({
             ))}
           </div>
         </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {chatbot.runtimeStatus ? <StatusBadge {...chatbot.runtimeStatus} /> : null}
+          {chatbot.threadStatus ? <StatusBadge {...chatbot.threadStatus} /> : null}
+        </div>
       </div>
 
       <section className="rounded-[32px] border border-white/10 bg-white/5 p-6">
@@ -111,7 +115,7 @@ export function PersistentChatbotChatView({
 
         {transcript.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-            {emptyState}
+            {busy ? 'Sending the first message through the local runtime…' : emptyState}
           </div>
         ) : (
           <div className="space-y-4">
@@ -175,11 +179,25 @@ export function PersistentChatbotChatView({
             </div>
             <div className="inline-flex items-center gap-2">
               <RotateCcw size={14} />
-              One persistent thread per chatbot for this wave.
+              {busy ? 'Current local run in progress.' : 'One persistent thread per chatbot for this wave.'}
             </div>
           </div>
         </form>
       </section>
     </section>
+  );
+}
+
+function StatusBadge({ label, tone }: NonNullable<PersistentChatbotIdentity['runtimeStatus']>) {
+  const className = tone === 'ready'
+    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+    : tone === 'active'
+      ? 'border-sky-400/20 bg-sky-400/10 text-sky-200'
+      : 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+
+  return (
+    <div className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] ${className}`}>
+      {label}
+    </div>
   );
 }

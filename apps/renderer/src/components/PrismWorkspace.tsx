@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Bot, Sparkles, Wand2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Bot, Copy, RotateCcw, Search, Sparkles, Wand2 } from 'lucide-react';
 import type { PrismMode, UserMapNode } from '@supreme/shared';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
@@ -17,6 +17,7 @@ interface PrismWorkspaceProps {
   busy: boolean;
   onSend: (mode: PrismMode, message: string) => Promise<void>;
   onCreateTask: (input: TaskCreateInput) => Promise<void>;
+  onClearTranscript: () => void;
 }
 
 const modeCards: Array<{ id: PrismMode | 'task' | 'council'; label: string; body: string }> = [
@@ -26,9 +27,13 @@ const modeCards: Array<{ id: PrismMode | 'task' | 'council'; label: string; body
   { id: 'council', label: 'Council', body: 'Run multiple local models and save the judged result into Work.' }
 ];
 
-export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask }: PrismWorkspaceProps) {
+export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask, onClearTranscript }: PrismWorkspaceProps) {
   const [activeMode, setActiveMode] = useState<PrismMode | 'task' | 'council'>('ask');
   const [message, setMessage] = useState('');
+  const [transcriptQuery, setTranscriptQuery] = useState('');
+  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | PrismMessage['role']>('all');
+  const [newestFirst, setNewestFirst] = useState(false);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -36,6 +41,43 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask 
     const next = message.trim();
     setMessage('');
     await onSend(activeMode, next);
+  };
+
+  const visibleMessages = useMemo(() => {
+    const query = transcriptQuery.trim().toLowerCase();
+    const filtered = messages.filter((entry) => {
+      if (transcriptRoleFilter !== 'all' && entry.role !== transcriptRoleFilter) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return entry.text.toLowerCase().includes(query) || (entry.mode ?? '').toLowerCase().includes(query);
+    });
+
+    return newestFirst ? [...filtered].reverse() : filtered;
+  }, [messages, newestFirst, transcriptQuery, transcriptRoleFilter]);
+
+  const latestUserMessage = useMemo(
+    () => [...messages].reverse().find((entry) => entry.role === 'user'),
+    [messages]
+  );
+
+  const latestAssistantMessage = useMemo(
+    () => [...messages].reverse().find((entry) => entry.role === 'assistant'),
+    [messages]
+  );
+
+  const copyVisibleTranscript = async () => {
+    const text = visibleMessages
+      .map((entry) => `[${entry.role}${entry.mode ? ` · ${entry.mode}` : ''}] ${entry.text}`)
+      .join('\n\n');
+    if (!text.trim()) {
+      setCopyNotice('Nothing visible to copy.');
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    setCopyNotice('Copied visible transcript.');
   };
 
   return (
@@ -146,17 +188,105 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask 
       )}
 
       <section className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-        <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Prism Transcript</div>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Prism Transcript</div>
+            <div className="mt-2 text-2xl font-semibold text-white">Conversation controls</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => latestUserMessage ? setMessage(latestUserMessage.text) : undefined}
+              disabled={!latestUserMessage}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+            >
+              Reuse Last Prompt
+            </button>
+            <button
+              type="button"
+              onClick={() => latestAssistantMessage ? navigator.clipboard.writeText(latestAssistantMessage.text) : undefined}
+              disabled={!latestAssistantMessage}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+            >
+              Copy Last Reply
+            </button>
+            <button
+              type="button"
+              onClick={onClearTranscript}
+              disabled={messages.length === 0}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+            >
+              <RotateCcw size={14} className="inline-block mr-2" />
+              Clear
+            </button>
+          </div>
+        </div>
+        <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_0.8fr_auto_auto]">
+          <label className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Search</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/28" size={16} />
+              <input
+                value={transcriptQuery}
+                onChange={(event) => setTranscriptQuery(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-black/25 py-4 pl-11 pr-4 text-sm text-white outline-none transition focus:border-white/25"
+                placeholder="Search visible transcript text or mode"
+              />
+            </div>
+          </label>
+          <label className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Role</span>
+            <select
+              value={transcriptRoleFilter}
+              onChange={(event) => setTranscriptRoleFilter(event.target.value as typeof transcriptRoleFilter)}
+              className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
+            >
+              <option value="all">All roles</option>
+              <option value="user">User</option>
+              <option value="assistant">Assistant</option>
+              <option value="system">System</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => setNewestFirst((current) => !current)}
+            className="self-end rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
+          >
+            {newestFirst ? 'Newest First' : 'Oldest First'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyVisibleTranscript()}
+            className="self-end inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
+          >
+            <Copy size={14} />
+            Copy Visible
+          </button>
+        </div>
+        {copyNotice ? <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/62">{copyNotice}</div> : null}
         {messages.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
             Prism conversation starts here. Ask directly, create a chatbot, or schedule work into the local queue.
           </div>
+        ) : visibleMessages.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
+            No Prism transcript entries match the current controls.
+          </div>
         ) : (
           <div className="space-y-4">
-            {messages.map((message) => (
-              <div key={message.id} className={`rounded-[28px] border px-5 py-4 ${message.role === 'user' ? 'border-white/10 bg-black/35' : message.role === 'assistant' ? 'border-emerald-400/15 bg-emerald-400/10' : 'border-white/10 bg-white/5'}`}>
-                <div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{message.role} {message.mode ? `· ${message.mode}` : ''}</div>
-                <div className="whitespace-pre-wrap text-sm leading-7 text-white/78">{message.text}</div>
+            {visibleMessages.map((messageEntry) => (
+              <div key={messageEntry.id} className={`rounded-[28px] border px-5 py-4 ${messageEntry.role === 'user' ? 'border-white/10 bg-black/35' : messageEntry.role === 'assistant' ? 'border-emerald-400/15 bg-emerald-400/10' : 'border-white/10 bg-white/5'}`}>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{messageEntry.role} {messageEntry.mode ? `· ${messageEntry.mode}` : ''}</div>
+                  <button
+                    type="button"
+                    onClick={() => setMessage(messageEntry.text)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/70 transition hover:border-white/20 hover:text-white"
+                  >
+                    Use in Composer
+                  </button>
+                </div>
+                <div className="whitespace-pre-wrap text-sm leading-7 text-white/78">{messageEntry.text}</div>
               </div>
             ))}
           </div>

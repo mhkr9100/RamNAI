@@ -63,6 +63,9 @@ Supreme Raman AI is:
 - thread reset is available in chatbot and group chats
 - Prism create opens the newly created chatbot chat directly
 - Work can open the relevant chat target directly
+- Work search/filter controls exist in the renderer now
+- Prism transcript controls exist in the renderer now
+- chat surfaces show runtime/thread status cues in the renderer now
 
 ### Groups
 

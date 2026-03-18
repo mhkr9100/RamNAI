@@ -415,6 +415,11 @@ export default function App() {
     }
   };
 
+  const handleClearPrismTranscript = () => {
+    setPrismMessages([]);
+    setNotice('Prism transcript cleared.');
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#08090a] text-white">
@@ -487,6 +492,7 @@ export default function App() {
                 busy={busy}
                 onSend={handlePrismSend}
                 onCreateTask={handleTaskCreate}
+                onClearTranscript={handleClearPrismTranscript}
               />
             ) : null}
             {activeView === 'chats' ? (
