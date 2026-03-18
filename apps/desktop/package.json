@@ -10,7 +10,7 @@
     "dev": "wait-on tcp:5180 && npm run build && cross-env SUPREME_RENDERER_URL=http://127.0.0.1:5180 electron dist/main.js",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
-    "package": "npm run build && electron-builder --dir"
+    "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
   },
   "dependencies": {
     "@supreme/runtime": "file:../../packages/runtime",
