@@ -8,6 +8,9 @@ import type {
   AgentSpec,
   ArtifactMode,
   ArtifactRecord,
+  ChatMessage,
+  ChatThread,
+  GroupSpec,
   LocalProfile,
   MemoryFact,
   PrismRequest,
@@ -16,10 +19,11 @@ import type {
   WorkItem
 } from '@supreme/shared';
 import { SqliteStorage } from '@supreme/storage';
-import { LocalRuntimeAdapter } from '@supreme/runtime';
+import { LocalRuntimeAdapter, OpenClawWorkspaceManager } from '@supreme/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runtime = new LocalRuntimeAdapter();
+const openClawWorkspace = new OpenClawWorkspaceManager();
 let mainWindow: BrowserWindow | null = null;
 let storage: SqliteStorage;
 let schedulerHandle: NodeJS.Timeout | null = null;
@@ -44,6 +48,16 @@ interface TaskCreateInput {
   schedule: TaskSpec['schedule'];
   outputPolicy: TaskSpec['outputPolicy'];
   council?: TaskSpec['council'];
+}
+
+interface AgentChatInput {
+  agentId: string;
+  message: string;
+}
+
+interface GroupChatInput {
+  groupId: string;
+  message: string;
 }
 
 function getWorkspacePaths(): WorkspacePaths {
@@ -82,6 +96,7 @@ async function buildSnapshot() {
     profile: snapshot.profile,
     agents: snapshot.agents,
     groups: snapshot.groups,
+    chatThreads: snapshot.chatThreads,
     tasks: snapshot.tasks,
     workItems: snapshot.workItems,
     artifacts: snapshot.artifacts,
@@ -105,6 +120,7 @@ function syncStructuredExports() {
   writeJsonFile(path.join(paths.context, 'memory-facts.json'), snapshot.memoryFacts);
   writeJsonFile(path.join(paths.context, 'models.json'), snapshot.models);
   writeJsonFile(path.join(paths.agents, 'index.json'), snapshot.agents);
+  writeJsonFile(path.join(paths.work, 'chat-threads.json'), snapshot.chatThreads);
   writeJsonFile(path.join(paths.tasks, 'index.json'), snapshot.tasks);
   writeJsonFile(path.join(paths.work, 'work-items.json'), snapshot.workItems);
   writeJsonFile(path.join(paths.work, 'artifacts.json'), snapshot.artifacts);
@@ -116,6 +132,16 @@ function syncStructuredExports() {
   for (const task of snapshot.tasks) {
     writeJsonFile(path.join(paths.tasks, `${task.id}.json`), task);
   }
+
+  void openClawWorkspace.sync(paths.root, {
+    profile: snapshot.profile,
+    userMap: snapshot.userMap,
+    agents: snapshot.agents,
+    groups: snapshot.groups,
+    memoryFacts: snapshot.memoryFacts
+  }).catch((error) => {
+    console.warn('[openclaw-workspace] sync failed:', error);
+  });
 }
 
 function upsertFactsIntoTree(tree: UserMapNode, facts: MemoryFact[]): UserMapNode {
@@ -192,6 +218,205 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64) || 'item';
+}
+
+function makeChatMessage(input: Omit<ChatMessage, 'id' | 'createdAt'>): ChatMessage {
+  return {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    ...input
+  };
+}
+
+function findOrCreateThread(targetType: ChatThread['targetType'], targetId: string, title: string) {
+  const existing = storage.listChatThreads().find((thread) => thread.targetType === targetType && thread.targetId === targetId);
+  if (existing) {
+    return existing;
+  }
+
+  const now = new Date().toISOString();
+  const thread: ChatThread = {
+    id: randomUUID(),
+    targetType,
+    targetId,
+    title,
+    createdAt: now,
+    updatedAt: now,
+    messages: []
+  };
+  storage.upsertChatThread(thread);
+  return thread;
+}
+
+function appendThreadMessages(thread: ChatThread, messages: ChatMessage[]) {
+  const next: ChatThread = {
+    ...thread,
+    updatedAt: new Date().toISOString(),
+    messages: [...thread.messages, ...messages]
+  };
+  storage.upsertChatThread(next);
+  syncStructuredExports();
+  return next;
+}
+
+function formatThreadHistory(thread: ChatThread) {
+  return thread.messages
+    .slice(-12)
+    .map((message) => {
+      const author = message.authorLabel ? ` (${message.authorLabel})` : '';
+      return `${message.role.toUpperCase()}${author}: ${message.text}`;
+    })
+    .join('\n');
+}
+
+function buildEphemeralTask(input: { target: TaskSpec['target']; objective: string }): TaskSpec {
+  const now = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    title: 'Ad hoc chat execution',
+    objective: input.objective,
+    mode: 'task',
+    target: input.target,
+    schedule: { kind: 'once', runAt: now, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    outputPolicy: {
+      saveResult: true,
+      artifactMode: 'none',
+      notificationMode: 'none',
+      defaultSendToChat: false
+    },
+    status: 'queued',
+    createdAt: now,
+    updatedAt: now,
+    nextRunAt: now,
+    runCount: 0,
+    artifactIds: []
+  };
+}
+
+function buildAgentChatObjective(agent: AgentSpec, thread: ChatThread, message: string) {
+  const history = formatThreadHistory(thread);
+  return [
+    `Continue the ongoing chat with the chatbot "${agent.name}".`,
+    history ? `Recent conversation:\n${history}` : '',
+    `Latest user message:\n${message}`,
+    'Respond directly to the user in-chat. Keep continuity with the prior messages.'
+  ].filter(Boolean).join('\n\n');
+}
+
+function parseMentions(message: string) {
+  return [...message.matchAll(/@([a-zA-Z0-9._-]+)/g)].map((match) => match[1] ?? '').filter(Boolean);
+}
+
+function resolveMentionedAgents(message: string, memberAgents: AgentSpec[]) {
+  const mentions = parseMentions(message).map((mention) => mention.toLowerCase());
+  if (mentions.length === 0) {
+    return [] as AgentSpec[];
+  }
+
+  return memberAgents.filter((agent) => {
+    const slug = slugify(agent.name);
+    const compact = agent.name.toLowerCase().replace(/\s+/g, '');
+    return mentions.includes(slug) || mentions.includes(compact);
+  });
+}
+
+async function sendAgentChat(input: AgentChatInput) {
+  const snapshot = storage.getWorkspaceSnapshot();
+  const agent = snapshot.agents.find((candidate) => candidate.id === input.agentId);
+  if (!agent) {
+    throw new Error('Chatbot not found.');
+  }
+
+  const thread = findOrCreateThread('agent', agent.id, agent.name);
+  const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You' });
+  const withUser = appendThreadMessages(thread, [userMessage]);
+  const result = await runtime.executeTask(buildEphemeralTask({
+    target: { type: 'agent', agentId: agent.id },
+    objective: buildAgentChatObjective(agent, withUser, input.message.trim())
+  }), {
+    userMap: snapshot.userMap,
+    agents: snapshot.agents,
+    groups: snapshot.groups
+  });
+
+  const assistantMessage = makeChatMessage({
+    role: 'assistant',
+    text: result.text,
+    authorId: agent.id,
+    authorLabel: agent.name,
+    provider: result.provider,
+    modelId: result.modelId
+  });
+  const nextThread = appendThreadMessages(withUser, [assistantMessage]);
+  await extractAndPersistMemories('chat', `agent:${agent.id}:${assistantMessage.id}`, `${input.message}\n\n${result.text}`);
+  return {
+    thread: nextThread,
+    newMessages: [userMessage, assistantMessage]
+  };
+}
+
+async function sendGroupChat(input: GroupChatInput) {
+  const snapshot = storage.getWorkspaceSnapshot();
+  const group = snapshot.groups.find((candidate) => candidate.id === input.groupId);
+  if (!group) {
+    throw new Error('Group not found.');
+  }
+
+  const memberAgents = snapshot.agents.filter((agent) => group.memberAgentIds.includes(agent.id));
+  const mentionedAgents = resolveMentionedAgents(input.message, memberAgents);
+  const thread = findOrCreateThread('group', group.id, group.name);
+  const mentions = parseMentions(input.message);
+  const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', mentions });
+  const withUser = appendThreadMessages(thread, [userMessage]);
+
+  if (mentionedAgents.length === 0) {
+    const systemMessage = makeChatMessage({
+      role: 'system',
+      text: 'Manual routing is enabled for groups. Mention one or more member chatbots using @chatbot-name to get replies.',
+      authorLabel: 'System'
+    });
+    const nextThread = appendThreadMessages(withUser, [systemMessage]);
+    return {
+      thread: nextThread,
+      newMessages: [userMessage, systemMessage]
+    };
+  }
+
+  const assistantMessages: ChatMessage[] = [];
+  let activeThread = withUser;
+
+  for (const agent of mentionedAgents) {
+    const result = await runtime.executeTask(buildEphemeralTask({
+      target: { type: 'agent', agentId: agent.id },
+      objective: [
+        `You are replying as "${agent.name}" inside the group "${group.name}".`,
+        formatThreadHistory(activeThread),
+        `Latest group message:\n${input.message.trim()}`,
+        'Reply only for your own role and perspective.'
+      ].filter(Boolean).join('\n\n')
+    }), {
+      userMap: snapshot.userMap,
+      agents: snapshot.agents,
+      groups: snapshot.groups
+    });
+
+    const assistantMessage = makeChatMessage({
+      role: 'assistant',
+      text: result.text,
+      authorId: agent.id,
+      authorLabel: agent.name,
+      provider: result.provider,
+      modelId: result.modelId
+    });
+    activeThread = appendThreadMessages(activeThread, [assistantMessage]);
+    assistantMessages.push(assistantMessage);
+  }
+
+  await extractAndPersistMemories('chat', `group:${group.id}:${userMessage.id}`, input.message.trim());
+  return {
+    thread: activeThread,
+    newMessages: [userMessage, ...assistantMessages]
+  };
 }
 
 function parseHourMinute(value: string) {
@@ -602,6 +827,32 @@ app.whenReady().then(async () => {
       facts: storage.listMemoryFacts()
     };
   });
+  ipcMain.handle(channels.groupUpsert, async (_event, group: unknown) => {
+    const parsed = group as GroupSpec;
+    const payload: GroupSpec = {
+      id: parsed.id || randomUUID(),
+      name: parsed.name?.trim(),
+      description: parsed.description?.trim() || '',
+      memberAgentIds: Array.isArray(parsed.memberAgentIds) ? parsed.memberAgentIds : []
+    };
+
+    if (!payload.name) {
+      throw new Error('Group name is required.');
+    }
+
+    storage.upsertGroup(payload);
+    syncStructuredExports();
+    return payload;
+  });
+  ipcMain.handle(channels.groupDelete, async (_event, groupId: string) => {
+    const threads = storage.listChatThreads().filter((thread) => thread.targetType === 'group' && thread.targetId === groupId);
+    for (const thread of threads) {
+      storage.deleteChatThread(thread.id);
+    }
+    storage.deleteGroup(groupId);
+    syncStructuredExports();
+    return { ok: true };
+  });
   ipcMain.handle(channels.prismSend, async (_event, input: PrismRequest) => {
     const reply = await runtime.sendPrismRequest(input);
     if (reply.createdAgent) {
@@ -610,6 +861,13 @@ app.whenReady().then(async () => {
     }
     await extractAndPersistMemories('chat', `prism:${reply.id}`, `${input.message}\n\n${reply.text}`);
     return reply;
+  });
+  ipcMain.handle(channels.agentChat, async (_event, input: AgentChatInput) => sendAgentChat(input));
+  ipcMain.handle(channels.groupChat, async (_event, input: GroupChatInput) => sendGroupChat(input));
+  ipcMain.handle(channels.threadDelete, async (_event, threadId: string) => {
+    storage.deleteChatThread(threadId);
+    syncStructuredExports();
+    return { ok: true };
   });
   ipcMain.handle(channels.taskCreate, async (_event, input: TaskCreateInput) => {
     const task = buildTaskSpec(input);

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Bot, BrainCircuit, FolderKanban, Layers3, Sparkles } from 'lucide-react';
+import { Bot, BrainCircuit, FolderKanban, Layers3, MessageSquareMore, Sparkles } from 'lucide-react';
 import { RamanIcon } from './RamanIcon';
 
-export type ViewId = 'prism' | 'spectrum' | 'work' | 'usermap';
+export type ViewId = 'prism' | 'chats' | 'spectrum' | 'work' | 'usermap';
 
 interface SidebarProps {
   activeView: ViewId;
@@ -11,6 +11,7 @@ interface SidebarProps {
 
 const items: Array<{ id: ViewId; label: string; icon: React.ReactNode }> = [
   { id: 'prism', label: 'Prism', icon: <Sparkles size={18} /> },
+  { id: 'chats', label: 'Chats', icon: <MessageSquareMore size={18} /> },
   { id: 'usermap', label: 'UserMap', icon: <BrainCircuit size={18} /> },
   { id: 'spectrum', label: 'Spectrum', icon: <Bot size={18} /> },
   { id: 'work', label: 'Work', icon: <FolderKanban size={18} /> }

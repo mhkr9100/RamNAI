@@ -13,8 +13,17 @@ contextBridge.exposeInMainWorld('supreme', {
     save: (tree: unknown) => ipcRenderer.invoke(channels.userMapSave, tree),
     syncMemories: () => ipcRenderer.invoke(channels.userMapSync)
   },
+  groups: {
+    upsert: (group: unknown) => ipcRenderer.invoke(channels.groupUpsert, group),
+    delete: (groupId: string) => ipcRenderer.invoke(channels.groupDelete, groupId)
+  },
   prism: {
     sendMessage: (input: unknown) => ipcRenderer.invoke(channels.prismSend, input)
+  },
+  chat: {
+    sendAgentMessage: (input: unknown) => ipcRenderer.invoke(channels.agentChat, input),
+    sendGroupMessage: (input: unknown) => ipcRenderer.invoke(channels.groupChat, input),
+    deleteThread: (threadId: string) => ipcRenderer.invoke(channels.threadDelete, threadId)
   },
   tasks: {
     create: (task: unknown) => ipcRenderer.invoke(channels.taskCreate, task),

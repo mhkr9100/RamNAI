@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bot, BrainCircuit, FolderKanban, LoaderCircle, Sparkles } from 'lucide-react';
+import { ChatsWorkspace } from './components/ChatsWorkspace';
 import { LocalProfileScreen } from './components/LocalProfileScreen';
 import { Sidebar, ViewId } from './components/Sidebar';
 import { PrismWorkspace } from './components/PrismWorkspace';
 import { SpectrumView } from './components/SpectrumView';
 import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
-import { getDesktopApi, TaskCreateInput, WorkspaceSnapshot } from './lib/electron';
+import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from './lib/electron';
 import type { PrismMode, UserMapNode, WorkItem } from '@supreme/shared';
 
 interface PrismMessage {
@@ -122,6 +123,71 @@ export default function App() {
       setActiveView('work');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError));
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpsertGroup = async (group: { id?: string; name: string; description?: string; memberAgentIds: string[] }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = {
+        id: group.id ?? crypto.randomUUID(),
+        name: group.name,
+        memberAgentIds: group.memberAgentIds
+      } as const;
+      await api.groups.upsert(group.description ? { ...payload, description: group.description } : payload);
+      await refreshSnapshot();
+      setNotice(`Saved group ${group.name}.`);
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.groups.delete(groupId);
+      await refreshSnapshot();
+      setNotice('Group deleted.');
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSendAgentMessage = async (input: AgentChatInput) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.chat.sendAgentMessage(input);
+      await refreshSnapshot();
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSendGroupMessage = async (input: GroupChatInput) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.chat.sendGroupMessage(input);
+      await refreshSnapshot();
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
       throw nextError;
     } finally {
       setBusy(false);
@@ -259,7 +325,7 @@ export default function App() {
             <div>
               <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/35">Supreme Raman AI</div>
               <div className="mt-2 text-2xl font-semibold text-white">
-                {activeView === 'prism' ? 'Prism Workspace' : activeView === 'usermap' ? 'UserMap' : activeView === 'spectrum' ? 'Spectrum' : 'Work'}
+                {activeView === 'prism' ? 'Prism Workspace' : activeView === 'chats' ? 'Chats' : activeView === 'usermap' ? 'UserMap' : activeView === 'spectrum' ? 'Spectrum' : 'Work'}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-white/50">
@@ -299,11 +365,22 @@ export default function App() {
                 onCreateTask={handleTaskCreate}
               />
             ) : null}
+            {activeView === 'chats' ? (
+              <ChatsWorkspace
+                snapshot={snapshot}
+                busy={busy}
+                onSendAgentMessage={handleSendAgentMessage}
+                onSendGroupMessage={handleSendGroupMessage}
+                onCreateTask={handleTaskCreate}
+              />
+            ) : null}
             {activeView === 'spectrum' ? (
               <SpectrumView
                 snapshot={snapshot}
                 busy={busy}
                 onCreateAgentTask={handleTaskCreate}
+                onUpsertGroup={handleUpsertGroup}
+                onDeleteGroup={handleDeleteGroup}
               />
             ) : null}
             {activeView === 'work' ? (
@@ -341,6 +418,7 @@ export default function App() {
                   {[
                     { label: 'Chatbots', value: snapshot.agents.length, icon: <Bot size={15} /> },
                     { label: 'Groups', value: snapshot.groups.length, icon: <BrainCircuit size={15} /> },
+                    { label: 'Chat Threads', value: snapshot.chatThreads.length, icon: <Sparkles size={15} /> },
                     { label: 'Tasks', value: snapshot.tasks.length, icon: <FolderKanban size={15} /> },
                     { label: 'Prism Messages', value: prismMessages.length, icon: <Sparkles size={15} /> }
                   ].map((item) => (

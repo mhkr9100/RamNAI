@@ -167,6 +167,28 @@ export interface GroupSpec {
   memberAgentIds: string[];
 }
 
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  createdAt: string;
+  authorId?: string;
+  authorLabel?: string;
+  provider?: ProviderId;
+  modelId?: string;
+  mentions?: string[];
+}
+
+export interface ChatThread {
+  id: string;
+  targetType: 'agent' | 'group';
+  targetId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+}
+
 export interface LocalProfile {
   name: string;
   email: string;

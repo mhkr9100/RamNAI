@@ -1,6 +1,8 @@
 import type {
   AgentSpec,
   ArtifactRecord,
+  ChatMessage,
+  ChatThread,
   GroupSpec,
   LocalProfile,
   MemoryFact,
@@ -18,6 +20,7 @@ export interface WorkspaceSnapshot {
   profile: LocalProfile | null;
   agents: AgentSpec[];
   groups: GroupSpec[];
+  chatThreads: ChatThread[];
   tasks: TaskSpec[];
   workItems: WorkItem[];
   artifacts: ArtifactRecord[];
@@ -51,6 +54,21 @@ export interface TaskCreateInput {
   council?: TaskSpec['council'];
 }
 
+export interface AgentChatInput {
+  agentId: string;
+  message: string;
+}
+
+export interface GroupChatInput {
+  groupId: string;
+  message: string;
+}
+
+export interface ChatSendResult {
+  thread: ChatThread;
+  newMessages: ChatMessage[];
+}
+
 export interface SupremeDesktopApi {
   profile: {
     get: () => Promise<LocalProfile | null>;
@@ -63,8 +81,17 @@ export interface SupremeDesktopApi {
     save: (tree: UserMapNode) => Promise<UserMapNode>;
     syncMemories: () => Promise<{ tree: UserMapNode; facts: MemoryFact[] }>;
   };
+  groups: {
+    upsert: (group: GroupSpec) => Promise<GroupSpec>;
+    delete: (groupId: string) => Promise<{ ok: true }>;
+  };
   prism: {
     sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapNode; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<PrismReply>;
+  };
+  chat: {
+    sendAgentMessage: (input: AgentChatInput) => Promise<ChatSendResult>;
+    sendGroupMessage: (input: GroupChatInput) => Promise<ChatSendResult>;
+    deleteThread: (threadId: string) => Promise<{ ok: true }>;
   };
   tasks: {
     create: (task: TaskCreateInput) => Promise<TaskSpec>;

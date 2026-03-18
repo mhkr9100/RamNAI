@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   AgentSpec,
   ArtifactRecord,
+  ChatThread,
   DEFAULT_MODEL_PRESETS,
   EMPTY_USERMAP_TREE,
   GroupSpec,
@@ -27,6 +28,7 @@ export interface WorkspaceSnapshot {
   profile: LocalProfile | null;
   agents: AgentSpec[];
   groups: GroupSpec[];
+  chatThreads: ChatThread[];
   tasks: TaskSpec[];
   workItems: WorkItem[];
   artifacts: ArtifactRecord[];
@@ -55,6 +57,10 @@ export class SqliteStorage {
         payload TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS groups_table (
+        id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS chat_threads (
         id TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );
@@ -147,6 +153,29 @@ export class SqliteStorage {
     return group;
   }
 
+  deleteGroup(groupId: string) {
+    this.db.prepare('DELETE FROM groups_table WHERE id = ?').run(groupId);
+  }
+
+  listChatThreads(): ChatThread[] {
+    const rows = this.db.prepare('SELECT payload FROM chat_threads ORDER BY id').all() as Array<{ payload: string }>;
+    return rows.map((row) => parseJson(row.payload, null as never));
+  }
+
+  getChatThread(threadId: string): ChatThread | null {
+    const row = this.db.prepare('SELECT payload FROM chat_threads WHERE id = ?').get(threadId) as { payload?: string } | undefined;
+    return row?.payload ? parseJson(row.payload, null) : null;
+  }
+
+  upsertChatThread(thread: ChatThread): ChatThread {
+    this.db.prepare('INSERT OR REPLACE INTO chat_threads (id, payload) VALUES (?, ?)').run(thread.id, JSON.stringify(thread));
+    return thread;
+  }
+
+  deleteChatThread(threadId: string) {
+    this.db.prepare('DELETE FROM chat_threads WHERE id = ?').run(threadId);
+  }
+
   listTasks(): TaskSpec[] {
     const rows = this.db.prepare('SELECT payload FROM tasks ORDER BY id').all() as Array<{ payload: string }>;
     return rows.map((row) => parseJson(row.payload, null as never));
@@ -236,6 +265,7 @@ export class SqliteStorage {
       profile: this.getProfile(),
       agents: this.listAgents(),
       groups: this.listGroups(),
+      chatThreads: this.listChatThreads(),
       tasks: this.listTasks(),
       workItems: this.listWorkItems(),
       artifacts: this.listArtifacts(),
