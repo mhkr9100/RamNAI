@@ -74,8 +74,10 @@ This repo is the new implementation base for Supreme Raman AI, a desktop-first l
 - chatbot chat keeps the Task button beside the input
 - thread reset is available in Chats for both chatbot and group threads
 - Spectrum deep-links directly into chatbot and group chats
+- Prism create now opens the newly created chatbot chat directly
 - group chat remains manual `@mention` only
 - group member handles are surfaced consistently in Spectrum and Chats
+- Work can open the relevant chat destination directly in addition to send-to-chat
 
 ### Settings
 

@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Copy, Play, Send, Trash2 } from 'lucide-react';
-import type { ArtifactRecord, TaskSpec, WorkItem } from '@supreme/shared';
+import { Copy, MessageSquareMore, Play, Send, Trash2 } from 'lucide-react';
+import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@supreme/shared';
 import type { WorkspaceSnapshot } from '@/lib/electron';
+import type { ChatTarget } from './ChatsWorkspace';
 
 interface WorkViewProps {
   snapshot: WorkspaceSnapshot;
@@ -11,13 +12,15 @@ interface WorkViewProps {
   onRerunTask: (taskId: string) => Promise<void>;
   onDeleteWorkItem: (workItemId: string) => Promise<void>;
   onSendToChat: (item: WorkItem) => void;
+  onOpenChat: (target: ChatTarget | 'prism') => void;
   onOpenArtifact: (artifactId: string) => Promise<void>;
 }
 
-export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onRerunTask, onDeleteWorkItem, onSendToChat, onOpenArtifact }: WorkViewProps) {
+export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onRerunTask, onDeleteWorkItem, onSendToChat, onOpenChat, onOpenArtifact }: WorkViewProps) {
   const [expandedWorkId, setExpandedWorkId] = useState<string | null>(null);
   const taskLookup = useMemo(() => new Map(snapshot.tasks.map((task) => [task.id, task])), [snapshot.tasks]);
   const artifactLookup = useMemo(() => new Map(snapshot.artifacts.map((artifact) => [artifact.id, artifact])), [snapshot.artifacts]);
+  const agentLookup = useMemo(() => new Map(snapshot.agents.map((agent) => [agent.id, agent])), [snapshot.agents]);
 
   return (
     <div className="space-y-8">
@@ -57,12 +60,20 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <InfoRow label="Next Run" value={task.nextRunAt ? new Date(task.nextRunAt).toLocaleString() : 'Not scheduled'} />
-                    <InfoRow label="Target" value={task.target.type === 'prism' ? 'Prism' : `Chatbot ${task.target.agentId}`} />
+                    <InfoRow label="Target" value={describeTaskTarget(task, agentLookup)} />
                     <InfoRow label="Artifacts" value={task.outputPolicy.artifactMode} />
                     <InfoRow label="Notifications" value={task.outputPolicy.notificationMode} />
                   </div>
                   {task.lastError ? <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{task.lastError}</div> : null}
                   <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => onOpenChat(task.target.type === 'prism' ? 'prism' : { type: 'agent', id: task.target.agentId })}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
+                    >
+                      <MessageSquareMore size={14} />
+                      Open Chat
+                    </button>
                     <button type="button" disabled={busy} onClick={() => onDuplicateTask(task.id)} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Copy size={14} />Duplicate</button>
                     <button type="button" disabled={busy} onClick={() => onRerunTask(task.id)} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Play size={14} />Rerun</button>
                     <button type="button" disabled={busy} onClick={() => onDeleteTask(task.id)} className="inline-flex items-center gap-2 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-red-100 transition hover:border-red-400/30 disabled:opacity-50"><Trash2 size={14} />Delete</button>
@@ -95,12 +106,20 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
                         <div className="mt-2 text-xl font-semibold text-white">{item.title}</div>
                         <div className="mt-2 text-sm text-white/52">{sourceTask ? `From ${sourceTask.title}` : 'Standalone work item'}</div>
                         <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/38">
-                          {item.sourceAgentId ? 'Send to Chat routes back to the originating chatbot thread.' : 'Send to Chat routes back to Prism.'}
+                          {item.sourceAgentId ? `Routes back to ${agentLookup.get(item.sourceAgentId)?.name ?? 'the originating chatbot'}.` : 'Routes back to Prism.'}
                         </div>
                       </div>
                       <StatusPill status={item.status} />
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'prism')}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
+                      >
+                        <MessageSquareMore size={14} />
+                        Open Chat
+                      </button>
                       <button type="button" onClick={() => setExpandedWorkId((current) => current === item.id ? null : item.id)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white">
                         {expanded ? 'Close' : 'Open'}
                       </button>
@@ -146,6 +165,14 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
       </section>
     </div>
   );
+}
+
+function describeTaskTarget(task: TaskSpec, agentLookup: Map<string, AgentSpec>) {
+  if (task.target.type === 'prism') {
+    return 'Prism';
+  }
+
+  return agentLookup.get(task.target.agentId)?.name ?? `Chatbot ${task.target.agentId}`;
 }
 
 function StatusPill({ status }: { status: TaskSpec['status'] | WorkItem['status'] }) {

@@ -61,6 +61,8 @@ Supreme Raman AI is:
 - manual `@mention` routing for groups
 - app-level selected chat target state now controls Chats
 - thread reset is available in chatbot and group chats
+- Prism create opens the newly created chatbot chat directly
+- Work can open the relevant chat target directly
 
 ### Groups
 

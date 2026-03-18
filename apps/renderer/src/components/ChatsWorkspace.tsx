@@ -66,6 +66,10 @@ export function ChatsWorkspace({
     onSelectTarget(null);
   }, [onSelectTarget, selectedTarget, snapshot.agents, snapshot.groups]);
 
+  useEffect(() => {
+    setShowTaskComposer(false);
+  }, [selectedTarget?.id, selectedTarget?.type]);
+
   const selectedAgent = useMemo(
     () => selectedTarget?.type === 'agent' ? snapshot.agents.find((agent) => agent.id === selectedTarget.id) ?? null : null,
     [selectedTarget, snapshot.agents]

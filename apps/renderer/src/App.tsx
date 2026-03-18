@@ -128,8 +128,9 @@ export default function App() {
       setPrismMessages((current) => [...current, { id: reply.id, role: 'assistant', text: reply.text, mode }]);
       await refreshSnapshot();
       if (reply.createdAgent) {
-        setNotice(`Created ${reply.createdAgent.name}.`);
-        setActiveView('spectrum');
+        setSelectedChatTarget({ type: 'agent', id: reply.createdAgent.id });
+        setNotice(`Created ${reply.createdAgent.name} and opened its chat.`);
+        setActiveView('chats');
       }
     } catch (nextError) {
       const messageText = nextError instanceof Error ? nextError.message : String(nextError);
@@ -328,6 +329,18 @@ export default function App() {
 
   const handleOpenChatTarget = useCallback((target: ChatTarget) => {
     setSelectedChatTarget(target);
+    setChatDraftSeed(null);
+    setActiveView('chats');
+  }, []);
+
+  const handleOpenChatDestination = useCallback((target: ChatTarget | 'prism') => {
+    if (target === 'prism') {
+      setActiveView('prism');
+      return;
+    }
+
+    setSelectedChatTarget(target);
+    setChatDraftSeed(null);
     setActiveView('chats');
   }, []);
 
@@ -508,6 +521,7 @@ export default function App() {
                 onRerunTask={handleRerunTask}
                 onDeleteWorkItem={handleDeleteWorkItem}
                 onSendToChat={handleSendWorkToChat}
+                onOpenChat={handleOpenChatDestination}
                 onOpenArtifact={handleOpenArtifact}
               />
             ) : null}
