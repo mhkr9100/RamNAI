@@ -6,15 +6,19 @@ import type {
   GroupSpec,
   LocalProfile,
   MemoryFact,
-  UserMapNode
+  UserMapNode,
+  UserMapState
 } from '@supreme/shared';
+import { EXTERNAL_WORKSPACE_MANIFEST_FILENAME } from './runtime-compat.js';
 
 export interface RuntimeWorkspaceSource {
   profile: LocalProfile | null;
-  userMap: UserMapNode;
+  userMap: UserMapState;
   agents: AgentSpec[];
   groups: GroupSpec[];
   memoryFacts: MemoryFact[];
+  publicMemoryFacts?: MemoryFact[];
+  privateMemoryFacts?: MemoryFact[];
   generatedAt?: string;
 }
 
@@ -51,8 +55,13 @@ export interface RuntimeWorkspaceManifest {
     name: string;
     description?: string;
     memberAgentIds: string[];
+    routingMode: GroupSpec['routingMode'];
+    autoRouteThreshold: GroupSpec['autoRouteThreshold'];
+    defaultResponderAgentId?: GroupSpec['defaultResponderAgentId'];
   }>;
   memoryDays: string[];
+  publicMemoryDays: string[];
+  privateMemoryDays: string[];
   skillsWorkspaceRoot: string;
 }
 
@@ -71,7 +80,6 @@ export interface RuntimeWorkspaceSyncResult {
 
 const PRIMARY_MANIFEST_FILENAME = 'runtime.workspace.json';
 // Compatibility mirror for the external runtime bridge while we transition away from vendor naming.
-const COMPAT_MANIFEST_FILENAME = 'openclaw.workspace.json';
 
 const USER_MAP_CATEGORY_ORDER: UserMapNode['nodeType'][] = ['root', 'category', 'cluster', 'fact'];
 const USER_MAP_CATEGORY_LABEL_ORDER = [
@@ -87,6 +95,7 @@ const USER_MAP_CATEGORY_LABEL_ORDER = [
   'Instructions',
   'General Context'
 ];
+const USER_MAP_VISIBILITY_ORDER: Array<UserMapNode['visibility']> = ['public', 'private'];
 
 function asUtcDateKey(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value);
@@ -114,6 +123,15 @@ function compareUserMapNodes(left: UserMapNode, right: UserMapNode) {
     return leftType - rightType;
   }
 
+  if (left.nodeType === 'root' && right.nodeType === 'root') {
+    const leftVisibility = USER_MAP_VISIBILITY_ORDER.indexOf((left.visibility ?? '') as UserMapNode['visibility']);
+    const rightVisibility = USER_MAP_VISIBILITY_ORDER.indexOf((right.visibility ?? '') as UserMapNode['visibility']);
+    if (leftVisibility !== rightVisibility) {
+      return (leftVisibility === -1 ? USER_MAP_VISIBILITY_ORDER.length : leftVisibility)
+        - (rightVisibility === -1 ? USER_MAP_VISIBILITY_ORDER.length : rightVisibility);
+    }
+  }
+
   if (left.nodeType === 'category' && right.nodeType === 'category') {
     const leftCategory = USER_MAP_CATEGORY_LABEL_ORDER.indexOf(left.label);
     const rightCategory = USER_MAP_CATEGORY_LABEL_ORDER.indexOf(right.label);
@@ -139,6 +157,7 @@ function renderUserMapTree(node: UserMapNode, depth = 0): string {
   const suffix = node.value ? `: ${node.value}` : '';
   const flags = [
     node.protected ? 'protected' : null,
+    node.visibility ? `visibility=${node.visibility}` : null,
     node.source ? `source=${node.source}` : null
   ].filter(Boolean);
   const meta = flags.length ? ` (${flags.join(', ')})` : '';
@@ -149,6 +168,16 @@ function renderUserMapTree(node: UserMapNode, depth = 0): string {
   }
 
   return lines.join('\n');
+}
+
+function renderUserMapState(userMap: UserMapState) {
+  return [
+    'Public',
+    renderUserMapTree(userMap.publicTree),
+    '',
+    'Private',
+    renderUserMapTree(userMap.privateTree)
+  ].join('\n');
 }
 
 function renderMemoryFact(fact: MemoryFact) {
@@ -165,6 +194,31 @@ function renderWorkspaceDocHeader(title: string, body: string[]) {
   return [`# ${title}`, '', ...body.filter(Boolean), ''].join('\n');
 }
 
+function memoryVisibility(fact: MemoryFact) {
+  return fact.visibility ?? 'public';
+}
+
+function partitionMemoryFacts(facts: MemoryFact[]) {
+  const publicMemoryFacts = facts.filter((fact) => memoryVisibility(fact) === 'public');
+  const privateMemoryFacts = facts.filter((fact) => memoryVisibility(fact) === 'private');
+
+  return {
+    publicMemoryFacts,
+    privateMemoryFacts,
+    publicMemoryDays: [...new Set(publicMemoryFacts.map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt)))].sort((left, right) => left.localeCompare(right)),
+    privateMemoryDays: [...new Set(privateMemoryFacts.map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt)))].sort((left, right) => left.localeCompare(right))
+  };
+}
+
+function renderMemoryFactList(facts: MemoryFact[]) {
+  return facts.length
+    ? facts
+        .slice()
+        .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.category.localeCompare(right.category) || left.label.localeCompare(right.label))
+        .map(renderMemoryFact)
+    : ['- none yet.'];
+}
+
 export class RuntimeWorkspaceManager {
   constructor(private readonly options: RuntimeWorkspaceManagerOptions = {}) {}
 
@@ -179,7 +233,8 @@ export class RuntimeWorkspaceManager {
       .map((agent) => this.buildAgentSubject(agent));
 
     const allSkills = [...new Set(source.agents.flatMap((agent) => agent.skills).filter(Boolean))].sort((left, right) => left.localeCompare(right));
-    const memoryDays = [...new Set(source.memoryFacts.map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt)))].sort((left, right) => left.localeCompare(right));
+    const memorySplit = partitionMemoryFacts(source.memoryFacts);
+    const memoryDays = [...new Set([...memorySplit.publicMemoryDays, ...memorySplit.privateMemoryDays])].sort((left, right) => left.localeCompare(right));
 
     const prismSubject: RuntimeWorkspaceSubjectManifest = {
       kind: 'prism',
@@ -208,19 +263,30 @@ export class RuntimeWorkspaceManager {
             name: string;
             memberAgentIds: string[];
             description?: string;
+            routingMode: GroupSpec['routingMode'];
+            autoRouteThreshold: GroupSpec['autoRouteThreshold'];
+            defaultResponderAgentId?: GroupSpec['defaultResponderAgentId'];
           } = {
             id: group.id,
             name: group.name,
-            memberAgentIds: [...group.memberAgentIds].sort((left, right) => left.localeCompare(right))
+            memberAgentIds: [...group.memberAgentIds].sort((left, right) => left.localeCompare(right)),
+            routingMode: group.routingMode,
+            autoRouteThreshold: group.autoRouteThreshold
           };
 
           if (group.description) {
             manifestGroup.description = group.description;
           }
 
+          if (group.defaultResponderAgentId) {
+            manifestGroup.defaultResponderAgentId = group.defaultResponderAgentId;
+          }
+
           return manifestGroup;
         }),
       memoryDays,
+      publicMemoryDays: memorySplit.publicMemoryDays,
+      privateMemoryDays: memorySplit.privateMemoryDays,
       skillsWorkspaceRoot: 'skills'
     };
 
@@ -249,6 +315,9 @@ export class RuntimeWorkspaceManager {
   }): RuntimeWorkspaceFile[] {
     const files: RuntimeWorkspaceFile[] = [];
     const { source: input, manifest, agents } = source;
+    const memorySplit = partitionMemoryFacts(input.memoryFacts);
+    const publicMemoryFacts = input.publicMemoryFacts ?? memorySplit.publicMemoryFacts;
+    const privateMemoryFacts = input.privateMemoryFacts ?? memorySplit.privateMemoryFacts;
 
     files.push({
       path: 'AGENTS.md',
@@ -264,6 +333,10 @@ export class RuntimeWorkspaceManager {
         `- \`${source.prismWorkspacePath}/USER.md\``,
         `- \`${source.prismWorkspacePath}/MEMORY.md\``,
         '',
+        '## Memory Mirrors',
+        '- Public memory is mirrored in `MEMORY.md` and `memory/public/`.',
+        '- Private memory is mirrored in `MEMORY.md` and `memory/private/`.',
+        '',
         '## Persistent Chatbots',
         ...(agents.length
           ? agents.map((agent) => `- \`${agent.workspacePath}/AGENTS.md\` -> ${agent.name}`)
@@ -271,7 +344,10 @@ export class RuntimeWorkspaceManager {
         '',
         '## Groups',
         ...(manifest.groups.length
-          ? manifest.groups.map((group) => `- ${group.name} (${group.memberAgentIds.join(', ')})`)
+          ? manifest.groups.map((group) => {
+              const routingMode = `${group.routingMode}, threshold ${Math.round(group.autoRouteThreshold * 100)}%`;
+              return `- ${group.name} (${routingMode}; ${group.memberAgentIds.join(', ')})`;
+            })
           : ['- none yet']),
         '',
         '## Skills Workspace Semantics',
@@ -290,7 +366,8 @@ export class RuntimeWorkspaceManager {
         `Prism workspace: \`${source.prismWorkspacePath}\``,
         `Profile: ${input.profile ? `${input.profile.name} <${input.profile.email}>` : 'unassigned local profile'}`,
         '',
-        'The runtime bridge should preserve the existing Ollama execution path while mirroring durable state into filesystem workspace files.'
+        'The runtime bridge should preserve the existing Ollama execution path while mirroring durable state into filesystem workspace files.',
+        'Public memory is shared with agents and groups. Private memory remains Prism-only.'
       ])
     });
 
@@ -355,12 +432,17 @@ export class RuntimeWorkspaceManager {
         '',
         '## UserMap',
         '```text',
-        renderUserMapTree(input.userMap),
+        renderUserMapState(input.userMap),
         '```',
+        '',
+        '## Public Memory',
+        ...(publicMemoryFacts.length ? renderMemoryFactList(publicMemoryFacts) : ['- no public memory facts yet.']),
         '',
         '## Groups',
         ...(manifest.groups.length
-          ? manifest.groups.map((group) => `- ${group.name}: ${group.memberAgentIds.join(', ')}`)
+          ? manifest.groups.map((group) => {
+              return `- ${group.name}: ${group.memberAgentIds.join(', ')} (${group.routingMode}, threshold ${group.autoRouteThreshold})`;
+            })
           : ['- none yet'])
       ])
     });
@@ -368,18 +450,22 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'MEMORY.md',
       content: renderWorkspaceDocHeader('MEMORY', [
-        'Durable memory facts are mirrored here and split into dated log files under `memory/YYYY-MM-DD.md`.',
+        'Durable memory facts are mirrored here and split into visibility-specific dated log files under `memory/public/YYYY-MM-DD.md` and `memory/private/YYYY-MM-DD.md`.',
         '',
-        ...(input.memoryFacts.length
-          ? input.memoryFacts
-              .slice()
-              .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.category.localeCompare(right.category) || left.label.localeCompare(right.label))
-              .map(renderMemoryFact)
-          : ['- no durable memory facts yet.']),
+        '## Public Memory',
+        ...renderMemoryFactList(publicMemoryFacts),
         '',
-        '## Daily Logs',
-        ...(manifest.memoryDays.length
-          ? manifest.memoryDays.map((day) => `- \`memory/${day}.md\``)
+        '## Private Memory',
+        ...renderMemoryFactList(privateMemoryFacts),
+        '',
+        '## Public Daily Logs',
+        ...(manifest.publicMemoryDays.length
+          ? manifest.publicMemoryDays.map((day) => `- \`memory/public/${day}.md\``)
+          : ['- none yet']),
+        '',
+        '## Private Daily Logs',
+        ...(manifest.privateMemoryDays.length
+          ? manifest.privateMemoryDays.map((day) => `- \`memory/private/${day}.md\``)
           : ['- none yet'])
       ])
     });
@@ -392,7 +478,9 @@ export class RuntimeWorkspaceManager {
     files.push(...this.renderSubjectFiles(source.prismWorkspacePath, manifest.prism, {
       profile: input.profile,
       userMap: input.userMap,
-      memoryFacts: input.memoryFacts
+      memoryFacts: input.memoryFacts,
+      publicMemoryFacts,
+      privateMemoryFacts
     }));
 
     for (const subject of agents) {
@@ -401,18 +489,36 @@ export class RuntimeWorkspaceManager {
         profile: input.profile,
         userMap: input.userMap,
         memoryFacts: input.memoryFacts,
+        publicMemoryFacts,
+        privateMemoryFacts,
         agent
       }));
     }
 
-    for (const day of manifest.memoryDays) {
-      const factsForDay = input.memoryFacts
+    for (const day of manifest.publicMemoryDays) {
+      const factsForDay = publicMemoryFacts
         .filter((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt) === day)
         .slice()
         .sort((left, right) => left.category.localeCompare(right.category) || left.label.localeCompare(right.label) || left.value.localeCompare(right.value));
 
       files.push({
-        path: join('memory', `${day}.md`),
+        path: join('memory', 'public', `${day}.md`),
+        content: renderWorkspaceDocHeader(`Memory Log ${day}`, [
+          `Date: \`${day}\``,
+          '',
+          ...(factsForDay.length ? factsForDay.map(renderMemoryFact) : ['- no facts captured on this date.'])
+        ])
+      });
+    }
+
+    for (const day of manifest.privateMemoryDays) {
+      const factsForDay = privateMemoryFacts
+        .filter((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt) === day)
+        .slice()
+        .sort((left, right) => left.category.localeCompare(right.category) || left.label.localeCompare(right.label) || left.value.localeCompare(right.value));
+
+      files.push({
+        path: join('memory', 'private', `${day}.md`),
         content: renderWorkspaceDocHeader(`Memory Log ${day}`, [
           `Date: \`${day}\``,
           '',
@@ -444,10 +550,10 @@ export class RuntimeWorkspaceManager {
     }
 
     await this.writeIfChanged(
-      join(rootDir, COMPAT_MANIFEST_FILENAME),
+      join(rootDir, EXTERNAL_WORKSPACE_MANIFEST_FILENAME),
       JSON.stringify(plan.manifest, null, 2) + '\n'
     );
-    writtenFiles.push(relative(targetDir, join(rootDir, COMPAT_MANIFEST_FILENAME)));
+    writtenFiles.push(relative(targetDir, join(rootDir, EXTERNAL_WORKSPACE_MANIFEST_FILENAME)));
 
     return {
       rootDir: relative(targetDir, rootDir),
@@ -475,14 +581,20 @@ export class RuntimeWorkspaceManager {
     subject: RuntimeWorkspaceSubjectManifest,
     context?: {
       profile: LocalProfile | null;
-      userMap: UserMapNode;
+      userMap: UserMapState;
       memoryFacts: MemoryFact[];
+      publicMemoryFacts: MemoryFact[];
+      privateMemoryFacts: MemoryFact[];
       agent?: AgentSpec | null;
     }
   ): RuntimeWorkspaceFile[] {
     const profile = context?.profile ?? null;
     const userMap = context?.userMap;
     const memoryFacts = context?.memoryFacts ?? [];
+    const publicMemoryFacts = context?.publicMemoryFacts ?? memoryFacts.filter((fact) => memoryVisibility(fact) === 'public');
+    const privateMemoryFacts = context?.privateMemoryFacts ?? memoryFacts.filter((fact) => memoryVisibility(fact) === 'private');
+    const publicMemoryDays = [...new Set(publicMemoryFacts.map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt)))].sort((left, right) => left.localeCompare(right));
+    const privateMemoryDays = [...new Set(privateMemoryFacts.map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt)))].sort((left, right) => left.localeCompare(right));
     const agent = context?.agent ?? null;
 
     return [
@@ -564,8 +676,14 @@ export class RuntimeWorkspaceManager {
             : '- No local profile available.',
           '',
           userMap
-            ? ['## UserMap', '```text', renderUserMapTree(userMap), '```'].join('\n')
+            ? ['## UserMap', '```text', subject.kind === 'prism' ? renderUserMapState(userMap) : renderUserMapTree(userMap.publicTree), '```'].join('\n')
             : '## UserMap\n- unavailable',
+          '',
+          ['## Public Memory', ...(publicMemoryFacts.length ? publicMemoryFacts.map(renderMemoryFact) : ['- no public memory facts yet.'])].join('\n'),
+          '',
+          ...(subject.kind === 'prism'
+            ? ['## Private Memory', ...(privateMemoryFacts.length ? privateMemoryFacts.map(renderMemoryFact) : ['- no private memory facts yet.'])]
+            : []),
           '',
           `Workspace path: \`${subjectPath}\``
         ])
@@ -575,18 +693,33 @@ export class RuntimeWorkspaceManager {
         content: renderWorkspaceDocHeader(`${subject.name} MEMORY`, [
           'Durable memory facts mirrored for this subject.',
           '',
-          ...(memoryFacts.length
-            ? memoryFacts
-                .slice()
-                .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.category.localeCompare(right.category) || left.label.localeCompare(right.label))
-                .map(renderMemoryFact)
-            : ['- no durable memory facts yet.']),
+          ...(subject.kind === 'prism'
+            ? [
+                '## Public Memory',
+                ...renderMemoryFactList(publicMemoryFacts),
+                '',
+                '## Private Memory',
+                ...renderMemoryFactList(privateMemoryFacts)
+              ]
+            : [
+                '## Public Memory',
+                ...renderMemoryFactList(publicMemoryFacts)
+              ]),
           '',
-          ...(context ? ['## Dated Logs', ...context.memoryFacts
-            .map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt))
-            .filter((day, index, array) => array.indexOf(day) === index)
-            .sort((left, right) => left.localeCompare(right))
-            .map((day) => `- \`memory/${day}.md\``)] : ['## Dated Logs', '- none yet'])
+          ...(context
+            ? subject.kind === 'prism'
+              ? [
+                  '## Public Dated Logs',
+                  ...(publicMemoryDays.length ? publicMemoryDays.map((day) => `- \`memory/public/${day}.md\``) : ['- none yet']),
+                  '',
+                  '## Private Dated Logs',
+                  ...(privateMemoryDays.length ? privateMemoryDays.map((day) => `- \`memory/private/${day}.md\``) : ['- none yet'])
+                ]
+              : [
+                  '## Public Dated Logs',
+                  ...(publicMemoryDays.length ? publicMemoryDays.map((day) => `- \`memory/public/${day}.md\``) : ['- none yet'])
+                ]
+            : ['## Dated Logs', '- none yet'])
         ])
       }
     ];

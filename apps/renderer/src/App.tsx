@@ -15,7 +15,7 @@ import type {
   PrismProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderId,
-  UserMapNode,
+  UserMapState,
   WorkItem
 } from '@supreme/shared';
 
@@ -57,6 +57,15 @@ export default function App() {
   const [prismOverride, setPrismOverride] = useState<PrismProviderOverrideSettings | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaRuntimeStatus | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
+
+  const selectedAgent = useMemo(
+    () => selectedChatTarget?.type === 'agent' ? snapshot?.agents.find((agent) => agent.id === selectedChatTarget.id) ?? null : null,
+    [selectedChatTarget, snapshot?.agents]
+  );
+  const selectedGroup = useMemo(
+    () => selectedChatTarget?.type === 'group' ? snapshot?.groups.find((group) => group.id === selectedChatTarget.id) ?? null : null,
+    [selectedChatTarget, snapshot?.groups]
+  );
 
   const refreshSnapshot = useCallback(async () => {
     if (!api) {
@@ -147,7 +156,6 @@ export default function App() {
     try {
       await api.profile.save(profile);
       await refreshSnapshot();
-      setNotice('Local profile saved.');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError));
       throw nextError;
@@ -206,7 +214,15 @@ export default function App() {
     }
   };
 
-  const handleUpsertGroup = async (group: { id?: string; name: string; description?: string; memberAgentIds: string[] }) => {
+  const handleUpsertGroup = async (group: {
+    id?: string;
+    name: string;
+    description?: string;
+    memberAgentIds: string[];
+    routingMode: 'auto' | 'manual';
+    autoRouteThreshold: number;
+    defaultResponderAgentId?: string;
+  }) => {
     if (!api) {
       throw new Error('Desktop bridge unavailable.');
     }
@@ -216,7 +232,10 @@ export default function App() {
       const payload = {
         id: group.id ?? crypto.randomUUID(),
         name: group.name,
-        memberAgentIds: group.memberAgentIds
+        memberAgentIds: group.memberAgentIds,
+        routingMode: group.routingMode,
+        autoRouteThreshold: group.autoRouteThreshold,
+        ...(group.defaultResponderAgentId ? { defaultResponderAgentId: group.defaultResponderAgentId } : {})
       } as const;
       await api.groups.upsert(group.description ? { ...payload, description: group.description } : payload);
       await refreshSnapshot();
@@ -443,9 +462,6 @@ export default function App() {
     setError(null);
     try {
       await api.settings.saveProviderProfile(input);
-      if (input.isDefault) {
-        await api.settings.setProviderSelection({ provider: input.provider, profileId: input.id });
-      }
       await refreshSettings();
       setNotice(`Saved ${input.provider} profile ${input.label}.`);
     } catch (nextError) {
@@ -535,7 +551,7 @@ export default function App() {
     try {
       await api.settings.savePrismOverride(override);
       await refreshSettings();
-      setNotice(override ? 'Saved Prism runtime override.' : 'Prism returned to local-first mode.');
+      setNotice(override ? 'Saved Prism settings.' : 'Cleared Prism settings.');
     } catch (nextError) {
       const messageText = nextError instanceof Error ? nextError.message : String(nextError);
       setError(messageText);
@@ -563,7 +579,7 @@ export default function App() {
     }
   };
 
-  const handleSaveUserMap = async (tree: UserMapNode) => {
+  const handleSaveUserMap = async (tree: UserMapState) => {
     if (!api) {
       throw new Error('Desktop bridge unavailable.');
     }
@@ -600,7 +616,7 @@ export default function App() {
 
   const handleClearPrismTranscript = () => {
     setPrismMessages([]);
-    setNotice('Prism transcript cleared.');
+    setNotice('Prism history cleared.');
   };
 
   if (loading) {
@@ -608,7 +624,7 @@ export default function App() {
       <div className="flex min-h-screen items-center justify-center bg-[#08090a] text-white">
         <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/70">
           <LoaderCircle className="animate-spin" size={18} />
-          Loading Supreme Raman AI…
+          Loading RamN AI…
         </div>
       </div>
     );
@@ -618,7 +634,7 @@ export default function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-8 text-white">
         <div className="max-w-2xl rounded-[32px] border border-white/10 bg-white/5 p-8 text-center">
-          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/40">Supreme Raman AI</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/40">RamN AI</div>
           <div className="mt-4 text-3xl font-semibold">Desktop bridge not detected.</div>
           <p className="mt-4 text-base leading-8 text-white/65">
             This renderer is meant to run inside the Electron desktop shell. If you open the Vite URL directly in a browser, the local desktop APIs will not exist.
@@ -639,14 +655,14 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-[#08090a] text-white">
       <Sidebar activeView={activeView} onSelect={setActiveView} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="border-b border-white/6 bg-[#0c0f11]/95 px-8 py-5 backdrop-blur-xl">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#111315]">
+        <header className="h-16 border-b border-white/6 bg-[#0c0f11]/95 px-5 backdrop-blur-xl">
+          <div className="flex h-full flex-wrap items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/35">Supreme Raman AI</div>
-              <div className="mt-2 text-2xl font-semibold text-white">
+              <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/35">RamN AI</div>
+              <div className="mt-1 text-lg font-semibold text-white">
                 {activeView === 'prism'
-                  ? 'Prism Workspace'
+                  ? 'Prism'
                   : activeView === 'chats'
                     ? 'Chats'
                     : activeView === 'usermap'
@@ -659,33 +675,29 @@ export default function App() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-white/50">
-              <div className={`rounded-full border px-3 py-2 font-black uppercase tracking-[0.2em] ${snapshot.runtime.ollamaReady ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200' : 'border-amber-400/25 bg-amber-400/10 text-amber-200'}`}>
-                {snapshot.runtime.ollamaReady ? 'Ollama Ready' : 'Ollama Needed'}
-              </div>
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 font-black uppercase tracking-[0.2em] text-white/55">
-                {snapshot.models.filter((model) => model.installed).length} local models
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+                {snapshot.profile.name}
               </div>
             </div>
           </div>
-          {(error || notice || snapshot.runtime.message) ? (
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {error || notice ? (
+            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto]">
               {error ? (
-                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
                   <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-red-200"><AlertTriangle size={14} />Error</div>
                   {error}
                 </div>
               ) : <div className="hidden lg:block" />}
               {notice ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/75">{notice}</div>
-              ) : <div className="hidden lg:block" />}
-              {snapshot.runtime.message ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">{snapshot.runtime.message}</div>
-              ) : <div className="hidden lg:block" />}
+                <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/72">
+                  {notice}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </header>
         <div className="flex min-h-0 flex-1">
-          <section className="min-w-0 flex-1 overflow-y-auto px-8 py-8 custom-scrollbar">
+          <section className="min-w-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
             {activeView === 'prism' ? (
               <PrismWorkspace
                 snapshot={snapshot}
@@ -763,16 +775,26 @@ export default function App() {
               />
             ) : null}
           </section>
-          <aside className="hidden w-[340px] shrink-0 border-l border-white/6 bg-[#0d1012] px-6 py-8 xl:block">
-            <div className="space-y-6">
-              <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Local Profile</div>
-                <div className="mt-3 text-xl font-semibold text-white">{snapshot.profile.name}</div>
-                <div className="mt-1 text-sm text-white/55">{snapshot.profile.email}</div>
+          <aside className="hidden w-[320px] shrink-0 border-l border-white/6 bg-[#0d1012] px-4 py-4 xl:block">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">
+                  {activeView === 'chats' && (selectedAgent || selectedGroup) ? 'Selected Chat' : 'Profile'}
+                </div>
+                <div className="mt-2 text-lg font-semibold text-white">
+                  {activeView === 'chats'
+                    ? selectedAgent?.name ?? selectedGroup?.name ?? snapshot.profile.name
+                    : snapshot.profile.name}
+                </div>
+                <div className="mt-1 text-sm text-white/55">
+                  {activeView === 'chats'
+                    ? selectedAgent?.persona.role ?? (selectedGroup ? `${selectedGroup.memberAgentIds.length} members` : snapshot.profile.email)
+                    : snapshot.profile.email}
+                </div>
               </div>
-              <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-                <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Workspace Stats</div>
-                <div className="grid gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Workspace</div>
+                <div className="grid gap-2.5">
                   {[
                     { label: 'Chatbots', value: snapshot.agents.length, icon: <Bot size={15} /> },
                     { label: 'Groups', value: snapshot.groups.length, icon: <BrainCircuit size={15} /> },
@@ -780,25 +802,25 @@ export default function App() {
                     { label: 'Tasks', value: snapshot.tasks.length, icon: <FolderKanban size={15} /> },
                     { label: 'Prism Messages', value: prismMessages.length, icon: <Sparkles size={15} /> }
                   ].map((item) => (
-                    <div key={item.label} className="flex items-center justify-between rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75">
+                    <div key={item.label} className="flex items-center justify-between rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 text-sm text-white/75">
                       <div className="flex items-center gap-3 text-white/55">{item.icon}{item.label}</div>
-                      <div className="text-base font-semibold text-white">{item.value}</div>
+                      <div className="text-sm font-semibold text-white">{item.value}</div>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-                <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Available Models</div>
-                <div className="space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Models</div>
+                <div className="space-y-2.5">
                   {snapshot.models.map((model) => (
-                    <div key={model.id} className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
+                    <div key={model.id} className="rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-sm font-semibold text-white">{model.label}</div>
-                          <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/40">{model.provider}</div>
+                          <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/40">{model.provider}</div>
                         </div>
-                        <div className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${model.installed ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/8 text-white/45'}`}>
-                          {model.installed ? 'Installed' : 'Planned'}
+                        <div className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] ${model.installed ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/8 text-white/45'}`}>
+                          {model.installed ? 'Ready' : 'Not Installed'}
                         </div>
                       </div>
                     </div>

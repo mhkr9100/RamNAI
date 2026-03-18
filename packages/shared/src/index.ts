@@ -127,6 +127,34 @@ export interface TaskSpec {
   artifactIds: string[];
 }
 
+export type TaskRunStatus = 'claimed' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface TaskRunRecord {
+  id: string;
+  taskId: string;
+  taskTitle?: string;
+  taskObjective?: string;
+  taskMode?: TaskMode;
+  status: TaskRunStatus;
+  claimToken?: string;
+  claimedAt?: string;
+  leaseExpiresAt?: string;
+  createdAt?: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  workerId?: string;
+  attempt?: number;
+  runIndex?: number;
+  target?: TaskTarget;
+  provider?: ProviderId;
+  modelId?: string;
+  summary?: string;
+  lastError?: string;
+  artifactIds?: string[];
+  councilTrace?: Array<{ modelId: string; stage: 'worker' | 'revision' | 'judge'; output: string }>;
+}
+
 export type WorkItemType = 'task' | 'council' | 'artifact';
 export type WorkStatus = 'draft' | 'scheduled' | 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
@@ -167,12 +195,15 @@ export type MemoryCategory =
   | 'Instructions'
   | 'General Context';
 
+export type MemoryVisibility = 'private' | 'public';
+
 export interface MemoryFact {
   id: string;
   category: MemoryCategory;
   label: string;
   value: string;
   confidence: number;
+  visibility: MemoryVisibility;
   source: 'chat' | 'manual' | 'task' | 'council' | 'system';
   sourceRef?: string;
   createdAt: string;
@@ -185,17 +216,46 @@ export interface UserMapNode {
   value?: string;
   nodeType: 'root' | 'category' | 'cluster' | 'fact';
   children: UserMapNode[];
+  visibility: MemoryVisibility;
   confidence?: number;
   protected?: boolean;
   source?: 'manual' | 'memory';
 }
+
+export interface UserMapState {
+  privateTree: UserMapNode;
+  publicTree: UserMapNode;
+}
+
+export type GroupRoutingMode = 'auto' | 'manual';
 
 export interface GroupSpec {
   id: string;
   name: string;
   description?: string;
   memberAgentIds: string[];
+  routingMode: GroupRoutingMode;
+  autoRouteThreshold: number;
+  defaultResponderAgentId?: string;
+  autoRouting?: {
+    enabled: boolean;
+    lowConfidenceThreshold?: number;
+    hintMessage?: string;
+  };
 }
+
+export interface GroupRouteMetadata {
+  mode: 'pinned' | 'auto' | 'fallback' | 'manual_hint' | 'direct' | 'mention' | 'hint';
+  chosenAgentId?: string;
+  chosenAgentName?: string;
+  confidence?: number;
+  reason: string;
+  targetType?: 'agent' | 'group';
+  targetIds?: string[];
+  pinnedMentions?: string[];
+}
+
+export type ChatRouteMetadata = GroupRouteMetadata;
 
 export interface ChatMessage {
   id: string;
@@ -207,6 +267,7 @@ export interface ChatMessage {
   provider?: ProviderId;
   modelId?: string;
   mentions?: string[];
+  route?: GroupRouteMetadata;
 }
 
 export interface ChatThread {
@@ -253,7 +314,7 @@ export type PrismMode = 'ask' | 'create';
 export interface PrismRequest {
   mode: PrismMode;
   message: string;
-  userMap: UserMapNode;
+  userMap: UserMapState;
   existingAgents: AgentSpec[];
   existingGroups: GroupSpec[];
 }
@@ -272,9 +333,28 @@ export const DEFAULT_MODEL_PRESETS: ProviderModelPreset[] = [
   { id: 'deepseek-r1:8b', provider: 'ollama', label: 'DeepSeek R1 8B', recommended: true, installed: false }
 ];
 
+export function createEmptyUserMapTree(label: string, visibility: MemoryVisibility): UserMapNode {
+  return {
+    id: `${visibility}-root`,
+    label,
+    nodeType: 'root',
+    visibility,
+    children: []
+  };
+}
+
+export const EMPTY_USERMAP_STATE: UserMapState = {
+  privateTree: createEmptyUserMapTree('Private', 'private'),
+  publicTree: createEmptyUserMapTree('Public', 'public')
+};
+
+export const EMPTY_PUBLIC_USERMAP_TREE = EMPTY_USERMAP_STATE.publicTree;
+export const EMPTY_PRIVATE_USERMAP_TREE = EMPTY_USERMAP_STATE.privateTree;
+
 export const EMPTY_USERMAP_TREE: UserMapNode = {
   id: 'root',
   label: 'UserMap',
   nodeType: 'root',
-  children: []
+  visibility: 'private',
+  children: [EMPTY_USERMAP_STATE.publicTree, EMPTY_USERMAP_STATE.privateTree]
 };

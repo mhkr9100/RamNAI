@@ -4,7 +4,9 @@ import {
   ArtifactRecord,
   ChatThread,
   DEFAULT_MODEL_PRESETS,
-  EMPTY_USERMAP_TREE,
+  EMPTY_PRIVATE_USERMAP_TREE,
+  EMPTY_PUBLIC_USERMAP_TREE,
+  EMPTY_USERMAP_STATE,
   GroupSpec,
   LocalProfile,
   MemoryFact,
@@ -12,7 +14,9 @@ import {
   ProviderAuthSelection,
   PrismProviderOverrideSettings,
   TaskSpec,
+  TaskRunRecord,
   UserMapNode,
+  UserMapState,
   WorkItem
 } from '@supreme/shared';
 
@@ -32,11 +36,79 @@ export interface WorkspaceSnapshot {
   groups: GroupSpec[];
   chatThreads: ChatThread[];
   tasks: TaskSpec[];
+  taskRuns: TaskRunRecord[];
   workItems: WorkItem[];
   artifacts: ArtifactRecord[];
-  userMap: UserMapNode;
+  userMap: UserMapState;
+  publicUserMap: UserMapNode;
+  privateUserMap: UserMapNode;
   memoryFacts: MemoryFact[];
+  publicMemoryFacts: MemoryFact[];
+  privateMemoryFacts: MemoryFact[];
   models: ProviderModelPreset[];
+}
+
+type VisibilityScope = 'public' | 'private';
+
+function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: VisibilityScope): UserMapNode {
+  const visibility = node.visibility ?? inheritedVisibility;
+  return {
+    ...node,
+    ...(visibility ? { visibility } : {}),
+    children: node.children.map((child) => cloneUserMapNode(child, visibility))
+  };
+}
+
+function normalizeUserMapTree(tree: UserMapNode, visibility: VisibilityScope): UserMapNode {
+  const base = cloneUserMapNode(tree, visibility);
+  return {
+    ...base,
+    visibility,
+    children: base.children.map((child) => cloneUserMapNode(child, visibility))
+  };
+}
+
+function normalizeUserMapState(state: UserMapState): UserMapState {
+  return {
+    publicTree: normalizeUserMapTree(state.publicTree, 'public'),
+    privateTree: normalizeUserMapTree(state.privateTree, 'private')
+  };
+}
+
+function coerceUserMapState(value: unknown): UserMapState {
+  if (value && typeof value === 'object') {
+    const candidate = value as Partial<UserMapState> & Partial<UserMapNode> & { children?: UserMapNode[]; visibility?: VisibilityScope };
+    if (candidate.publicTree && candidate.privateTree) {
+      return normalizeUserMapState({
+        publicTree: candidate.publicTree,
+        privateTree: candidate.privateTree
+      });
+    }
+
+    if (Array.isArray(candidate.children)) {
+      const publicTree = candidate.children.find((child) => child.visibility === 'public') ?? EMPTY_PUBLIC_USERMAP_TREE;
+      const legacyPrivateChildren = candidate.children.filter((child) => child.visibility !== 'public');
+      const privateTree = candidate.children.find((child) => child.visibility === 'private')
+        ?? {
+          ...EMPTY_PRIVATE_USERMAP_TREE,
+          children: legacyPrivateChildren.length ? legacyPrivateChildren : EMPTY_PRIVATE_USERMAP_TREE.children
+        };
+      return normalizeUserMapState({ publicTree, privateTree });
+    }
+  }
+
+  return EMPTY_USERMAP_STATE;
+}
+
+function stateRoots(state: UserMapState) {
+  return {
+    publicRoot: state.publicTree,
+    privateRoot: state.privateTree
+  };
+}
+
+function memoryVisibility(fact: MemoryFact): VisibilityScope {
+  return fact.visibility ?? 'public';
 }
 
 export class SqliteStorage {
@@ -72,6 +144,12 @@ export class SqliteStorage {
       );
       CREATE TABLE IF NOT EXISTS work_items (
         id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS task_runs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
         payload TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS artifacts (
@@ -110,7 +188,11 @@ export class SqliteStorage {
 
     const userMapRow = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
     if (!userMapRow) {
-      this.db.prepare('INSERT INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(EMPTY_USERMAP_TREE));
+      this.db.prepare('INSERT INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(EMPTY_USERMAP_STATE));
+    } else {
+      const parsed = parseJson<unknown>(userMapRow.payload ?? '', EMPTY_USERMAP_STATE);
+      const normalized = coerceUserMapState(parsed);
+      this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(normalized));
     }
 
     const prismSettingsRow = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
@@ -129,14 +211,27 @@ export class SqliteStorage {
     return profile;
   }
 
-  getUserMap(): UserMapNode {
+  getUserMap(): UserMapState {
     const row = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
-    return parseJson(row?.payload, EMPTY_USERMAP_TREE);
+    return coerceUserMapState(parseJson(row?.payload, EMPTY_USERMAP_STATE));
   }
 
-  saveUserMap(tree: UserMapNode): UserMapNode {
-    this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(tree));
-    return tree;
+  saveUserMap(tree: UserMapState): UserMapState {
+    const normalized = normalizeUserMapState(tree);
+    this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(normalized));
+    return normalized;
+  }
+
+  getUserMapRoots(): { publicRoot: UserMapNode; privateRoot: UserMapNode } {
+    const state = this.getUserMap();
+    return stateRoots(state);
+  }
+
+  saveUserMapRoots(roots: { publicRoot: UserMapNode; privateRoot: UserMapNode }) {
+    return this.saveUserMap({
+      publicTree: roots.publicRoot,
+      privateTree: roots.privateRoot
+    });
   }
 
   listAgents(): AgentSpec[] {
@@ -210,6 +305,32 @@ export class SqliteStorage {
     this.db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
   }
 
+  listTaskRuns(taskId?: string): TaskRunRecord[] {
+    const rows = taskId
+      ? this.db.prepare('SELECT payload FROM task_runs WHERE task_id = ? ORDER BY updated_at DESC, id DESC').all(taskId) as Array<{ payload: string }>
+      : this.db.prepare('SELECT payload FROM task_runs ORDER BY updated_at DESC, id DESC').all() as Array<{ payload: string }>;
+    return rows.map((row) => parseJson(row.payload, null as never));
+  }
+
+  getTaskRun(runId: string): TaskRunRecord | null {
+    const row = this.db.prepare('SELECT payload FROM task_runs WHERE id = ?').get(runId) as { payload?: string } | undefined;
+    return row?.payload ? parseJson(row.payload, null) : null;
+  }
+
+  upsertTaskRun(run: TaskRunRecord): TaskRunRecord {
+    this.db.prepare('INSERT OR REPLACE INTO task_runs (id, task_id, updated_at, payload) VALUES (?, ?, ?, ?)').run(
+      run.id,
+      run.taskId,
+      run.updatedAt,
+      JSON.stringify(run)
+    );
+    return run;
+  }
+
+  deleteTaskRun(runId: string) {
+    this.db.prepare('DELETE FROM task_runs WHERE id = ?').run(runId);
+  }
+
   listWorkItems(): WorkItem[] {
     const rows = this.db.prepare('SELECT payload FROM work_items').all() as Array<{ payload: string }>;
     return rows
@@ -258,9 +379,12 @@ export class SqliteStorage {
     this.db.prepare('DELETE FROM artifacts WHERE id = ?').run(artifactId);
   }
 
-  listMemoryFacts(): MemoryFact[] {
+  listMemoryFacts(visibility?: VisibilityScope): MemoryFact[] {
     const rows = this.db.prepare('SELECT payload FROM memory_facts ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows
+      .map((row) => parseJson<MemoryFact>(row.payload, null as never))
+      .filter((fact) => fact !== null)
+      .filter((fact) => (visibility ? memoryVisibility(fact) === visibility : true));
   }
 
   upsertMemoryFacts(facts: MemoryFact[]): MemoryFact[] {
@@ -326,16 +450,24 @@ export class SqliteStorage {
   }
 
   getWorkspaceSnapshot(): WorkspaceSnapshot {
+    const userMap = this.getUserMap();
+    const { publicRoot, privateRoot } = stateRoots(userMap);
+    const memoryFacts = this.listMemoryFacts();
     return {
       profile: this.getProfile(),
       agents: this.listAgents(),
       groups: this.listGroups(),
       chatThreads: this.listChatThreads(),
       tasks: this.listTasks(),
+      taskRuns: this.listTaskRuns(),
       workItems: this.listWorkItems(),
       artifacts: this.listArtifacts(),
-      userMap: this.getUserMap(),
-      memoryFacts: this.listMemoryFacts(),
+      userMap,
+      publicUserMap: publicRoot,
+      privateUserMap: privateRoot,
+      memoryFacts,
+      publicMemoryFacts: memoryFacts.filter((fact) => memoryVisibility(fact) === 'public'),
+      privateMemoryFacts: memoryFacts.filter((fact) => memoryVisibility(fact) === 'private'),
       models: this.listModels()
     };
   }

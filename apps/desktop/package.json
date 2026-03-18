@@ -10,12 +10,14 @@
     "dev": "wait-on tcp:5180 && npm run build && cross-env SUPREME_RENDERER_URL=http://127.0.0.1:5180 electron dist/main.js",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
-    "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir"
+    "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "package:win-x64": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --win --x64"
   },
   "dependencies": {
     "@supreme/runtime": "file:../../packages/runtime",
     "@supreme/shared": "file:../../packages/shared",
-    "@supreme/storage": "file:../../packages/storage"
+    "@supreme/storage": "file:../../packages/storage",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
@@ -26,6 +28,7 @@
   "build": {
     "appId": "ai.raman.supreme",
     "productName": "Supreme Raman AI",
+    "icon": "assets/icon.png",
     "files": [
       "dist/**/*"
     ],
@@ -33,10 +36,15 @@
       "output": "release"
     },
     "mac": {
-      "target": ["dir"]
+      "target": [
+        "dir"
+      ]
     },
     "win": {
-      "target": ["dir"]
+      "target": [
+        "nsis",
+        "zip"
+      ]
     }
   }
 }

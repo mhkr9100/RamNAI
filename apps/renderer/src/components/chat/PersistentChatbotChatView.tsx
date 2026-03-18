@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Bot, FolderKanban, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { FolderKanban, Send, Trash2 } from 'lucide-react';
 import type { ChatTranscriptMessage, PersistentChatbotIdentity } from './types';
 
 export interface PersistentChatbotChatViewProps {
@@ -20,8 +20,8 @@ export function PersistentChatbotChatView({
   chatbot,
   transcript,
   busy = false,
-  emptyState = 'This chatbot has not been sent a message yet.',
-  placeholder = 'Ask this chatbot a direct question, hand it a context note, or tell it what to remember.',
+  emptyState = 'No messages yet.',
+  placeholder = 'Message this chatbot',
   sendLabel = 'Send',
   taskLabel = 'Task',
   onSendMessage,
@@ -32,21 +32,9 @@ export function PersistentChatbotChatView({
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
-    if (!draftSeed) {
-      return;
-    }
-    setDraft((current) => current ? `${current}\n\n${draftSeed.text}` : draftSeed.text);
+    if (!draftSeed) return;
+    setDraft((current) => (current ? `${current}\n\n${draftSeed.text}` : draftSeed.text));
   }, [draftSeed]);
-
-  const transcriptSummary = useMemo(() => {
-    const userCount = transcript.filter((message) => message.role === 'user').length;
-    const assistantCount = transcript.filter((message) => message.role === 'assistant').length;
-
-    return {
-      userCount,
-      assistantCount
-    };
-  }, [transcript]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -60,130 +48,97 @@ export function PersistentChatbotChatView({
   };
 
   return (
-    <section className="space-y-8">
-      <div className="rounded-[36px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_36%),linear-gradient(135deg,#0f1215,#090b0d)] p-8 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-start justify-between gap-6">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/45">
-              <Sparkles size={14} /> Chatbot
+    <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0d1012]">
+      <header className="h-14 border-b border-white/8 px-4">
+        <div className="flex h-full flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-sm">
+              🤖
             </div>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight text-white">{chatbot.name}</h1>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-white/60">
-              {chatbot.description || 'Persistent chatbot surface with a transcript and composer.'}
-            </p>
+            <div className="min-w-0">
+              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-white/38">{chatbot.role}</div>
+              <h1 className="mt-1 truncate text-sm font-black uppercase tracking-[0.14em] text-white">{chatbot.name}</h1>
+            </div>
           </div>
-          <div className="grid w-full gap-3 sm:w-[340px]">
-            {[
-              ['Role', chatbot.role],
-              ['Model', chatbot.modelLabel || 'Unspecified'],
-              ['Provider', chatbot.providerLabel || 'Unspecified']
-            ].map(([title, value]) => (
-              <div key={title} className="rounded-3xl border border-white/8 bg-white/5 p-4">
-                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">{title}</div>
-                <div className="mt-2 text-sm leading-6 text-white/66">{value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="mt-6 flex flex-wrap gap-2">
-          {chatbot.runtimeStatus ? <StatusBadge {...chatbot.runtimeStatus} /> : null}
-          {chatbot.threadStatus ? <StatusBadge {...chatbot.threadStatus} /> : null}
-        </div>
-      </div>
-
-      <section className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Transcript</div>
-            <div className="mt-2 text-2xl font-semibold text-white">Persistent conversation</div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {chatbot.runtimeStatus ? <StatusBadge {...chatbot.runtimeStatus} /> : null}
+            {chatbot.threadStatus ? <StatusBadge {...chatbot.threadStatus} /> : null}
             <button
               type="button"
               onClick={() => onResetThread?.()}
               disabled={!onResetThread || busy}
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
             >
               <Trash2 size={14} />
-              Reset Thread
+              Reset
             </button>
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
-              <Bot size={16} />
-            </div>
           </div>
         </div>
+      </header>
 
+      <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
         {transcript.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-            {busy ? 'Sending the first message through the local runtime…' : emptyState}
+          <div className="flex h-full min-h-[240px] items-center justify-center rounded-[24px] border border-dashed border-white/12 bg-black/20 px-6 text-center text-sm leading-6 text-white/45">
+            {busy ? 'Sending…' : emptyState}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2.5">
             {transcript.map((message) => (
               <article
                 key={message.id}
-                className={`rounded-[28px] border px-5 py-4 ${
+                className={`rounded-[24px] border px-4 py-3 ${
                   message.role === 'user'
-                    ? 'border-white/10 bg-black/35'
+                    ? 'ml-auto max-w-[78%] border-white/10 bg-white text-black'
                     : message.role === 'assistant'
-                      ? 'border-emerald-400/15 bg-emerald-400/10'
-                      : 'border-white/10 bg-white/5'
+                      ? 'max-w-[84%] border-white/10 bg-black/30'
+                      : 'max-w-[84%] border-white/10 bg-white/5'
                 }`}
               >
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/40">
+                <div className={`mb-2 flex flex-wrap items-center gap-2 text-[9px] font-black uppercase tracking-[0.16em] ${message.role === 'user' ? 'text-black/45' : 'text-white/38'}`}>
                   <span>{message.label || message.role}</span>
-                  {message.timestamp ? <span className="text-white/24">· {message.timestamp}</span> : null}
+                  {message.timestamp ? <span>{message.timestamp}</span> : null}
                 </div>
-                <div className="whitespace-pre-wrap text-sm leading-7 text-white/78">{message.text}</div>
+                <div className={`whitespace-pre-wrap text-sm leading-6 ${message.role === 'user' ? 'text-black/82' : 'text-white/78'}`}>{message.text}</div>
               </article>
             ))}
           </div>
         )}
-      </section>
+      </div>
 
-      <section className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-        <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Composer</div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+      <form onSubmit={handleSubmit} className="border-t border-white/8 px-4 pb-4 pt-3">
+        <div className="mx-auto max-w-[46rem]">
+          <div className="flex items-end gap-2.5 rounded-[26px] border border-white/10 bg-[#17191d] px-3 py-2.5">
+            <button
+              type="button"
+              onClick={onTaskClick}
+              disabled={!onTaskClick || busy}
+              className="mb-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 text-white/55 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              title={taskLabel}
+            >
+              <FolderKanban size={15} />
+            </button>
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              className="min-h-[148px] flex-1 rounded-[28px] border border-white/10 bg-black/25 px-5 py-5 text-sm leading-7 text-white outline-none transition focus:border-white/25"
+              rows={1}
+              className="max-h-[100px] min-h-[42px] flex-1 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-white outline-none placeholder:text-white/28"
               placeholder={placeholder}
             />
-            <div className="flex gap-3 xl:w-[220px] xl:flex-col">
-              <button
-                type="button"
-                onClick={onTaskClick}
-                disabled={!onTaskClick || busy}
-                className="inline-flex flex-1 items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-white/72 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                title={onTaskClick ? taskLabel : 'Task actions are not wired yet.'}
-              >
-                <FolderKanban size={15} />
-                {taskLabel}
-              </button>
-              <button
-                type="submit"
-                disabled={busy || !draft.trim()}
-                className="inline-flex flex-1 items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busy ? 'Sending...' : sendLabel}
-                <Send size={15} />
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={busy || !draft.trim()}
+              className={`mb-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
+                draft.trim()
+                  ? 'bg-white text-black hover:bg-white/90'
+                  : 'bg-white/5 text-white/25'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+              title={sendLabel}
+            >
+              <Send size={15} />
+            </button>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm leading-6 text-white/48">
-            <div>
-              {transcriptSummary.userCount} user message{transcriptSummary.userCount === 1 ? '' : 's'} and {transcriptSummary.assistantCount}{' '}
-              assistant message{transcriptSummary.assistantCount === 1 ? '' : 's'} in this thread.
-            </div>
-            <div className="inline-flex items-center gap-2">
-              <RotateCcw size={14} />
-              {busy ? 'Current local run in progress.' : 'One persistent thread per chatbot for this wave.'}
-            </div>
-          </div>
-        </form>
-      </section>
+        </div>
+      </form>
     </section>
   );
 }
@@ -195,9 +150,5 @@ function StatusBadge({ label, tone }: NonNullable<PersistentChatbotIdentity['run
       ? 'border-sky-400/20 bg-sky-400/10 text-sky-200'
       : 'border-amber-400/20 bg-amber-400/10 text-amber-200';
 
-  return (
-    <div className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] ${className}`}>
-      {label}
-    </div>
-  );
+  return <div className={`rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${className}`}>{label}</div>;
 }

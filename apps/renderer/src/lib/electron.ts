@@ -14,7 +14,7 @@ import type {
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
-  UserMapNode,
+  UserMapState,
   WorkItem
 } from '@supreme/shared';
 
@@ -28,7 +28,7 @@ export interface WorkspaceSnapshot {
   tasks: TaskSpec[];
   workItems: WorkItem[];
   artifacts: ArtifactRecord[];
-  userMap: UserMapNode;
+  userMap: UserMapState;
   memoryFacts: MemoryFact[];
   models: ProviderModelPreset[];
   runtime: {
@@ -44,18 +44,23 @@ export interface TaskCreateInput {
   objective: string;
   mode: TaskSpec['mode'];
   target: TaskSpec['target'];
-  providerOverride?: {
-    provider: ProviderId;
-    modelId: string;
+  schedule: {
+    kind: TaskSpec['schedule']['kind'];
+    runAtLocal?: string;
+    preset?: 'daily' | 'weekly' | 'monthly';
+    time?: string;
+    expression?: string;
   };
-  schedule: TaskSpec['schedule'];
-  outputPolicy: {
-    saveResult: true;
-    artifactMode: TaskSpec['outputPolicy']['artifactMode'];
-    notificationMode: TaskSpec['outputPolicy']['notificationMode'];
-    defaultSendToChat: boolean;
+  output?: {
+    artifactMode?: TaskSpec['outputPolicy']['artifactMode'];
+    notificationMode?: TaskSpec['outputPolicy']['notificationMode'];
+    defaultSendToChat?: boolean;
   };
-  council?: TaskSpec['council'];
+  modelOverrideId?: string;
+  council?: {
+    workerModelIds?: string[];
+    judgeModelId?: string;
+  };
 }
 
 export interface AgentChatInput {
@@ -82,15 +87,15 @@ export interface SupremeDesktopApi {
     getSnapshot: () => Promise<WorkspaceSnapshot>;
   };
   userMap: {
-    save: (tree: UserMapNode) => Promise<UserMapNode>;
-    syncMemories: () => Promise<{ tree: UserMapNode; facts: MemoryFact[] }>;
+    save: (tree: UserMapState) => Promise<UserMapState>;
+    syncMemories: () => Promise<{ tree: UserMapState; facts: MemoryFact[] }>;
   };
   groups: {
     upsert: (group: GroupSpec) => Promise<GroupSpec>;
     delete: (groupId: string) => Promise<{ ok: true }>;
   };
   prism: {
-    sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapNode; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<PrismReply>;
+    sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapState; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<PrismReply>;
   };
   chat: {
     sendAgentMessage: (input: AgentChatInput) => Promise<ChatSendResult>;

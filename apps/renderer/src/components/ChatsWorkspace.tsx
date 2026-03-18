@@ -89,6 +89,8 @@ export function ChatsWorkspace({
       role: entry.role,
       text: entry.text,
       ...(entry.authorLabel ? { label: entry.authorLabel } : {}),
+      ...(entry.mentions?.length ? { mentions: entry.mentions } : {}),
+      ...(entry.route ? { route: entry.route } : {}),
       timestamp: new Date(entry.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     })),
     [selectedThread]
@@ -107,33 +109,37 @@ export function ChatsWorkspace({
   }, [selectedGroup, snapshot.agents]);
 
   const runtimeStatus = snapshot.runtime.runtimeBridgeReady
-    ? { label: 'Runtime bridge ready', tone: 'ready' as const }
+    ? { label: 'Ready', tone: 'ready' as const }
     : snapshot.runtime.ollamaReady
-      ? { label: 'Ollama-ready', tone: 'ready' as const }
-      : { label: 'Runtime needed', tone: 'warning' as const };
+      ? { label: 'Local', tone: 'ready' as const }
+      : { label: 'Check', tone: 'warning' as const };
 
   const agentThreadStatus = busy
     ? { label: 'Sending', tone: 'active' as const }
     : transcript.length > 0
-      ? { label: 'Thread active', tone: 'active' as const }
-      : { label: 'Thread empty', tone: 'warning' as const };
+      ? { label: 'Active', tone: 'active' as const }
+      : { label: 'Empty', tone: 'warning' as const };
 
   const groupThreadStatus = busy
-    ? { label: 'Routing mentions', tone: 'active' as const }
+    ? { label: 'Sending', tone: 'active' as const }
     : transcript.length > 0
-      ? { label: 'Thread active', tone: 'active' as const }
-      : { label: 'Thread empty', tone: 'warning' as const };
+      ? { label: 'Active', tone: 'active' as const }
+      : { label: 'Empty', tone: 'warning' as const };
 
   return (
-    <div className="grid min-h-full gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
-      <aside className="rounded-[32px] border border-white/10 bg-white/5 p-5">
-        <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
-        <div className="mt-4 space-y-6">
+    <div className="grid min-h-full gap-3 xl:grid-cols-[248px_minmax(0,1fr)]">
+      <aside className="overflow-hidden rounded-[28px] border border-white/10 bg-[#0d1012]">
+        <div className="h-14 border-b border-white/8 px-4">
+          <div className="flex h-full items-center">
+            <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
+          </div>
+        </div>
+        <div className="space-y-4 p-3">
           <EntityListSection<AgentSpec>
             title="Chatbots"
             items={snapshot.agents}
             selectedId={selectedTarget?.type === 'agent' ? selectedTarget.id : null}
-            emptyText="No chatbots yet. Ask Prism to create one first."
+            emptyText="No chatbots."
             getLabel={(agent) => agent.name}
             getBody={(agent) => agent.description}
             icon={<Bot size={16} />}
@@ -146,7 +152,7 @@ export function ChatsWorkspace({
             title="Groups"
             items={snapshot.groups}
             selectedId={selectedTarget?.type === 'group' ? selectedTarget.id : null}
-            emptyText="No groups yet. Create one in Spectrum."
+            emptyText="No groups."
             getLabel={(group) => group.name}
             getBody={(group) => group.description || `${group.memberAgentIds.length} members`}
             icon={<BrainCircuit size={16} />}
@@ -158,16 +164,16 @@ export function ChatsWorkspace({
         </div>
       </aside>
 
-      <div className="min-w-0 space-y-6">
+      <div className="min-w-0 space-y-4">
         {!selectedTarget ? (
-          <div className="flex min-h-[720px] items-center justify-center rounded-[32px] border border-white/10 bg-white/5 px-8 text-center text-sm leading-7 text-white/45">
-            <div className="max-w-2xl">
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
-              <div className="mt-3 text-2xl font-semibold text-white">Select a chatbot or group to begin.</div>
-              <div className="mt-4">
+          <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center rounded-[28px] border border-white/10 bg-[#0d1012] px-8 text-center">
+            <div className="max-w-md">
+              <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
+              <div className="mt-3 text-lg font-semibold text-white">Open a chat.</div>
+              <div className="mt-3 text-sm leading-6 text-white/45">
                 {snapshot.agents.length === 0 && snapshot.groups.length === 0
-                  ? 'No chats are available yet. Create a chatbot in Prism and it will appear here automatically.'
-                  : 'Choose a thread from the left rail or deep-link into one from Spectrum or Work.'}
+                  ? 'Nothing here yet.'
+                  : 'Pick one from the left.'}
               </div>
             </div>
           </div>
@@ -190,12 +196,12 @@ export function ChatsWorkspace({
               onTaskClick={() => setShowTaskComposer((current) => !current)}
               {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
               {...(draftSeed && draftSeed.target.type === 'agent' && draftSeed.target.id === selectedAgent.id ? { draftSeed } : {})}
-              emptyState={snapshot.runtime.available ? 'Start the first local conversation with this chatbot.' : 'The local runtime is not available yet. Open Settings, check the runtime, then send the first message.'}
+              emptyState={snapshot.runtime.available ? 'Start the chat.' : 'Check Settings if messages are not sending.'}
             />
             {showTaskComposer ? (
               <TaskComposerCard
-                title={`Schedule ${selectedAgent.name}`}
-                subtitle="Create a dedicated autonomous run against this chatbot’s local spec. The result will land in Work."
+                title={`New Task · ${selectedAgent.name}`}
+                subtitle=""
                 target={{ type: 'agent', agentId: selectedAgent.id }}
                 defaultMode="task"
                 models={snapshot.models}
@@ -212,6 +218,7 @@ export function ChatsWorkspace({
               memberCount: selectedGroup.memberAgentIds.length,
               runtimeStatus,
               threadStatus: groupThreadStatus,
+              routingMode: selectedGroup.routingMode,
               ...(selectedGroup.description ? { description: selectedGroup.description } : {})
             }}
             members={mentionableMembers}
@@ -219,8 +226,8 @@ export function ChatsWorkspace({
             busy={busy}
             onSendMessage={(message) => onSendGroupMessage({ groupId: selectedGroup.id, message })}
             {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
-            emptyState={snapshot.runtime.available ? 'Mention one or more member chatbots with @chatbot-name to route the message manually.' : 'The local runtime is not available yet. Open Settings before sending the first group message.'}
-            placeholder="Message the group. Use @chatbot-name to route replies."
+            emptyState={snapshot.runtime.available ? (selectedGroup.routingMode === 'auto' ? 'Message the group. Routing will pick the best fit.' : 'Route with @mentions.') : 'Check Settings if messages are not sending.'}
+            placeholder={selectedGroup.routingMode === 'auto' ? 'Message the group' : 'Message the group with @mentions'}
           />
         ) : null}
       </div>
@@ -271,13 +278,13 @@ function EntityListSection<T extends { id: string }>({
 }) {
   return (
     <div>
-      <div className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{title}</div>
+      <div className="mb-2 px-1.5 text-[8px] font-black uppercase tracking-[0.26em] text-white/24">{title}</div>
       {items.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-4 py-6 text-sm leading-7 text-white/45">
+        <div className="rounded-2xl border border-dashed border-white/12 bg-black/20 px-3 py-4 text-xs leading-5 text-white/45">
           {emptyText}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-0.5">
           {items.map((item) => {
             const active = item.id === selectedId;
             return (
@@ -285,15 +292,15 @@ function EntityListSection<T extends { id: string }>({
                 key={item.id}
                 type="button"
                 onClick={() => onSelect(item)}
-                className={`w-full rounded-[24px] border px-4 py-4 text-left transition ${active ? 'border-white/18 bg-white text-black' : 'border-white/10 bg-black/20 text-white hover:border-white/18 hover:bg-white/6'}`}
+                className={`w-full rounded-xl border px-3 py-2 text-left transition ${active ? 'border-white/12 bg-white text-black' : 'border-transparent bg-transparent text-white hover:border-white/10 hover:bg-white/5'}`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`rounded-2xl border px-3 py-3 ${active ? 'border-black/10 bg-black/5 text-black' : 'border-white/10 bg-white/5 text-white/60'}`}>
+                  <div className={`rounded-lg border px-2 py-2 ${active ? 'border-black/10 bg-black/5 text-black' : 'border-white/10 bg-white/5 text-white/50'}`}>
                     {icon}
                   </div>
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold">{getLabel(item)}</div>
-                    <div className={`mt-1 text-xs leading-6 ${active ? 'text-black/65' : 'text-white/50'}`}>{getBody(item)}</div>
+                    <div className="truncate text-[10px] font-black uppercase tracking-[0.08em]">{getLabel(item)}</div>
+                    <div className={`mt-0.5 line-clamp-2 text-[10px] leading-4 ${active ? 'text-black/65' : 'text-white/42'}`}>{getBody(item)}</div>
                   </div>
                 </div>
               </button>

@@ -39,10 +39,10 @@ interface SettingsViewProps {
   onSavePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
 }
 
-const sections: Array<{ id: SettingsSection; label: string; body: string }> = [
-  { id: 'runtime', label: 'Runtime', body: 'Inspect Ollama availability and install the default local models.' },
-  { id: 'providers', label: 'Providers', body: 'Store remote provider profiles locally using Raman-compatible auth files.' },
-  { id: 'prism', label: 'Prism', body: 'Review how Prism will use local and remote providers in this desktop build.' }
+const sections: Array<{ id: SettingsSection; label: string }> = [
+  { id: 'runtime', label: 'Runtime' },
+  { id: 'providers', label: 'Providers' },
+  { id: 'prism', label: 'Prism' }
 ];
 
 export function SettingsView({
@@ -147,30 +147,16 @@ export function SettingsView({
   };
 
   return (
-    <div className="space-y-8">
-      <section className="rounded-[36px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_36%),linear-gradient(135deg,#0f1215,#090b0d)] p-8 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-start justify-between gap-6">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-white/45">
-              <Wrench size={14} /> Settings
-            </div>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight text-white">Desktop runtime controls, provider profiles, and Prism readiness.</h1>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-white/60">
-              This surface stays local. Provider metadata comes from desktop IPC, remote secrets are stored in local auth files, and the app keeps Ollama as the default execution path.
-            </p>
-          </div>
-          <div className="grid w-full gap-3 sm:w-[340px]">
-            {[
-              ['Runtime', runtimeReady ? 'Desktop runtime is reachable.' : 'Desktop runtime needs attention.'],
-              ['Installed Models', `${installedModelCount} local model${installedModelCount === 1 ? '' : 's'} ready.`],
-              ['Remote Profiles', `${providerProfiles.length} saved profile${providerProfiles.length === 1 ? '' : 's'} in local auth storage.`]
-            ].map(([title, body]) => (
-              <div key={title} className="rounded-3xl border border-white/8 bg-white/5 p-4">
-                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">{title}</div>
-                <div className="mt-2 text-sm leading-6 text-white/66">{body}</div>
-              </div>
-            ))}
-          </div>
+    <div className="space-y-6">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-[#0d1012] px-6 py-5">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Settings</div>
+          <h1 className="mt-2 text-2xl font-semibold text-white">Preferences</h1>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <InfoChip label="Runtime" value={runtimeReady ? 'Ready' : 'Check'} />
+          <InfoChip label="Models" value={`${installedModelCount}`} />
+          <InfoChip label="Profiles" value={`${providerProfiles.length}`} />
         </div>
       </section>
 
@@ -182,11 +168,10 @@ export function SettingsView({
               key={section.id}
               type="button"
               onClick={() => onSelectSection(section.id)}
-              className={`rounded-[28px] border p-5 text-left transition ${active ? 'border-white/20 bg-white text-black shadow-[0_20px_60px_rgba(255,255,255,0.08)]' : 'border-white/10 bg-white/5 text-white hover:border-white/18 hover:bg-white/8'}`}
+              className={`rounded-2xl border p-4 text-left transition ${active ? 'border-white/20 bg-white text-black shadow-[0_20px_60px_rgba(255,255,255,0.08)]' : 'border-white/10 bg-white/5 text-white hover:border-white/18 hover:bg-white/8'}`}
             >
               <div className="text-[10px] font-black uppercase tracking-[0.22em] opacity-60">{section.label}</div>
-              <div className="mt-3 text-xl font-semibold">{section.label}</div>
-              <p className="mt-3 text-sm leading-7 opacity-75">{section.body}</p>
+              <div className="mt-2 text-sm font-black uppercase tracking-[0.14em]">{section.label}</div>
             </button>
           );
         })}
@@ -198,7 +183,7 @@ export function SettingsView({
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Ollama Runtime</div>
-                <div className="mt-2 text-2xl font-semibold text-white">Local model service</div>
+                <div className="mt-2 text-2xl font-semibold text-white">Models</div>
               </div>
               <button
                 type="button"
@@ -265,7 +250,7 @@ export function SettingsView({
           <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
             <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">First-run install</div>
             <div className="rounded-3xl border border-white/8 bg-black/20 p-5 text-sm leading-7 text-white/62">
-              Raman AI manages the runtime locally and can install the three recommended Ollama models into the workspace during setup. No cloud backend is involved here.
+              Default models
             </div>
             <div className="mt-4 space-y-3">
               {models.map((model) => (
@@ -294,7 +279,7 @@ export function SettingsView({
             <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Saved provider profiles</div>
             {providerProfiles.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-                No remote provider profiles are saved yet. Add one on the right and Raman AI will keep the secret refs in local auth files, not SQLite.
+                No provider profiles yet.
               </div>
             ) : (
               <div className="space-y-3">
@@ -304,7 +289,7 @@ export function SettingsView({
                       <div>
                         <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{profile.provider}</div>
                         <div className="mt-2 text-lg font-semibold text-white">{profile.label}</div>
-                        <div className="mt-2 text-sm leading-7 text-white/58">{profile.description || 'No description saved.'}</div>
+                        <div className="mt-2 text-sm leading-7 text-white/58">{profile.description || 'No description.'}</div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {providerSelections[profile.provider as RemoteProviderId] === profile.id ? (
@@ -391,7 +376,7 @@ export function SettingsView({
                 <textarea
                   ref={descriptionRef}
                   className="min-h-[112px] w-full rounded-3xl border border-white/10 bg-black/25 px-4 py-4 text-sm leading-7 text-white outline-none"
-                  placeholder="Used for higher-quality remote reasoning when local Ollama is not enough."
+                  placeholder="Optional description"
                 />
               </label>
               <label className="space-y-2">
@@ -401,7 +386,7 @@ export function SettingsView({
                   type="password"
                   autoComplete="off"
                   className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                  placeholder="Paste an API key if this provider uses one."
+                  placeholder="API key"
                 />
               </label>
               <label className="space-y-2">
@@ -411,12 +396,12 @@ export function SettingsView({
                   type="password"
                   autoComplete="off"
                   className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                  placeholder="Optional token if this provider uses bearer auth."
+                  placeholder="Token"
                 />
               </label>
               <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/70">
                 <input ref={defaultRef} type="checkbox" className="h-4 w-4 rounded border-white/20 bg-transparent" />
-                Mark this as the default profile for the selected provider.
+                Set as default
               </label>
               {formError ? <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{formError}</div> : null}
               <button
@@ -435,11 +420,11 @@ export function SettingsView({
       {activeSection === 'prism' ? (
         <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
           <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-            <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Prism execution policy</div>
+            <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Prism</div>
             <div className="space-y-3">
-              <InfoCard label="Current default" value={prismOverride ? `${prismOverride.provider} · ${prismOverride.modelId}` : 'Local Ollama first'} />
-              <InfoCard label="Remote fallback" value={providerProfiles.length ? 'Profiles are saved locally and can be activated per provider.' : 'No remote profiles saved yet.'} />
-              <InfoCard label="Active remote profiles" value={REMOTE_PROVIDER_LABELS.map((provider) => `${provider.label}: ${providerSelections[provider.id] ?? 'none'}`).join(' • ')} />
+              <InfoCard label="Default" value={prismOverride ? `${prismOverride.provider} · ${prismOverride.modelId}` : 'Automatic'} />
+              <InfoCard label="Profiles" value={providerProfiles.length ? 'Available' : 'None'} />
+              <InfoCard label="Active" value={REMOTE_PROVIDER_LABELS.map((provider) => `${provider.label}: ${providerSelections[provider.id] ?? 'none'}`).join(' • ')} />
             </div>
           </div>
           <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
@@ -449,7 +434,7 @@ export function SettingsView({
             </div>
             <form onSubmit={handleSavePrismOverride} className="space-y-4">
               <div className="rounded-3xl border border-white/8 bg-black/20 p-5 text-sm leading-7 text-white/62">
-                Leave Prism in local-first mode for the default behavior. Save an override only if you want Prism itself to prefer a fixed provider and model.
+                Choose a default only if you want to pin Prism to one model.
               </div>
               <label className="space-y-2">
                 <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Provider</span>
@@ -479,7 +464,7 @@ export function SettingsView({
                     onChange={(event) => setOverrideModelId(event.target.value)}
                     className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
                   >
-                    {installedModels.length === 0 ? <option value="">No installed local models yet</option> : null}
+                    {installedModels.length === 0 ? <option value="">No installed local models</option> : null}
                     {installedModels.map((model) => (
                       <option key={model.id} value={model.id}>{model.label} · {model.id}</option>
                     ))}
@@ -511,7 +496,7 @@ export function SettingsView({
                   onClick={() => void onSavePrismOverride(null)}
                   className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                 >
-                  Return To Local-First
+                  Clear Override
                 </button>
               </div>
             </form>
@@ -527,6 +512,14 @@ const REMOTE_PROVIDER_LABELS: Array<{ id: RemoteProviderId; label: string }> = [
   { id: 'anthropic', label: 'Anthropic' },
   { id: 'google', label: 'Google' }
 ];
+
+function InfoChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">
+      {label} · {value}
+    </div>
+  );
+}
 
 function resolveModelTone(model: { status?: string; installed?: boolean }) {
   if ('status' in model) {

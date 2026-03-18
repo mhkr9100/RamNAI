@@ -1,3 +1,5 @@
+import type { ChatRouteMetadata } from '@supreme/shared';
+
 export type ChatMessageRole = 'user' | 'assistant' | 'system';
 
 export type ChatStatusTone = 'ready' | 'active' | 'warning';
@@ -13,6 +15,8 @@ export interface ChatTranscriptMessage {
   text: string;
   label?: string;
   timestamp?: string;
+  mentions?: string[];
+  route?: ChatRouteMetadata;
 }
 
 export interface PersistentChatbotIdentity {
@@ -41,4 +45,5 @@ export interface GroupChatIdentity {
   memberCount?: number;
   runtimeStatus?: ChatStatusBadge;
   threadStatus?: ChatStatusBadge;
+  routingMode?: 'manual' | 'auto';
 }

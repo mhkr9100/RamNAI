@@ -12,13 +12,14 @@ import {
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
-  UserMapNode
+  UserMapNode,
+  UserMapState
 } from '@supreme/shared';
+import { EXTERNAL_RUNTIME_CLI } from './runtime-compat.js';
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_API = 'http://127.0.0.1:11434/api';
-// External runtime bridge binary. Kept here so the rest of the app stays vendor-neutral.
-const COMPAT_RUNTIME_CLI = 'openclaw';
+// External runtime bridge binary (kept vendor-neutral at call sites).
 const RUNTIME_BRIDGE_MODEL_ID = 'runtime-bridge';
 const ALLOWED_MEMORY_CATEGORIES: MemoryCategory[] = [
   'Identity',
@@ -57,7 +58,7 @@ export interface TaskExecutionResult {
 }
 
 export interface TaskExecutionContext {
-  userMap: UserMapNode;
+  userMap: UserMapState;
   agents: AgentSpec[];
   groups: GroupSpec[];
 }
@@ -79,6 +80,7 @@ interface RuntimeBridgeTaskResult {
 
 export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
+  private runtimeBridgeAvailable: boolean | null = null;
 
   setWorkspaceRoot(rootDir: string) {
     this.workspaceRoot = rootDir;
@@ -86,7 +88,7 @@ export class LocalRuntimeAdapter {
 
   async getStatus(): Promise<RuntimeStatus> {
     const ollamaReady = await this.isOllamaReachable();
-    const runtimeBridgeReady = await this.hasBinary(COMPAT_RUNTIME_CLI, ['--version']);
+    const runtimeBridgeReady = await this.isRuntimeBridgeAvailable();
 
     return {
       available: ollamaReady || runtimeBridgeReady,
@@ -259,30 +261,42 @@ export class LocalRuntimeAdapter {
       return null;
     }
 
-    const hasRuntimeBridge = await this.hasBinary(COMPAT_RUNTIME_CLI, ['--version']);
+    const hasRuntimeBridge = await this.isRuntimeBridgeAvailable();
     if (!hasRuntimeBridge) {
       return null;
     }
 
     try {
-      const { stdout } = await execFileAsync(COMPAT_RUNTIME_CLI, [
+      const { stdout, stderr } = await execFileAsync(EXTERNAL_RUNTIME_CLI, [
         'run',
         '--workspace',
         this.workspaceRoot,
         '--request',
         JSON.stringify(payload)
       ]);
-      const trimmed = stdout.trim();
+      const combined = `${stdout ?? ''}\n${stderr ?? ''}`.trim();
+      const trimmed = combined.trim();
       if (!trimmed) {
         return null;
       }
-      return JSON.parse(trimmed) as T;
+
+      const parsed = this.parseJsonObject<T>(trimmed);
+      return parsed;
     } catch (error) {
       // If the external runtime bridge fails for any reason, fall back to the current Ollama path.
       // eslint-disable-next-line no-console
       console.warn('[runtime] External runtime bridge failed, falling back to Ollama path:', error);
       return null;
     }
+  }
+
+  private async isRuntimeBridgeAvailable(): Promise<boolean> {
+    if (this.runtimeBridgeAvailable !== null) {
+      return this.runtimeBridgeAvailable;
+    }
+    const available = await this.hasBinary(EXTERNAL_RUNTIME_CLI, ['--version']);
+    this.runtimeBridgeAvailable = available;
+    return available;
   }
 
   async extractMemoryFacts(source: MemoryFact['source'], sourceRef: string, text: string, existingFacts: MemoryFact[]): Promise<MemoryFact[]> {
@@ -323,6 +337,7 @@ export class LocalRuntimeAdapter {
         label,
         value,
         confidence,
+        visibility: existing?.visibility ?? 'private',
         source,
         sourceRef,
         createdAt: existing?.createdAt ?? now,
@@ -422,7 +437,7 @@ export class LocalRuntimeAdapter {
       'You are Prism inside Supreme Raman AI.',
       'Create a single JSON object representing a local-execution chatbot spec.',
       'Return JSON only. No markdown. No prose.',
-      'Respect these runtime rules: local-first, Ollama-first, manual @mention groups, scheduled tasks supported, recurring tasks supported, council eligible when useful.'
+      'Respect these runtime rules: local-first, Ollama-first, group chats may auto-route by default, explicit @mentions pin routing, scheduled tasks supported, recurring tasks supported, council eligible when useful.'
     ].join(' ');
   }
 
@@ -679,7 +694,7 @@ export class LocalRuntimeAdapter {
       .replace(/\b\w/g, (char) => char.toUpperCase()) + (variant ? ` ${variant}` : '');
   }
 
-  private formatUserMapSummary(root: UserMapNode) {
+  private formatUserMapTree(root: UserMapNode) {
     const lines: string[] = [];
     const visit = (node: UserMapNode, depth: number) => {
       const prefix = '  '.repeat(depth);
@@ -691,7 +706,20 @@ export class LocalRuntimeAdapter {
     };
 
     visit(root, 0);
-    return `UserMap:\n${lines.join('\n')}`;
+    return lines.join('\n');
+  }
+
+  private formatUserMapSummary(userMap: UserMapState) {
+    const sections = [
+      'UserMap:',
+      '',
+      'Public:',
+      this.formatUserMapTree(userMap.publicTree),
+      '',
+      'Private:',
+      this.formatUserMapTree(userMap.privateTree)
+    ];
+    return sections.join('\n');
   }
 
   private parseJsonObject<T>(value: string): T {

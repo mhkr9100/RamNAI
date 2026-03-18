@@ -11,6 +11,7 @@ import type {
   ArtifactMode,
   ArtifactRecord,
   ChatMessage,
+  ChatRouteMetadata,
   ChatThread,
   GroupSpec,
   LocalProfile,
@@ -23,7 +24,9 @@ import type {
   ProviderAuthSelection,
   ProviderId,
   TaskSpec,
+  TaskRunRecord,
   UserMapNode,
+  UserMapState,
   WorkItem
 } from '@supreme/shared';
 import { SqliteStorage } from '@supreme/storage';
@@ -39,6 +42,16 @@ let storage: SqliteStorage;
 let schedulerHandle: NodeJS.Timeout | null = null;
 let processingDueTasks = false;
 const ollamaModelState = new Map<string, OllamaModelRuntimeState>();
+const DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD = 0.55;
+const USER_MAP_VISIBILITY_ORDER: Array<'public' | 'private'> = ['public', 'private'];
+
+interface GroupRoutingDecision {
+  agent: AgentSpec;
+  mode: 'mention' | 'auto';
+  confidence: number;
+  pinnedMentions: string[];
+  hintMessage?: string;
+}
 
 interface WorkspacePaths {
   root: string;
@@ -55,10 +68,23 @@ interface TaskCreateInput {
   objective: string;
   mode: TaskSpec['mode'];
   target: TaskSpec['target'];
-  providerOverride?: TaskSpec['providerOverride'];
-  schedule: TaskSpec['schedule'];
-  outputPolicy: TaskSpec['outputPolicy'];
-  council?: TaskSpec['council'];
+  schedule: {
+    kind: TaskSpec['schedule']['kind'];
+    runAtLocal?: string;
+    preset?: 'daily' | 'weekly' | 'monthly';
+    time?: string;
+    expression?: string;
+  };
+  output?: {
+    artifactMode?: TaskSpec['outputPolicy']['artifactMode'];
+    notificationMode?: TaskSpec['outputPolicy']['notificationMode'];
+    defaultSendToChat?: boolean;
+  };
+  modelOverrideId?: string;
+  council?: {
+    workerModelIds?: string[];
+    judgeModelId?: string;
+  };
 }
 
 interface AgentChatInput {
@@ -97,6 +123,175 @@ interface OllamaModelRuntimeState {
   progress?: number;
   phase?: string;
   lastError?: string;
+}
+
+function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: 'public' | 'private'): UserMapNode {
+  const visibility = node.visibility ?? inheritedVisibility;
+  return {
+    ...node,
+    ...(visibility ? { visibility } : {}),
+    children: node.children.map((child) => cloneUserMapNode(child, visibility))
+  };
+}
+
+function normalizeUserMapTree(tree: UserMapNode, visibility: 'public' | 'private'): UserMapNode {
+  return cloneUserMapNode(tree, visibility);
+}
+
+function normalizeUserMapState(state: UserMapState): UserMapState {
+  return {
+    publicTree: normalizeUserMapTree(state.publicTree, 'public'),
+    privateTree: normalizeUserMapTree(state.privateTree, 'private')
+  };
+}
+
+function buildRouteMetadata(input: {
+  mode: 'direct' | 'mention' | 'auto' | 'hint';
+  targetType: 'agent' | 'group';
+  targetIds: string[];
+  confidence?: number;
+  reason?: string;
+  pinnedMentions?: string[];
+}): ChatRouteMetadata {
+  return {
+    mode: input.mode,
+    targetType: input.targetType,
+    targetIds: input.targetIds,
+    ...(input.targetIds[0] ? { chosenAgentId: input.targetIds[0] } : {}),
+    ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+    reason: input.reason ?? 'Routing decision',
+    ...(input.pinnedMentions?.length ? { pinnedMentions: input.pinnedMentions } : {})
+  };
+}
+
+function tokenizeRoutingText(value: string) {
+  return value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+}
+
+function normalizeGroupAutoRouting(group: GroupSpec): GroupSpec {
+  const enabled = group.autoRouting?.enabled ?? group.routingMode !== 'manual';
+  const lowConfidenceThreshold = group.autoRouting?.lowConfidenceThreshold ?? group.autoRouteThreshold ?? DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD;
+  return {
+    ...group,
+    routingMode: enabled ? 'auto' : 'manual',
+    autoRouteThreshold: lowConfidenceThreshold,
+    autoRouting: {
+      enabled,
+      lowConfidenceThreshold,
+      ...(group.autoRouting?.hintMessage ? { hintMessage: group.autoRouting.hintMessage } : {})
+    }
+  };
+}
+
+function normalizeGroupSpecs(groups: GroupSpec[]) {
+  return groups.map((group) => normalizeGroupAutoRouting(group));
+}
+
+function resolveMentionedAgents(message: string, memberAgents: AgentSpec[]) {
+  const mentions = [...message.matchAll(/@([a-zA-Z0-9._-]+)/g)].map((match) => match[1] ?? '').filter(Boolean).map((mention) => mention.toLowerCase());
+  if (mentions.length === 0) {
+    return [] as AgentSpec[];
+  }
+
+  const resolved: AgentSpec[] = [];
+  for (const mention of mentions) {
+    const matched = memberAgents.find((agent) => {
+      const slug = slugify(agent.name);
+      const compact = agent.name.toLowerCase().replace(/\s+/g, '');
+      return mention === slug || mention === compact || mention === agent.id.toLowerCase();
+    });
+
+    if (matched && !resolved.some((agent) => agent.id === matched.id)) {
+      resolved.push(matched);
+    }
+  }
+
+  return resolved.slice(0, 1);
+}
+
+function scoreGroupAgent(agent: AgentSpec, group: GroupSpec, message: string) {
+  const tokens = new Set(tokenizeRoutingText([
+    group.name,
+    group.description ?? '',
+    agent.name,
+    agent.description,
+    agent.persona.role,
+    agent.persona.mission,
+    agent.persona.systemInstructions,
+    ...agent.skills,
+    ...agent.tools
+  ].join(' ')));
+  const messageTokens = tokenizeRoutingText(message);
+  let score = 0;
+
+  for (const token of messageTokens) {
+    if (tokens.has(token)) {
+      score += token.length > 4 ? 2 : 1;
+    }
+  }
+
+  const compactName = agent.name.toLowerCase().replace(/\s+/g, '');
+  if (message.toLowerCase().includes(compactName)) {
+    score += 4;
+  }
+
+  if (message.toLowerCase().includes(slugify(agent.name))) {
+    score += 4;
+  }
+
+  if (group.memberAgentIds.includes(agent.id)) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function selectGroupRoutingDecision(group: GroupSpec, memberAgents: AgentSpec[], message: string): GroupRoutingDecision | null {
+  const explicitMentions = resolveMentionedAgents(message, memberAgents);
+  if (explicitMentions.length > 0) {
+    const agent = explicitMentions[0];
+    if (!agent) {
+      return null;
+    }
+    return {
+      agent,
+      mode: 'mention',
+      confidence: 1,
+      pinnedMentions: [...message.matchAll(/@([a-zA-Z0-9._-]+)/g)].map((match) => match[1] ?? '').filter(Boolean),
+    };
+  }
+
+  if (group.routingMode === 'manual') {
+    return null;
+  }
+
+  const scored = memberAgents
+    .map((agent) => ({
+      agent,
+      score: scoreGroupAgent(agent, group, message)
+    }))
+    .sort((left, right) => right.score - left.score || left.agent.name.localeCompare(right.agent.name));
+
+  const best = scored[0];
+  if (!best) {
+    return null;
+  }
+
+  const second = scored[1]?.score ?? 0;
+  const confidence = best.score <= 0 ? 0 : Math.max(0, Math.min(1, best.score / Math.max(best.score + second + 2, 1)));
+  const autoConfig = group.autoRouting;
+  const lowConfidenceThreshold = autoConfig?.lowConfidenceThreshold ?? group.autoRouteThreshold ?? DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD;
+  const hintMessage = confidence < lowConfidenceThreshold
+    ? autoConfig?.hintMessage ?? `Auto-routed to ${best.agent.name} with low confidence (${Math.round(confidence * 100)}%). Use @${best.agent.slug} to pin this group thread.`
+    : undefined;
+
+  return {
+    agent: best.agent,
+    mode: 'auto',
+    confidence,
+    pinnedMentions: [],
+    ...(hintMessage ? { hintMessage } : {})
+  };
 }
 
 let ollamaInstallJob: Promise<void> | null = null;
@@ -220,6 +415,13 @@ async function ensureDefaultOllamaModelsInstalled() {
     throw new Error('Ollama runtime is not reachable. Start Ollama before installing models.');
   }
 
+    try {
+      // Fail fast with a descriptive error if the CLI is missing.
+      await execFileAsync('ollama', ['--version']);
+    } catch {
+      throw new Error('Ollama CLI is not available. Install Ollama and ensure the `ollama` command is on PATH.');
+    }
+
   const models = await runtime.listModels();
   for (const preset of models.filter((model) => model.recommended)) {
     if (preset.installed) {
@@ -251,10 +453,15 @@ async function buildSnapshot() {
     groups: snapshot.groups,
     chatThreads: snapshot.chatThreads,
     tasks: snapshot.tasks,
+    taskRuns: snapshot.taskRuns,
     workItems: snapshot.workItems,
     artifacts: snapshot.artifacts,
     userMap: snapshot.userMap,
+    publicUserMap: snapshot.publicUserMap,
+    privateUserMap: snapshot.privateUserMap,
     memoryFacts: snapshot.memoryFacts,
+    publicMemoryFacts: snapshot.publicMemoryFacts,
+    privateMemoryFacts: snapshot.privateMemoryFacts,
     models,
     runtime: runtimeStatus
   };
@@ -270,11 +477,16 @@ function syncStructuredExports() {
 
   writeJsonFile(path.join(paths.context, 'profile.json'), snapshot.profile);
   writeJsonFile(path.join(paths.context, 'usermap-tree.json'), snapshot.userMap);
+  writeJsonFile(path.join(paths.context, 'usermap-public-tree.json'), snapshot.publicUserMap);
+  writeJsonFile(path.join(paths.context, 'usermap-private-tree.json'), snapshot.privateUserMap);
   writeJsonFile(path.join(paths.context, 'memory-facts.json'), snapshot.memoryFacts);
+  writeJsonFile(path.join(paths.context, 'memory-public-facts.json'), snapshot.publicMemoryFacts);
+  writeJsonFile(path.join(paths.context, 'memory-private-facts.json'), snapshot.privateMemoryFacts);
   writeJsonFile(path.join(paths.context, 'models.json'), snapshot.models);
   writeJsonFile(path.join(paths.agents, 'index.json'), snapshot.agents);
   writeJsonFile(path.join(paths.work, 'chat-threads.json'), snapshot.chatThreads);
   writeJsonFile(path.join(paths.tasks, 'index.json'), snapshot.tasks);
+  writeJsonFile(path.join(paths.tasks, 'task-runs.json'), snapshot.taskRuns);
   writeJsonFile(path.join(paths.work, 'work-items.json'), snapshot.workItems);
   writeJsonFile(path.join(paths.work, 'artifacts.json'), snapshot.artifacts);
 
@@ -291,28 +503,49 @@ function syncStructuredExports() {
     userMap: snapshot.userMap,
     agents: snapshot.agents,
     groups: snapshot.groups,
-    memoryFacts: snapshot.memoryFacts
+    memoryFacts: snapshot.memoryFacts,
+    publicMemoryFacts: snapshot.publicMemoryFacts,
+    privateMemoryFacts: snapshot.privateMemoryFacts
   }).catch((error) => {
     console.warn('[runtime-workspace] sync failed:', error);
   });
 }
 
-function upsertFactsIntoTree(tree: UserMapNode, facts: MemoryFact[]): UserMapNode {
-  const nextTree = structuredClone(tree);
-  const categories = new Map(nextTree.children.map((child) => [child.label, child]));
+function upsertFactsIntoTree(tree: UserMapState, facts: MemoryFact[]): UserMapState {
+  const nextTree = normalizeUserMapState(tree);
+  const categoryRoots = {
+    public: new Map<string, UserMapNode>(),
+    private: new Map<string, UserMapNode>()
+  };
+
+  for (const child of nextTree.publicTree.children) {
+    if (child.nodeType === 'category') {
+      categoryRoots.public.set(child.label, child);
+    }
+  }
+
+  for (const child of nextTree.privateTree.children) {
+    if (child.nodeType === 'category') {
+      categoryRoots.private.set(child.label, child);
+    }
+  }
 
   for (const fact of facts) {
-    let categoryNode = categories.get(fact.category);
+    const visibility = fact.visibility ?? 'public';
+    const root = visibility === 'public' ? nextTree.publicTree : nextTree.privateTree;
+    const categoryMap = categoryRoots[visibility];
+    let categoryNode = categoryMap.get(fact.category);
     if (!categoryNode) {
       categoryNode = {
-        id: `category-${slugify(fact.category)}`,
+        id: `category-${visibility}-${slugify(fact.category)}`,
         label: fact.category,
         nodeType: 'category',
         children: [],
-        source: 'manual'
+        source: 'memory',
+        visibility
       };
-      nextTree.children.push(categoryNode);
-      categories.set(fact.category, categoryNode);
+      root.children.push(categoryNode);
+      categoryMap.set(fact.category, categoryNode);
     }
 
     const existing = categoryNode.children.find((child) => child.label === fact.label);
@@ -325,6 +558,7 @@ function upsertFactsIntoTree(tree: UserMapNode, facts: MemoryFact[]): UserMapNod
       existing.confidence = fact.confidence;
       existing.source = 'memory';
       existing.nodeType = 'fact';
+      existing.visibility = visibility;
       continue;
     }
 
@@ -335,13 +569,16 @@ function upsertFactsIntoTree(tree: UserMapNode, facts: MemoryFact[]): UserMapNod
       nodeType: 'fact',
       confidence: fact.confidence,
       source: 'memory',
+      visibility,
       children: []
     });
   }
 
-  nextTree.children.sort((left, right) => left.label.localeCompare(right.label));
-  for (const category of nextTree.children) {
-    category.children.sort((left, right) => left.label.localeCompare(right.label));
+  for (const root of [nextTree.publicTree, nextTree.privateTree]) {
+    root.children.sort((left, right) => left.label.localeCompare(right.label));
+    for (const category of root.children) {
+      category.children.sort((left, right) => left.label.localeCompare(right.label));
+    }
   }
 
   return nextTree;
@@ -349,7 +586,11 @@ function upsertFactsIntoTree(tree: UserMapNode, facts: MemoryFact[]): UserMapNod
 
 async function mergeAndPersistMemoryFacts(newFacts: MemoryFact[]) {
   if (newFacts.length === 0) return storage.getUserMap();
-  storage.upsertMemoryFacts(newFacts);
+  const normalizedFacts = newFacts.map((fact) => ({
+    ...fact,
+    visibility: fact.visibility ?? 'public'
+  }));
+  storage.upsertMemoryFacts(normalizedFacts);
   const nextTree = upsertFactsIntoTree(storage.getUserMap(), storage.listMemoryFacts());
   storage.saveUserMap(nextTree);
   syncStructuredExports();
@@ -446,6 +687,47 @@ function buildEphemeralTask(input: { target: TaskSpec['target']; objective: stri
   };
 }
 
+function buildTaskRunRecord(task: TaskSpec, runIndex: number, startedAt: string): TaskRunRecord {
+  return {
+    id: randomUUID(),
+    taskId: task.id,
+    taskTitle: task.title,
+    taskObjective: task.objective,
+    taskMode: task.mode,
+    status: 'running',
+    runIndex,
+    target: task.target,
+    createdAt: startedAt,
+    updatedAt: startedAt,
+    startedAt,
+    artifactIds: []
+  };
+}
+
+function completeTaskRun(run: TaskRunRecord, input: {
+  status: TaskRunRecord['status'];
+  completedAt: string;
+  provider?: TaskRunRecord['provider'];
+  modelId?: string;
+  summary?: string;
+  error?: string;
+  artifactIds?: string[];
+  councilTrace?: TaskRunRecord['councilTrace'];
+}): TaskRunRecord {
+  return {
+    ...run,
+    status: input.status,
+    updatedAt: input.completedAt,
+    completedAt: input.completedAt,
+    ...(input.provider ? { provider: input.provider } : {}),
+    ...(input.modelId ? { modelId: input.modelId } : {}),
+    ...(input.summary ? { summary: input.summary } : {}),
+    ...(input.error ? { error: input.error } : {}),
+    ...(input.artifactIds ? { artifactIds: input.artifactIds } : {}),
+    ...(input.councilTrace ? { councilTrace: input.councilTrace } : {})
+  };
+}
+
 function buildAgentChatObjective(agent: AgentSpec, thread: ChatThread, message: string) {
   const history = formatThreadHistory(thread);
   return [
@@ -460,19 +742,6 @@ function parseMentions(message: string) {
   return [...message.matchAll(/@([a-zA-Z0-9._-]+)/g)].map((match) => match[1] ?? '').filter(Boolean);
 }
 
-function resolveMentionedAgents(message: string, memberAgents: AgentSpec[]) {
-  const mentions = parseMentions(message).map((mention) => mention.toLowerCase());
-  if (mentions.length === 0) {
-    return [] as AgentSpec[];
-  }
-
-  return memberAgents.filter((agent) => {
-    const slug = slugify(agent.name);
-    const compact = agent.name.toLowerCase().replace(/\s+/g, '');
-    return mentions.includes(slug) || mentions.includes(compact);
-  });
-}
-
 async function sendAgentChat(input: AgentChatInput) {
   const snapshot = storage.getWorkspaceSnapshot();
   const agent = snapshot.agents.find((candidate) => candidate.id === input.agentId);
@@ -481,7 +750,14 @@ async function sendAgentChat(input: AgentChatInput) {
   }
 
   const thread = findOrCreateThread('agent', agent.id, agent.name);
-  const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You' });
+  const route = buildRouteMetadata({
+    mode: 'direct',
+    targetType: 'agent',
+    targetIds: [agent.id],
+    confidence: 1,
+    reason: 'Direct agent chat'
+  });
+  const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', route });
   const withUser = appendThreadMessages(thread, [userMessage]);
   const result = await runtime.executeTask(buildEphemeralTask({
     target: { type: 'agent', agentId: agent.id },
@@ -498,7 +774,8 @@ async function sendAgentChat(input: AgentChatInput) {
     authorId: agent.id,
     authorLabel: agent.name,
     provider: result.provider,
-    modelId: result.modelId
+    modelId: result.modelId,
+    route
   });
   const nextThread = appendThreadMessages(withUser, [assistantMessage]);
   await extractAndPersistMemories('chat', `agent:${agent.id}:${assistantMessage.id}`, `${input.message}\n\n${result.text}`);
@@ -514,18 +791,31 @@ async function sendGroupChat(input: GroupChatInput) {
   if (!group) {
     throw new Error('Group not found.');
   }
+  const routingGroup = normalizeGroupAutoRouting(group);
 
-  const memberAgents = snapshot.agents.filter((agent) => group.memberAgentIds.includes(agent.id));
-  const mentionedAgents = resolveMentionedAgents(input.message, memberAgents);
-  const thread = findOrCreateThread('group', group.id, group.name);
+  const memberAgents = snapshot.agents.filter((agent) => routingGroup.memberAgentIds.includes(agent.id));
+  const routingDecision = selectGroupRoutingDecision(routingGroup, memberAgents, input.message.trim());
+  const thread = findOrCreateThread('group', routingGroup.id, routingGroup.name);
   const mentions = parseMentions(input.message);
-  const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', mentions });
+  const userRoute = routingDecision
+    ? buildRouteMetadata({
+        mode: routingDecision.mode,
+        targetType: 'group',
+        targetIds: [routingDecision.agent.id],
+        confidence: routingDecision.confidence,
+        reason: routingDecision.mode === 'mention' ? 'Explicit @mention pin' : 'Auto-routed best fit',
+        pinnedMentions: routingDecision.pinnedMentions
+      })
+    : undefined;
+  const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', mentions, ...(userRoute ? { route: userRoute } : {}) });
   const withUser = appendThreadMessages(thread, [userMessage]);
 
-  if (mentionedAgents.length === 0) {
+  if (!routingDecision) {
     const systemMessage = makeChatMessage({
       role: 'system',
-      text: 'Manual routing is enabled for groups. Mention one or more member chatbots using @chatbot-name to get replies.',
+      text: routingGroup.routingMode === 'manual'
+        ? 'Manual routing is enabled for this group. Mention one member chatbot with @chatbot-name to route the message.'
+        : 'No eligible member chatbots are configured for this group yet.',
       authorLabel: 'System'
     });
     const nextThread = appendThreadMessages(withUser, [systemMessage]);
@@ -535,14 +825,38 @@ async function sendGroupChat(input: GroupChatInput) {
     };
   }
 
+  const assistantRoute = buildRouteMetadata({
+    mode: routingDecision.mode,
+    targetType: 'group',
+    targetIds: [routingDecision.agent.id],
+    confidence: routingDecision.confidence,
+    reason: routingDecision.mode === 'mention' ? 'Explicit @mention pin' : 'Auto-routed best fit',
+    pinnedMentions: routingDecision.pinnedMentions
+  });
+
   const assistantMessages: ChatMessage[] = [];
   let activeThread = withUser;
 
-  for (const agent of mentionedAgents) {
-    const result = await runtime.executeTask(buildEphemeralTask({
-      target: { type: 'agent', agentId: agent.id },
+  if (routingDecision.hintMessage) {
+    const systemMessage = makeChatMessage({
+      role: 'system',
+      text: routingDecision.hintMessage,
+      authorLabel: 'System',
+      route: buildRouteMetadata({
+        mode: 'hint',
+        targetType: 'group',
+        targetIds: [routingDecision.agent.id],
+        confidence: routingDecision.confidence,
+        reason: 'Low-confidence auto route'
+      })
+    });
+    activeThread = appendThreadMessages(activeThread, [systemMessage]);
+  }
+
+  const result = await runtime.executeTask(buildEphemeralTask({
+      target: { type: 'agent', agentId: routingDecision.agent.id },
       objective: [
-        `You are replying as "${agent.name}" inside the group "${group.name}".`,
+        `You are replying as "${routingDecision.agent.name}" inside the group "${group.name}".`,
         formatThreadHistory(activeThread),
         `Latest group message:\n${input.message.trim()}`,
         'Reply only for your own role and perspective.'
@@ -553,17 +867,17 @@ async function sendGroupChat(input: GroupChatInput) {
       groups: snapshot.groups
     });
 
-    const assistantMessage = makeChatMessage({
-      role: 'assistant',
-      text: result.text,
-      authorId: agent.id,
-      authorLabel: agent.name,
-      provider: result.provider,
-      modelId: result.modelId
-    });
-    activeThread = appendThreadMessages(activeThread, [assistantMessage]);
-    assistantMessages.push(assistantMessage);
-  }
+  const assistantMessage = makeChatMessage({
+    role: 'assistant',
+    text: result.text,
+    authorId: routingDecision.agent.id,
+    authorLabel: routingDecision.agent.name,
+    provider: result.provider,
+    modelId: result.modelId,
+    route: assistantRoute
+  });
+  activeThread = appendThreadMessages(activeThread, [assistantMessage]);
+  assistantMessages.push(assistantMessage);
 
   await extractAndPersistMemories('chat', `group:${group.id}:${userMessage.id}`, input.message.trim());
   return {
@@ -823,23 +1137,70 @@ function makeTaskBase(task: TaskSpec) {
 function buildTaskSpec(input: TaskCreateInput): TaskSpec {
   const now = new Date();
   const createdAt = now.toISOString();
-  const firstRun = computeNextRun(input.schedule, now);
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const schedule: TaskSpec['schedule'] =
+    input.schedule.kind === 'once'
+      ? {
+          kind: 'once',
+          runAt: parseRunAt(input.schedule.runAtLocal ?? now.toISOString(), timezone).toISOString(),
+          timezone
+        }
+      : input.schedule.kind === 'simple'
+        ? {
+            kind: 'simple',
+            preset: input.schedule.preset ?? 'daily',
+            time: input.schedule.time ?? '09:00',
+            timezone
+          }
+        : {
+            kind: 'cron',
+            expression: (input.schedule.expression ?? '0 9 * * 1-5').trim(),
+            timezone
+          };
+
+  const outputPolicy: TaskSpec['outputPolicy'] = {
+    saveResult: true,
+    artifactMode: input.output?.artifactMode ?? 'markdown',
+    notificationMode: input.output?.notificationMode ?? 'desktop',
+    defaultSendToChat: Boolean(input.output?.defaultSendToChat ?? false)
+  };
+
+  const installedModelIds = storage.listModels().filter((model) => model.installed).map((model) => model.id);
+  const modelOverrideId = input.modelOverrideId?.trim();
+  const providerOverride = modelOverrideId ? { provider: 'ollama' as const, modelId: modelOverrideId } : undefined;
+
+  const council = input.mode === 'council'
+    ? (() => {
+        const workers = (input.council?.workerModelIds ?? []).filter(Boolean);
+        const resolvedWorkers = workers.length ? workers : installedModelIds.slice(0, 2);
+        const judge = (input.council?.judgeModelId ?? '').trim() || resolvedWorkers[0] || installedModelIds[0] || '';
+        if (resolvedWorkers.length === 0 || !judge) {
+          throw new Error('No installed local models available for council mode.');
+        }
+        return {
+          workerModels: resolvedWorkers.map((modelId) => ({ provider: 'ollama' as const, modelId })),
+          judgeModel: { provider: 'ollama' as const, modelId: judge }
+        } satisfies TaskSpec['council'];
+      })()
+    : undefined;
+
+  const firstRun = computeNextRun(schedule, now);
   return {
     id: randomUUID(),
     title: input.title.trim(),
     objective: input.objective.trim(),
     mode: input.mode,
     target: input.target,
-    schedule: input.schedule,
-    outputPolicy: input.outputPolicy,
+    schedule,
+    outputPolicy,
     status: firstRun <= now ? 'queued' : 'scheduled',
     createdAt,
     updatedAt: createdAt,
     nextRunAt: firstRun.toISOString(),
     runCount: 0,
     artifactIds: [],
-    ...(input.providerOverride ? { providerOverride: input.providerOverride } : {}),
-    ...(input.council ? { council: input.council } : {})
+    ...(providerOverride ? { providerOverride } : {}),
+    ...(council ? { council } : {})
   };
 }
 
@@ -903,6 +1264,7 @@ function maybeNotify(task: TaskSpec, message: string) {
 async function executeDueTask(task: TaskSpec) {
   const startedAt = new Date().toISOString();
   const workItemId = randomUUID();
+  const taskRun = buildTaskRunRecord(task, task.runCount + 1, startedAt);
   const runningTask: TaskSpec = {
     ...makeTaskBase(task),
     status: 'running',
@@ -923,6 +1285,7 @@ async function executeDueTask(task: TaskSpec) {
   };
 
   storage.upsertTask(runningTask);
+  storage.upsertTaskRun(taskRun);
   storage.upsertWorkItem(runningWorkItem);
   syncStructuredExports();
 
@@ -960,6 +1323,15 @@ async function executeDueTask(task: TaskSpec) {
     };
 
     storage.upsertTask(completedTask);
+    storage.upsertTaskRun(completeTaskRun(taskRun, {
+      status: 'done',
+      completedAt,
+      provider: result.provider,
+      modelId: result.modelId,
+      summary: result.text,
+      artifactIds: artifacts.map((artifact) => artifact.id),
+      councilTrace: result.councilTrace
+    }));
     storage.upsertWorkItem(completedWorkItem);
     await extractAndPersistMemories(task.mode === 'council' ? 'council' : 'task', `task:${task.id}:${completedAt}`, result.text);
     syncStructuredExports();
@@ -990,6 +1362,11 @@ async function executeDueTask(task: TaskSpec) {
     };
 
     storage.upsertTask(failedTask);
+    storage.upsertTaskRun(completeTaskRun(taskRun, {
+      status: 'failed',
+      completedAt,
+      error: message
+    }));
     storage.upsertWorkItem(failedWorkItem);
     syncStructuredExports();
     maybeNotify({ ...failedTask, status: 'failed' }, message);
@@ -1067,12 +1444,58 @@ async function createWindow() {
   await mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
+function recoverInterruptedWork() {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const tasks = storage.listTasks();
+  const workItems = storage.listWorkItems();
+
+  for (const task of tasks) {
+    if (task.status !== 'running') continue;
+
+    const recurring = isRecurring(task.schedule);
+    const nextRunAt = recurring ? computeNextRun(task.schedule, now).toISOString() : task.nextRunAt;
+    const runRecord = storage.listTaskRuns(task.id).find((run) => run.status === 'running')
+      ?? buildTaskRunRecord(task, task.runCount + 1, task.startedAt ?? nowIso);
+    const recovered: TaskSpec = {
+      ...makeTaskBase(task),
+      status: recurring ? 'scheduled' : 'failed',
+      updatedAt: nowIso,
+      completedAt: nowIso,
+      lastRunAt: nowIso,
+      runCount: task.runCount + 1,
+      lastError: 'Recovered after app restart during an in-progress run.',
+      artifactIds: [],
+      ...(nextRunAt ? { nextRunAt } : {})
+    };
+
+    storage.upsertTask(recovered);
+    storage.upsertTaskRun(completeTaskRun(runRecord, {
+      status: 'failed',
+      completedAt: nowIso,
+      error: 'Recovered after app restart during an in-progress run.'
+    }));
+  }
+
+  for (const item of workItems) {
+    if (item.status !== 'running') continue;
+    const recovered: WorkItem = {
+      ...item,
+      status: 'failed',
+      updatedAt: nowIso,
+      lastError: 'Recovered after app restart during an in-progress run.'
+    };
+    storage.upsertWorkItem(recovered);
+  }
+}
+
 app.whenReady().then(async () => {
   const workspacePaths = getWorkspacePaths();
   runtime.setWorkspaceRoot(workspacePaths.root);
 
   storage = new SqliteStorage(path.join(workspacePaths.root, 'supreme-raman-ai.sqlite'));
   storage.init();
+  recoverInterruptedWork();
   await refreshStoredModels();
   syncStructuredExports();
 
@@ -1083,7 +1506,7 @@ app.whenReady().then(async () => {
     return saved;
   });
   ipcMain.handle(channels.workspaceSnapshot, async () => buildSnapshot());
-  ipcMain.handle(channels.userMapSave, async (_event, tree: UserMapNode) => {
+  ipcMain.handle(channels.userMapSave, async (_event, tree: UserMapState) => {
     const saved = storage.saveUserMap(tree);
     syncStructuredExports();
     return saved;
@@ -1099,12 +1522,16 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(channels.groupUpsert, async (_event, group: unknown) => {
     const parsed = group as GroupSpec;
-    const payload: GroupSpec = {
+    const payload = normalizeGroupAutoRouting({
       id: parsed.id || randomUUID(),
-      name: parsed.name?.trim(),
+      name: parsed.name?.trim() || '',
       description: parsed.description?.trim() || '',
-      memberAgentIds: Array.isArray(parsed.memberAgentIds) ? parsed.memberAgentIds : []
-    };
+      memberAgentIds: Array.isArray(parsed.memberAgentIds) ? parsed.memberAgentIds : [],
+      routingMode: parsed.routingMode ?? 'auto',
+      autoRouteThreshold: parsed.autoRouteThreshold ?? DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD,
+      ...(parsed.defaultResponderAgentId ? { defaultResponderAgentId: parsed.defaultResponderAgentId } : {}),
+      ...(parsed.autoRouting ? { autoRouting: parsed.autoRouting } : {})
+    });
 
     if (!payload.name) {
       throw new Error('Group name is required.');
@@ -1155,16 +1582,20 @@ app.whenReady().then(async () => {
     if (!original) {
       throw new Error('Task not found.');
     }
-    const duplicated = buildTaskSpec({
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const firstRun = computeNextRun(original.schedule, now);
+    const duplicated: TaskSpec = {
+      ...makeTaskBase(original),
+      id: randomUUID(),
       title: `${original.title} Copy`,
-      objective: original.objective,
-      mode: original.mode,
-      target: original.target,
-      schedule: original.schedule,
-      outputPolicy: original.outputPolicy,
-      ...(original.providerOverride ? { providerOverride: original.providerOverride } : {}),
-      ...(original.council ? { council: original.council } : {})
-    });
+      status: firstRun <= now ? 'queued' : 'scheduled',
+      createdAt,
+      updatedAt: createdAt,
+      nextRunAt: firstRun.toISOString(),
+      runCount: 0,
+      artifactIds: []
+    };
     storage.upsertTask(duplicated);
     syncStructuredExports();
     return duplicated;
@@ -1211,6 +1642,10 @@ app.whenReady().then(async () => {
     if (input.isDefault !== undefined) payload.isDefault = input.isDefault;
 
     const profile = await providerAuthStore.upsertProfile(payload);
+    if (input.isDefault === true) {
+      storage.upsertProviderAuthSelection({ provider: input.provider, profileId: profile.id });
+      syncStructuredExports();
+    }
     return profile as ProviderAuthProfile;
   });
   ipcMain.handle(channels.providerAuthDelete, async (_event, input: ProviderAuthDeleteInput) => {
