@@ -18,6 +18,12 @@ export const channels = {
   artifactOpen: 'artifact:open',
   providerAuthList: 'providerAuth:list',
   providerAuthUpsert: 'providerAuth:upsert',
+  providerAuthDelete: 'providerAuth:delete',
+  providerAuthTest: 'providerAuth:test',
+  providerAuthGetSelection: 'providerAuth:getSelection',
+  providerAuthSetSelection: 'providerAuth:setSelection',
+  prismOverrideGet: 'prismOverride:get',
+  prismOverrideSave: 'prismOverride:save',
   ollamaStatus: 'ollama:status',
   ollamaInstallDefaults: 'ollama:installDefaults'
 } as const;

@@ -106,8 +106,8 @@ export function ChatsWorkspace({
       }));
   }, [selectedGroup, snapshot.agents]);
 
-  const runtimeStatus = snapshot.runtime.openClawReady
-    ? { label: 'OpenClaw-ready', tone: 'ready' as const }
+  const runtimeStatus = snapshot.runtime.runtimeBridgeReady
+    ? { label: 'Runtime bridge ready', tone: 'ready' as const }
     : snapshot.runtime.ollamaReady
       ? { label: 'Ollama-ready', tone: 'ready' as const }
       : { label: 'Runtime needed', tone: 'warning' as const };

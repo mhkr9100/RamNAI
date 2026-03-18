@@ -1,6 +1,6 @@
 import { Notification, app, BrowserWindow, ipcMain, shell } from 'electron';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -18,20 +18,22 @@ import type {
   OllamaRuntimeStatus,
   OllamaModelInstallStatus,
   PrismRequest,
+  PrismProviderOverrideSettings,
   ProviderAuthProfile,
+  ProviderAuthSelection,
   ProviderId,
   TaskSpec,
   UserMapNode,
   WorkItem
 } from '@supreme/shared';
 import { SqliteStorage } from '@supreme/storage';
-import { LocalRuntimeAdapter, OpenClawWorkspaceManager, OpenClawAuthManager } from '@supreme/runtime';
+import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore } from '@supreme/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 const runtime = new LocalRuntimeAdapter();
-const openClawWorkspace = new OpenClawWorkspaceManager();
-const openClawAuth = new OpenClawAuthManager();
+const runtimeWorkspace = new RuntimeWorkspaceManager();
+const providerAuthStore = new ProviderAuthStore();
 let mainWindow: BrowserWindow | null = null;
 let storage: SqliteStorage;
 let schedulerHandle: NodeJS.Timeout | null = null;
@@ -79,10 +81,25 @@ interface ProviderAuthUpsertInput {
   isDefault?: boolean;
 }
 
+interface ProviderAuthDeleteInput {
+  provider: ProviderId;
+  profileId: string;
+}
+
+interface ProviderAuthTestInput {
+  provider: ProviderId;
+  profileId: string;
+  probeWithRuntime?: boolean;
+}
+
 interface OllamaModelRuntimeState {
   status: OllamaModelInstallStatus;
+  progress?: number;
+  phase?: string;
   lastError?: string;
 }
+
+let ollamaInstallJob: Promise<void> | null = null;
 
 let cachedWorkspacePaths: WorkspacePaths | null = null;
 
@@ -133,6 +150,8 @@ async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus> {
       id: model.id,
       label: model.label,
       status: derivedStatus,
+      ...(state?.progress !== undefined ? { progress: state.progress } : {}),
+      ...(state?.phase ? { phase: state.phase } : {}),
       ...(state?.lastError ? { lastError: state.lastError } : {})
     };
   });
@@ -143,7 +162,59 @@ async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus> {
   };
 }
 
+function trackOllamaLine(modelId: string, line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+
+  const percentMatch = trimmed.match(/(\d{1,3})\s*%/);
+  const percent = percentMatch ? Math.max(0, Math.min(100, Number(percentMatch[1]))) : undefined;
+  const next: OllamaModelRuntimeState = {
+    ...(ollamaModelState.get(modelId) ?? { status: 'installing' }),
+    status: 'installing',
+    phase: trimmed.slice(0, 120),
+    ...(percent !== undefined ? { progress: percent } : {})
+  };
+  ollamaModelState.set(modelId, next);
+}
+
+async function pullOllamaModel(modelId: string) {
+  ollamaModelState.set(modelId, { status: 'installing', progress: 0, phase: 'starting' });
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('ollama', ['pull', modelId], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const handleChunk = (chunk: unknown) => {
+      const text = typeof chunk === 'string' ? chunk : Buffer.isBuffer(chunk) ? chunk.toString('utf8') : '';
+      for (const line of text.split('\n')) {
+        trackOllamaLine(modelId, line);
+      }
+    };
+
+    child.stdout?.on('data', handleChunk);
+    child.stderr?.on('data', handleChunk);
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`ollama pull exited with code ${code ?? 'unknown'}`));
+    });
+  });
+
+  ollamaModelState.set(modelId, { status: 'installed', progress: 100, phase: 'installed' });
+}
+
 async function ensureDefaultOllamaModelsInstalled() {
+  if (ollamaInstallJob) {
+    return;
+  }
+
+  ollamaInstallJob = (async () => {
   const status = await runtime.getStatus();
   if (!status.ollamaReady) {
     throw new Error('Ollama runtime is not reachable. Start Ollama before installing models.');
@@ -152,20 +223,22 @@ async function ensureDefaultOllamaModelsInstalled() {
   const models = await runtime.listModels();
   for (const preset of models.filter((model) => model.recommended)) {
     if (preset.installed) {
-      ollamaModelState.set(preset.id, { status: 'installed' });
+      ollamaModelState.set(preset.id, { status: 'installed', progress: 100, phase: 'installed' });
       continue;
     }
 
-    ollamaModelState.set(preset.id, { status: 'installing' });
     try {
-      // Use the Ollama CLI to pull the model so the local runtime can discover it.
-      await execFileAsync('ollama', ['pull', preset.id]);
-      ollamaModelState.set(preset.id, { status: 'installed' });
+      await pullOllamaModel(preset.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ollamaModelState.set(preset.id, { status: 'error', lastError: message });
+      ollamaModelState.set(preset.id, { status: 'error', lastError: message, phase: 'error' });
     }
   }
+  })().finally(() => {
+    ollamaInstallJob = null;
+  });
+
+  await ollamaInstallJob;
 }
 
 async function buildSnapshot() {
@@ -213,14 +286,14 @@ function syncStructuredExports() {
     writeJsonFile(path.join(paths.tasks, `${task.id}.json`), task);
   }
 
-  void openClawWorkspace.sync(paths.root, {
+  void runtimeWorkspace.sync(paths.root, {
     profile: snapshot.profile,
     userMap: snapshot.userMap,
     agents: snapshot.agents,
     groups: snapshot.groups,
     memoryFacts: snapshot.memoryFacts
   }).catch((error) => {
-    console.warn('[openclaw-workspace] sync failed:', error);
+    console.warn('[runtime-workspace] sync failed:', error);
   });
 }
 
@@ -509,7 +582,89 @@ function parseHourMinute(value: string) {
   return { hour, minute };
 }
 
-function nextCronRun(expression: string, from: Date): Date {
+function getZonedParts(value: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(value);
+  const lookup = new Map(parts.map((part) => [part.type, part.value]));
+  const year = Number(lookup.get('year'));
+  const month = Number(lookup.get('month'));
+  const day = Number(lookup.get('day'));
+  const hour = Number(lookup.get('hour'));
+  const minute = Number(lookup.get('minute'));
+  const weekdayRaw = lookup.get('weekday') ?? '';
+  const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(weekdayRaw.toLowerCase().slice(0, 3));
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    weekday < 0
+  ) {
+    throw new Error(`Could not resolve zoned date parts for timezone "${timeZone}".`);
+  }
+
+  return { year, month, day, hour, minute, weekday };
+}
+
+function zonedDateTimeToUtc(input: { year: number; month: number; day: number; hour: number; minute: number }, timeZone: string): Date {
+  const initialGuessUtcMs = Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, 0, 0);
+  let guess = new Date(initialGuessUtcMs);
+
+  for (let i = 0; i < 3; i += 1) {
+    const parts = getZonedParts(guess, timeZone);
+    const deltaMinutes =
+      (input.year - parts.year) * 525600 +
+      (input.month - parts.month) * 43200 +
+      (input.day - parts.day) * 1440 +
+      (input.hour - parts.hour) * 60 +
+      (input.minute - parts.minute);
+
+    if (deltaMinutes === 0) {
+      return guess;
+    }
+    guess = new Date(guess.getTime() + deltaMinutes * 60000);
+  }
+
+  return guess;
+}
+
+function parseRunAt(runAt: string, timeZone: string): Date {
+  const parsed = new Date(runAt);
+  if (!Number.isNaN(parsed.getTime()) && /[zZ]|[+-]\d{2}:?\d{2}$/.test(runAt.trim())) {
+    return parsed;
+  }
+
+  const match = runAt.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (!match) {
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(`Invalid runAt value "${runAt}".`);
+    }
+    return parsed;
+  }
+
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw] = match;
+  return zonedDateTimeToUtc({
+    year: Number(yearRaw),
+    month: Number(monthRaw),
+    day: Number(dayRaw),
+    hour: Number(hourRaw),
+    minute: Number(minuteRaw)
+  }, timeZone);
+}
+
+function nextCronRun(expression: string, from: Date, timeZone: string): Date {
   const fields = expression.trim().split(/\s+/);
   if (fields.length !== 5) {
     throw new Error('Cron schedule must use the standard 5-field format.');
@@ -528,12 +683,13 @@ function nextCronRun(expression: string, from: Date): Date {
 
   for (let i = 0; i < 525600; i += 1) {
     const candidate = new Date(start.getTime() + i * 60000);
+    const zoned = getZonedParts(candidate, timeZone);
     if (
-      matchesCronField(candidate.getMinutes(), minuteField, 0, 59) &&
-      matchesCronField(candidate.getHours(), hourField, 0, 23) &&
-      matchesCronField(candidate.getDate(), dayField, 1, 31) &&
-      matchesCronField(candidate.getMonth() + 1, monthField, 1, 12) &&
-      matchesCronField(candidate.getDay(), weekdayField, 0, 6)
+      matchesCronField(zoned.minute, minuteField, 0, 59) &&
+      matchesCronField(zoned.hour, hourField, 0, 23) &&
+      matchesCronField(zoned.day, dayField, 1, 31) &&
+      matchesCronField(zoned.month, monthField, 1, 12) &&
+      matchesCronField(zoned.weekday, weekdayField, 0, 6)
     ) {
       return candidate;
     }
@@ -579,34 +735,65 @@ function matchesCronField(value: number, field: string, min: number, max: number
 
 function computeNextRun(schedule: TaskSpec['schedule'], from = new Date()) {
   if (schedule.kind === 'once') {
-    return new Date(schedule.runAt);
+    return parseRunAt(schedule.runAt, schedule.timezone);
   }
 
   if (schedule.kind === 'cron') {
-    return nextCronRun(schedule.expression, from);
+    return nextCronRun(schedule.expression, from, schedule.timezone);
   }
 
   const base = new Date(from);
+  const baseZoned = getZonedParts(base, schedule.timezone);
   const { hour, minute } = parseHourMinute(schedule.time);
-  const candidate = new Date(base);
-  candidate.setSeconds(0, 0);
-  candidate.setHours(hour, minute, 0, 0);
+  let candidate = zonedDateTimeToUtc({
+    year: baseZoned.year,
+    month: baseZoned.month,
+    day: baseZoned.day,
+    hour,
+    minute
+  }, schedule.timezone);
 
   if (schedule.preset === 'daily') {
-    if (candidate <= base) candidate.setDate(candidate.getDate() + 1);
+    if (candidate <= base) {
+      const nextDay = getZonedParts(new Date(base.getTime() + 24 * 60 * 60000), schedule.timezone);
+      candidate = zonedDateTimeToUtc({
+        year: nextDay.year,
+        month: nextDay.month,
+        day: nextDay.day,
+        hour,
+        minute
+      }, schedule.timezone);
+    }
     return candidate;
   }
 
   if (schedule.preset === 'weekly') {
-    if (candidate <= base) candidate.setDate(candidate.getDate() + 7);
+    if (candidate <= base) {
+      const nextWeek = new Date(base.getTime() + 7 * 24 * 60 * 60000);
+      const nextWeekZoned = getZonedParts(nextWeek, schedule.timezone);
+      candidate = zonedDateTimeToUtc({
+        year: nextWeekZoned.year,
+        month: nextWeekZoned.month,
+        day: nextWeekZoned.day,
+        hour,
+        minute
+      }, schedule.timezone);
+    }
     return candidate;
   }
 
-  const next = new Date(candidate);
-  if (next <= base) {
-    next.setMonth(next.getMonth() + 1);
+  if (candidate <= base) {
+    const nextMonthUtcGuess = zonedDateTimeToUtc({
+      year: baseZoned.year,
+      month: baseZoned.month + 1,
+      day: baseZoned.day,
+      hour,
+      minute
+    }, schedule.timezone);
+    return nextMonthUtcGuess;
   }
-  return next;
+
+  return candidate;
 }
 
 function isRecurring(schedule: TaskSpec['schedule']) {
@@ -1005,14 +1192,14 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(channels.artifactOpen, async (_event, artifactId: string) => openArtifact(artifactId));
   ipcMain.handle(channels.providerAuthList, async () => {
-    const profiles = await openClawAuth.listProfiles();
+    const profiles = await providerAuthStore.listProfiles();
     return profiles as ProviderAuthProfile[];
   });
   ipcMain.handle(channels.providerAuthUpsert, async (_event, input: ProviderAuthUpsertInput) => {
     if (input.provider === 'ollama') {
       throw new Error('Auth profiles are only supported for remote providers.');
     }
-    const payload: Parameters<typeof openClawAuth.upsertProfile>[0] = {
+    const payload: Parameters<typeof providerAuthStore.upsertProfile>[0] = {
       id: input.id,
       provider: input.provider as Exclude<ProviderId, 'ollama'>,
       label: input.label
@@ -1023,8 +1210,47 @@ app.whenReady().then(async () => {
     if (input.token !== undefined) payload.token = input.token;
     if (input.isDefault !== undefined) payload.isDefault = input.isDefault;
 
-    const profile = await openClawAuth.upsertProfile(payload);
+    const profile = await providerAuthStore.upsertProfile(payload);
     return profile as ProviderAuthProfile;
+  });
+  ipcMain.handle(channels.providerAuthDelete, async (_event, input: ProviderAuthDeleteInput) => {
+    if (input.provider === 'ollama') {
+      throw new Error('Auth profiles are only supported for remote providers.');
+    }
+
+    const selection = storage.getProviderAuthSelection(input.provider);
+    if (selection?.profileId === input.profileId) {
+      storage.upsertProviderAuthSelection({ provider: input.provider, profileId: null });
+      syncStructuredExports();
+    }
+
+    return providerAuthStore.deleteProfile(input.provider, input.profileId);
+  });
+  ipcMain.handle(channels.providerAuthTest, async (_event, input: ProviderAuthTestInput) => {
+    if (input.provider === 'ollama') {
+      throw new Error('Auth profiles are only supported for remote providers.');
+    }
+    return providerAuthStore.testProfile({
+      provider: input.provider,
+      profileId: input.profileId,
+      ...(input.probeWithRuntime !== undefined ? { probeWithRuntime: input.probeWithRuntime } : {})
+    });
+  });
+  ipcMain.handle(channels.providerAuthGetSelection, async (_event, provider: ProviderId) => {
+    return storage.getProviderAuthSelection(provider) as ProviderAuthSelection | null;
+  });
+  ipcMain.handle(channels.providerAuthSetSelection, async (_event, selection: ProviderAuthSelection) => {
+    const saved = storage.upsertProviderAuthSelection(selection);
+    syncStructuredExports();
+    return saved;
+  });
+  ipcMain.handle(channels.prismOverrideGet, async () => {
+    return storage.getPrismProviderOverride() as PrismProviderOverrideSettings | null;
+  });
+  ipcMain.handle(channels.prismOverrideSave, async (_event, override: PrismProviderOverrideSettings | null) => {
+    const saved = storage.savePrismProviderOverride(override);
+    syncStructuredExports();
+    return saved;
   });
   ipcMain.handle(channels.ollamaStatus, async () => getOllamaRuntimeStatus());
   ipcMain.handle(channels.ollamaInstallDefaults, async () => {

@@ -10,6 +10,7 @@ import {
   MemoryFact,
   ProviderModelPreset,
   ProviderAuthSelection,
+  PrismProviderOverrideSettings,
   TaskSpec,
   UserMapNode,
   WorkItem
@@ -93,6 +94,10 @@ export class SqliteStorage {
         provider TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS prism_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        payload TEXT NOT NULL
+      );
     `);
 
     const count = this.db.prepare('SELECT COUNT(*) as count FROM models').get() as { count: number };
@@ -106,6 +111,11 @@ export class SqliteStorage {
     const userMapRow = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
     if (!userMapRow) {
       this.db.prepare('INSERT INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(EMPTY_USERMAP_TREE));
+    }
+
+    const prismSettingsRow = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    if (!prismSettingsRow) {
+      this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify({}));
     }
   }
 
@@ -201,8 +211,18 @@ export class SqliteStorage {
   }
 
   listWorkItems(): WorkItem[] {
-    const rows = this.db.prepare('SELECT payload FROM work_items ORDER BY updatedAt DESC, id DESC').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    const rows = this.db.prepare('SELECT payload FROM work_items').all() as Array<{ payload: string }>;
+    return rows
+      .map((row) => parseJson<WorkItem | null>(row.payload, null))
+      .filter((item): item is WorkItem => item !== null)
+      .sort((left, right) => {
+        const leftUpdated = Date.parse(left.updatedAt || left.createdAt || '');
+        const rightUpdated = Date.parse(right.updatedAt || right.createdAt || '');
+        if (!Number.isNaN(leftUpdated) && !Number.isNaN(rightUpdated) && leftUpdated !== rightUpdated) {
+          return rightUpdated - leftUpdated;
+        }
+        return right.id.localeCompare(left.id);
+      });
   }
 
   getWorkItem(workItemId: string): WorkItem | null {
@@ -278,6 +298,31 @@ export class SqliteStorage {
       JSON.stringify(selection)
     );
     return selection;
+  }
+
+  getPrismProviderOverride(): PrismProviderOverrideSettings | null {
+    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const override = parsed.providerOverride;
+    if (!override || typeof override !== 'object') {
+      return null;
+    }
+    const candidate = override as PrismProviderOverrideSettings;
+    if (!candidate.provider || !candidate.modelId) {
+      return null;
+    }
+    return candidate;
+  }
+
+  savePrismProviderOverride(override: PrismProviderOverrideSettings | null): PrismProviderOverrideSettings | null {
+    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const next = {
+      ...parsed,
+      providerOverride: override ?? null
+    };
+    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    return override;
   }
 
   getWorkspaceSnapshot(): WorkspaceSnapshot {

@@ -39,8 +39,8 @@ This repo is the new implementation base for Supreme Raman AI, a desktop-first l
 - SQLite storage layer
 - filesystem export layer
 - local Ollama runtime adapter
-- OpenClaw-style auth profile manager
-- OpenClaw-style workspace sync
+- local runtime auth profile manager with compatibility mirroring
+- runtime workspace sync with compatibility mirroring
 - renderer Settings surface
 
 ### Prism
@@ -48,7 +48,7 @@ This repo is the new implementation base for Supreme Raman AI, a desktop-first l
 - Ask mode runs through local Ollama
 - Create mode produces a structured local chatbot spec
 - created chatbots persist locally and appear in Spectrum
-- OpenClaw-first execution is attempted before Ollama fallback when the local CLI is available
+- runtime-bridge execution is attempted before Ollama fallback when the compatibility CLI is available
 
 ### Tasks and Work
 
@@ -92,7 +92,7 @@ This repo is the new implementation base for Supreme Raman AI, a desktop-first l
 
 ## What Is Not Finished Yet
 
-- deeper OpenClaw-native execution beyond the current CLI-first adapter
+- deeper runtime-bridge execution beyond the current CLI-first adapter
 - provider profile delete/test flows
 - persisted Prism provider override selection
 - bundled Ollama runtime packaging and polished first-run setup flow
@@ -105,12 +105,12 @@ This repo is the new implementation base for Supreme Raman AI, a desktop-first l
 - SQLite and filesystem are authoritative
 - scheduler lives in Electron main process
 - renderer talks to desktop IPC only
-- current local runtime is real and now OpenClaw-aware, but still keeps the working Ollama path as fallback
+- current local runtime is real and now runtime-bridge-aware, but still keeps the working Ollama path as fallback
 - runtime/auth/provider plumbing remains the desktop lane; renderer owns shell integration and UX
 
 ## Recommended Next Steps
 
-1. Finish the deeper OpenClaw-native execution path while keeping Ollama fallback safe.
+1. Finish the deeper runtime-bridge execution path while keeping Ollama fallback safe.
 2. Complete provider profile delete/test and persisted Prism provider override support.
 3. Fix scheduler timezone handling in the desktop lane.
 4. Finish bundled Ollama runtime packaging and first-run install polish.

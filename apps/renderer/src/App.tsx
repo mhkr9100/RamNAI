@@ -9,7 +9,15 @@ import { SpectrumView } from './components/SpectrumView';
 import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from './lib/electron';
-import type { OllamaRuntimeStatus, PrismMode, ProviderAuthProfile, UserMapNode, WorkItem } from '@supreme/shared';
+import type {
+  OllamaRuntimeStatus,
+  PrismMode,
+  PrismProviderOverrideSettings,
+  ProviderAuthProfile,
+  ProviderId,
+  UserMapNode,
+  WorkItem
+} from '@supreme/shared';
 
 interface PrismMessage {
   id: string;
@@ -18,8 +26,17 @@ interface PrismMessage {
   mode?: PrismMode | 'work';
 }
 
+const REMOTE_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
+type RemoteProviderId = typeof REMOTE_PROVIDERS[number];
+
 export default function App() {
-  const api = useMemo(() => getDesktopApi(), []);
+  const api = useMemo(() => {
+    try {
+      return getDesktopApi();
+    } catch {
+      return null;
+    }
+  }, []);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [activeView, setActiveView] = useState<ViewId>('prism');
   const [loading, setLoading] = useState(true);
@@ -32,24 +49,46 @@ export default function App() {
   const [chatDraftSeed, setChatDraftSeed] = useState<ChatDraftSeed | null>(null);
   const [selectedSettingsSection, setSelectedSettingsSection] = useState<'runtime' | 'providers' | 'prism'>('runtime');
   const [providerProfiles, setProviderProfiles] = useState<ProviderAuthProfile[]>([]);
+  const [providerSelections, setProviderSelections] = useState<Record<RemoteProviderId, string | null>>({
+    openai: null,
+    anthropic: null,
+    google: null
+  });
+  const [prismOverride, setPrismOverride] = useState<PrismProviderOverrideSettings | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaRuntimeStatus | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   const refreshSnapshot = useCallback(async () => {
+    if (!api) {
+      throw new Error('Supreme Raman AI desktop bridge is unavailable.');
+    }
     const next = await api.workspace.getSnapshot();
     setSnapshot(next);
     return next;
   }, [api]);
 
   const refreshSettings = useCallback(async () => {
+    if (!api) {
+      throw new Error('Supreme Raman AI desktop bridge is unavailable.');
+    }
     setSettingsLoading(true);
     try {
-      const [profiles, runtimeStatus] = await Promise.all([
+      const [profiles, runtimeStatus, openaiSelection, anthropicSelection, googleSelection, override] = await Promise.all([
         api.settings.listProviderProfiles(),
-        api.settings.getOllamaStatus()
+        api.settings.getOllamaStatus(),
+        api.settings.getProviderSelection('openai'),
+        api.settings.getProviderSelection('anthropic'),
+        api.settings.getProviderSelection('google'),
+        api.settings.getPrismOverride()
       ]);
       setProviderProfiles(profiles);
       setOllamaStatus(runtimeStatus);
+      setProviderSelections({
+        openai: openaiSelection?.profileId ?? null,
+        anthropic: anthropicSelection?.profileId ?? null,
+        google: googleSelection?.profileId ?? null
+      });
+      setPrismOverride(override);
     } finally {
       setSettingsLoading(false);
     }
@@ -57,17 +96,21 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
+    if (!api) {
+      setError('Desktop bridge unavailable. Launch Supreme Raman AI through Electron with `npm run desktop:dev` instead of opening the Vite URL directly in a browser.');
+      setLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
     (async () => {
       try {
-        const [next, profiles, runtimeStatus] = await Promise.all([
+        const [next] = await Promise.all([
           api.workspace.getSnapshot(),
-          api.settings.listProviderProfiles(),
-          api.settings.getOllamaStatus()
+          refreshSettings()
         ]);
         if (!mounted) return;
         setSnapshot(next);
-        setProviderProfiles(profiles);
-        setOllamaStatus(runtimeStatus);
       } catch (nextError) {
         if (!mounted) return;
         setError(nextError instanceof Error ? nextError.message : String(nextError));
@@ -79,7 +122,7 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [api]);
+  }, [api, refreshSettings]);
 
   useEffect(() => {
     if (!snapshot?.profile) return;
@@ -96,6 +139,9 @@ export default function App() {
   }, [refreshSnapshot, snapshot?.profile]);
 
   const handleSaveProfile = async (profile: { name: string; email: string }) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setSavingProfile(true);
     setError(null);
     try {
@@ -111,7 +157,7 @@ export default function App() {
   };
 
   const handlePrismSend = async (mode: PrismMode, message: string) => {
-    if (!snapshot) return;
+    if (!api || !snapshot) return;
     const userMessage: PrismMessage = { id: crypto.randomUUID(), role: 'user', text: message, mode };
     setPrismMessages((current) => [...current, userMessage]);
     setBusy(true);
@@ -142,6 +188,9 @@ export default function App() {
   };
 
   const handleTaskCreate = async (input: TaskCreateInput) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -158,6 +207,9 @@ export default function App() {
   };
 
   const handleUpsertGroup = async (group: { id?: string; name: string; description?: string; memberAgentIds: string[] }) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -179,6 +231,9 @@ export default function App() {
   };
 
   const handleDeleteGroup = async (groupId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -193,6 +248,9 @@ export default function App() {
   };
 
   const handleSendAgentMessage = async (input: AgentChatInput) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -208,6 +266,9 @@ export default function App() {
   };
 
   const handleSendGroupMessage = async (input: GroupChatInput) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -223,6 +284,9 @@ export default function App() {
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -237,6 +301,9 @@ export default function App() {
   };
 
   const handleDuplicateTask = async (taskId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -251,6 +318,9 @@ export default function App() {
   };
 
   const handleRerunTask = async (taskId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -265,6 +335,9 @@ export default function App() {
   };
 
   const handleDeleteWorkItem = async (workItemId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -279,6 +352,9 @@ export default function App() {
   };
 
   const handleOpenArtifact = async (artifactId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setError(null);
     try {
       await api.work.openArtifact(artifactId);
@@ -314,6 +390,9 @@ export default function App() {
   };
 
   const handleDeleteThread = async (threadId: string) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -350,17 +429,23 @@ export default function App() {
 
   const handleSaveProviderProfile = async (input: {
     id: string;
-    provider: 'openai' | 'anthropic' | 'google';
+    provider: RemoteProviderId;
     label: string;
     description?: string;
     apiKey?: string;
     token?: string;
     isDefault?: boolean;
   }) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
       await api.settings.saveProviderProfile(input);
+      if (input.isDefault) {
+        await api.settings.setProviderSelection({ provider: input.provider, profileId: input.id });
+      }
       await refreshSettings();
       setNotice(`Saved ${input.provider} profile ${input.label}.`);
     } catch (nextError) {
@@ -371,7 +456,99 @@ export default function App() {
     }
   };
 
+  const handleDeleteProviderProfile = async (profile: ProviderAuthProfile) => {
+    if (!api || profile.provider === 'ollama') {
+      throw new Error('Desktop bridge unavailable.');
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.settings.deleteProviderProfile({
+        provider: profile.provider,
+        profileId: profile.id
+      });
+      await refreshSettings();
+      setNotice(`Deleted ${profile.label}.`);
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTestProviderProfile = async (
+    profile: ProviderAuthProfile,
+    probeWithRuntime = false
+  ) => {
+    if (!api || profile.provider === 'ollama') {
+      throw new Error('Desktop bridge unavailable.');
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.settings.testProviderProfile({
+        provider: profile.provider,
+        profileId: profile.id,
+        ...(probeWithRuntime ? { probeWithRuntime: true } : {})
+      });
+      if (result.ok) {
+        setNotice(result.message);
+      } else {
+        setError(result.message);
+      }
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSetProviderSelection = async (provider: RemoteProviderId, profileId: string | null) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.settings.setProviderSelection({ provider, profileId });
+      await refreshSettings();
+      setNotice(profileId ? `Selected active ${provider} profile.` : `Cleared ${provider} profile selection.`);
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSavePrismOverride = async (override: PrismProviderOverrideSettings | null) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.settings.savePrismOverride(override);
+      await refreshSettings();
+      setNotice(override ? 'Saved Prism runtime override.' : 'Prism returned to local-first mode.');
+    } catch (nextError) {
+      const messageText = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(messageText);
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleInstallDefaultModels = async () => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -387,6 +564,9 @@ export default function App() {
   };
 
   const handleSaveUserMap = async (tree: UserMapNode) => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -402,6 +582,9 @@ export default function App() {
   };
 
   const handleSyncUserMap = async () => {
+    if (!api) {
+      throw new Error('Desktop bridge unavailable.');
+    }
     setBusy(true);
     setError(null);
     try {
@@ -426,6 +609,24 @@ export default function App() {
         <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/70">
           <LoaderCircle className="animate-spin" size={18} />
           Loading Supreme Raman AI…
+        </div>
+      </div>
+    );
+  }
+
+  if (!api) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-8 text-white">
+        <div className="max-w-2xl rounded-[32px] border border-white/10 bg-white/5 p-8 text-center">
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/40">Supreme Raman AI</div>
+          <div className="mt-4 text-3xl font-semibold">Desktop bridge not detected.</div>
+          <p className="mt-4 text-base leading-8 text-white/65">
+            This renderer is meant to run inside the Electron desktop shell. If you open the Vite URL directly in a browser, the local desktop APIs will not exist.
+          </p>
+          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 px-5 py-4 text-left text-sm leading-7 text-white/72">
+            Run:
+            <pre className="mt-3 overflow-x-auto text-white"><code>npm run desktop:dev</code></pre>
+          </div>
         </div>
       </div>
     );
@@ -546,6 +747,8 @@ export default function App() {
                 onSelectSection={setSelectedSettingsSection}
                 runtimeReady={snapshot.runtime.available}
                 providerProfiles={providerProfiles}
+                providerSelections={providerSelections}
+                prismOverride={prismOverride}
                 ollamaStatus={ollamaStatus}
                 models={snapshot.models}
                 busy={busy}
@@ -553,6 +756,10 @@ export default function App() {
                 onRefresh={refreshSettings}
                 onInstallDefaults={handleInstallDefaultModels}
                 onSaveProfile={handleSaveProviderProfile}
+                onDeleteProfile={handleDeleteProviderProfile}
+                onTestProfile={handleTestProviderProfile}
+                onSetProviderSelection={handleSetProviderSelection}
+                onSavePrismOverride={handleSavePrismOverride}
               />
             ) : null}
           </section>

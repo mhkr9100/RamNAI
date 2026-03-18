@@ -9,7 +9,7 @@ import type {
   UserMapNode
 } from '@supreme/shared';
 
-export interface OpenClawWorkspaceSource {
+export interface RuntimeWorkspaceSource {
   profile: LocalProfile | null;
   userMap: UserMapNode;
   agents: AgentSpec[];
@@ -18,17 +18,17 @@ export interface OpenClawWorkspaceSource {
   generatedAt?: string;
 }
 
-export interface OpenClawWorkspaceManagerOptions {
+export interface RuntimeWorkspaceManagerOptions {
   workspaceName?: string;
   prismWorkspaceName?: string;
 }
 
-export interface OpenClawWorkspaceFile {
+export interface RuntimeWorkspaceFile {
   path: string;
   content: string;
 }
 
-export interface OpenClawWorkspaceSubjectManifest {
+export interface RuntimeWorkspaceSubjectManifest {
   kind: 'prism' | 'agent';
   name: string;
   slug: string;
@@ -40,12 +40,12 @@ export interface OpenClawWorkspaceSubjectManifest {
   memoryNamespaces: string[];
 }
 
-export interface OpenClawWorkspaceManifest {
+export interface RuntimeWorkspaceManifest {
   workspaceName: string;
   generatedAt: string;
   profile: LocalProfile | null;
-  prism: OpenClawWorkspaceSubjectManifest;
-  agents: OpenClawWorkspaceSubjectManifest[];
+  prism: RuntimeWorkspaceSubjectManifest;
+  agents: RuntimeWorkspaceSubjectManifest[];
   groups: Array<{
     id: string;
     name: string;
@@ -56,18 +56,22 @@ export interface OpenClawWorkspaceManifest {
   skillsWorkspaceRoot: string;
 }
 
-export interface OpenClawWorkspacePlan {
+export interface RuntimeWorkspacePlan {
   rootDir: string;
   manifestPath: string;
-  manifest: OpenClawWorkspaceManifest;
-  files: OpenClawWorkspaceFile[];
+  manifest: RuntimeWorkspaceManifest;
+  files: RuntimeWorkspaceFile[];
 }
 
-export interface OpenClawWorkspaceSyncResult {
+export interface RuntimeWorkspaceSyncResult {
   rootDir: string;
   manifestPath: string;
   writtenFiles: string[];
 }
+
+const PRIMARY_MANIFEST_FILENAME = 'runtime.workspace.json';
+// Compatibility mirror for the external runtime bridge while we transition away from vendor naming.
+const COMPAT_MANIFEST_FILENAME = 'openclaw.workspace.json';
 
 const USER_MAP_CATEGORY_ORDER: UserMapNode['nodeType'][] = ['root', 'category', 'cluster', 'fact'];
 const USER_MAP_CATEGORY_LABEL_ORDER = [
@@ -161,10 +165,10 @@ function renderWorkspaceDocHeader(title: string, body: string[]) {
   return [`# ${title}`, '', ...body.filter(Boolean), ''].join('\n');
 }
 
-export class OpenClawWorkspaceManager {
-  constructor(private readonly options: OpenClawWorkspaceManagerOptions = {}) {}
+export class RuntimeWorkspaceManager {
+  constructor(private readonly options: RuntimeWorkspaceManagerOptions = {}) {}
 
-  buildPlan(source: OpenClawWorkspaceSource): OpenClawWorkspacePlan {
+  buildPlan(source: RuntimeWorkspaceSource): RuntimeWorkspacePlan {
     const generatedAt = source.generatedAt ?? new Date().toISOString();
     const workspaceName = this.options.workspaceName ?? source.profile?.name ?? 'Supreme Raman AI';
     const rootSlug = slugify(workspaceName, 'supreme-raman-ai');
@@ -177,7 +181,7 @@ export class OpenClawWorkspaceManager {
     const allSkills = [...new Set(source.agents.flatMap((agent) => agent.skills).filter(Boolean))].sort((left, right) => left.localeCompare(right));
     const memoryDays = [...new Set(source.memoryFacts.map((fact) => asUtcDateKey(fact.updatedAt || fact.createdAt)))].sort((left, right) => left.localeCompare(right));
 
-    const prismSubject: OpenClawWorkspaceSubjectManifest = {
+    const prismSubject: RuntimeWorkspaceSubjectManifest = {
       kind: 'prism',
       name: this.options.prismWorkspaceName ?? 'Prism',
       slug: prismSlug,
@@ -189,7 +193,7 @@ export class OpenClawWorkspaceManager {
       memoryNamespaces: this.collectMemoryNamespaces(source.agents)
     };
 
-    const manifest: OpenClawWorkspaceManifest = {
+    const manifest: RuntimeWorkspaceManifest = {
       workspaceName,
       generatedAt,
       profile: source.profile,
@@ -230,7 +234,7 @@ export class OpenClawWorkspaceManager {
 
     return {
       rootDir: rootSlug,
-      manifestPath: join(rootSlug, 'openclaw.workspace.json'),
+      manifestPath: join(rootSlug, PRIMARY_MANIFEST_FILENAME),
       manifest,
       files
     };
@@ -239,11 +243,11 @@ export class OpenClawWorkspaceManager {
   renderFiles(source: {
     workspaceRoot: string;
     prismWorkspacePath: string;
-    agents: OpenClawWorkspaceSubjectManifest[];
-    source: OpenClawWorkspaceSource;
-    manifest: OpenClawWorkspaceManifest;
-  }): OpenClawWorkspaceFile[] {
-    const files: OpenClawWorkspaceFile[] = [];
+    agents: RuntimeWorkspaceSubjectManifest[];
+    source: RuntimeWorkspaceSource;
+    manifest: RuntimeWorkspaceManifest;
+  }): RuntimeWorkspaceFile[] {
+    const files: RuntimeWorkspaceFile[] = [];
     const { source: input, manifest, agents } = source;
 
     files.push({
@@ -286,7 +290,7 @@ export class OpenClawWorkspaceManager {
         `Prism workspace: \`${source.prismWorkspacePath}\``,
         `Profile: ${input.profile ? `${input.profile.name} <${input.profile.email}>` : 'unassigned local profile'}`,
         '',
-        'The OpenClaw adaptation layer should preserve the existing Ollama execution path while mirroring durable state into filesystem workspace files.'
+        'The runtime bridge should preserve the existing Ollama execution path while mirroring durable state into filesystem workspace files.'
       ])
     });
 
@@ -381,7 +385,7 @@ export class OpenClawWorkspaceManager {
     });
 
     files.push({
-      path: 'openclaw.workspace.json',
+      path: PRIMARY_MANIFEST_FILENAME,
       content: JSON.stringify(manifest, null, 2) + '\n'
     });
 
@@ -420,7 +424,7 @@ export class OpenClawWorkspaceManager {
     return files;
   }
 
-  async sync(targetDir: string, source: OpenClawWorkspaceSource): Promise<OpenClawWorkspaceSyncResult> {
+  async sync(targetDir: string, source: RuntimeWorkspaceSource): Promise<RuntimeWorkspaceSyncResult> {
     const plan = this.buildPlan(source);
     const rootDir = join(targetDir, plan.rootDir);
     const writtenFiles: string[] = [];
@@ -439,17 +443,20 @@ export class OpenClawWorkspaceManager {
       await mkdir(join(rootDir, skillDir), { recursive: true });
     }
 
-    await this.writeIfChanged(join(rootDir, 'openclaw.workspace.json'), JSON.stringify(plan.manifest, null, 2) + '\n');
-    writtenFiles.push(relative(targetDir, join(rootDir, 'openclaw.workspace.json')));
+    await this.writeIfChanged(
+      join(rootDir, COMPAT_MANIFEST_FILENAME),
+      JSON.stringify(plan.manifest, null, 2) + '\n'
+    );
+    writtenFiles.push(relative(targetDir, join(rootDir, COMPAT_MANIFEST_FILENAME)));
 
     return {
       rootDir: relative(targetDir, rootDir),
-      manifestPath: relative(targetDir, join(rootDir, 'openclaw.workspace.json')),
+      manifestPath: relative(targetDir, join(rootDir, PRIMARY_MANIFEST_FILENAME)),
       writtenFiles: [...new Set(writtenFiles)].sort((left, right) => left.localeCompare(right))
     };
   }
 
-  private buildAgentSubject(agent: AgentSpec): OpenClawWorkspaceSubjectManifest {
+  private buildAgentSubject(agent: AgentSpec): RuntimeWorkspaceSubjectManifest {
     return {
       kind: 'agent',
       name: agent.name,
@@ -465,14 +472,14 @@ export class OpenClawWorkspaceManager {
 
   private renderSubjectFiles(
     subjectPath: string,
-    subject: OpenClawWorkspaceSubjectManifest,
+    subject: RuntimeWorkspaceSubjectManifest,
     context?: {
       profile: LocalProfile | null;
       userMap: UserMapNode;
       memoryFacts: MemoryFact[];
       agent?: AgentSpec | null;
     }
-  ): OpenClawWorkspaceFile[] {
+  ): RuntimeWorkspaceFile[] {
     const profile = context?.profile ?? null;
     const userMap = context?.userMap;
     const memoryFacts = context?.memoryFacts ?? [];

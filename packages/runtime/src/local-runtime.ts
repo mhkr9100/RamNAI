@@ -17,6 +17,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_API = 'http://127.0.0.1:11434/api';
+// External runtime bridge binary. Kept here so the rest of the app stays vendor-neutral.
+const COMPAT_RUNTIME_CLI = 'openclaw';
+const RUNTIME_BRIDGE_MODEL_ID = 'runtime-bridge';
 const ALLOWED_MEMORY_CATEGORIES: MemoryCategory[] = [
   'Identity',
   'Preferences',
@@ -42,7 +45,7 @@ interface OllamaGenerateResponse {
 export interface RuntimeStatus {
   available: boolean;
   ollamaReady: boolean;
-  openClawReady: boolean;
+  runtimeBridgeReady: boolean;
   message?: string;
 }
 
@@ -59,7 +62,7 @@ export interface TaskExecutionContext {
   groups: GroupSpec[];
 }
 
-interface OpenClawPrismReply {
+interface RuntimeBridgePrismReply {
   id: string;
   text: string;
   provider?: ProviderId;
@@ -67,7 +70,7 @@ interface OpenClawPrismReply {
   createdAgent?: AgentSpec;
 }
 
-interface OpenClawTaskResult {
+interface RuntimeBridgeTaskResult {
   text: string;
   provider?: ProviderId;
   modelId?: string;
@@ -83,17 +86,17 @@ export class LocalRuntimeAdapter {
 
   async getStatus(): Promise<RuntimeStatus> {
     const ollamaReady = await this.isOllamaReachable();
-    const openClawReady = await this.hasBinary('openclaw', ['--version']);
+    const runtimeBridgeReady = await this.hasBinary(COMPAT_RUNTIME_CLI, ['--version']);
 
     return {
-      available: ollamaReady || openClawReady,
+      available: ollamaReady || runtimeBridgeReady,
       ollamaReady,
-      openClawReady,
+      runtimeBridgeReady,
       message: !ollamaReady
         ? 'Ollama runtime is not available yet. Install or bundle setup is still required.'
-        : openClawReady
-          ? 'Local Ollama and OpenClaw runtimes are reachable.'
-          : 'Local Ollama runtime is reachable. OpenClaw integration is still being wired.'
+        : runtimeBridgeReady
+          ? 'Local Ollama and the external runtime bridge are reachable.'
+          : 'Local Ollama runtime is reachable. The external runtime bridge is still being wired.'
     };
   }
 
@@ -128,9 +131,9 @@ export class LocalRuntimeAdapter {
   }
 
   async sendPrismRequest(input: PrismRequest): Promise<PrismReply> {
-    const openClawReply = await this.tryOpenClawPrism(input);
-    if (openClawReply) {
-      return openClawReply;
+    const runtimeBridgeReply = await this.tryRuntimeBridgePrism(input);
+    if (runtimeBridgeReply) {
+      return runtimeBridgeReply;
     }
 
     const models = await this.listModels();
@@ -171,9 +174,9 @@ export class LocalRuntimeAdapter {
   }
 
   async executeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult> {
-    const openClawResult = await this.tryOpenClawTask(task, context);
-    if (openClawResult) {
-      return openClawResult;
+    const runtimeBridgeResult = await this.tryRuntimeBridgeTask(task, context);
+    if (runtimeBridgeResult) {
+      return runtimeBridgeResult;
     }
 
     if (task.mode === 'council') {
@@ -210,38 +213,38 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private async tryOpenClawPrism(input: PrismRequest): Promise<PrismReply | null> {
+  private async tryRuntimeBridgePrism(input: PrismRequest): Promise<PrismReply | null> {
     const payload = {
       kind: 'prism',
       request: input
     };
 
-    const response = await this.invokeOpenClaw<OpenClawPrismReply>(payload);
+    const response = await this.invokeRuntimeBridge<RuntimeBridgePrismReply>(payload);
     if (!response) return null;
 
     return {
       id: response.id ?? randomUUID(),
       text: response.text,
       provider: response.provider ?? 'ollama',
-      modelId: response.modelId ?? 'openclaw',
+      modelId: response.modelId ?? RUNTIME_BRIDGE_MODEL_ID,
       ...(response.createdAgent ? { createdAgent: response.createdAgent } : {})
     };
   }
 
-  private async tryOpenClawTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
+  private async tryRuntimeBridgeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
     const payload = {
       kind: 'task',
       task,
       context
     };
 
-    const response = await this.invokeOpenClaw<OpenClawTaskResult>(payload);
+    const response = await this.invokeRuntimeBridge<RuntimeBridgeTaskResult>(payload);
     if (!response) return null;
 
     const result: TaskExecutionResult = {
       text: response.text,
       provider: response.provider ?? 'ollama',
-      modelId: response.modelId ?? 'openclaw'
+      modelId: response.modelId ?? RUNTIME_BRIDGE_MODEL_ID
     };
 
     if (response.councilTrace) {
@@ -251,18 +254,18 @@ export class LocalRuntimeAdapter {
     return result;
   }
 
-  private async invokeOpenClaw<T>(payload: unknown): Promise<T | null> {
+  private async invokeRuntimeBridge<T>(payload: unknown): Promise<T | null> {
     if (!this.workspaceRoot) {
       return null;
     }
 
-    const hasOpenClaw = await this.hasBinary('openclaw', ['--version']);
-    if (!hasOpenClaw) {
+    const hasRuntimeBridge = await this.hasBinary(COMPAT_RUNTIME_CLI, ['--version']);
+    if (!hasRuntimeBridge) {
       return null;
     }
 
     try {
-      const { stdout } = await execFileAsync('openclaw', [
+      const { stdout } = await execFileAsync(COMPAT_RUNTIME_CLI, [
         'run',
         '--workspace',
         this.workspaceRoot,
@@ -275,9 +278,9 @@ export class LocalRuntimeAdapter {
       }
       return JSON.parse(trimmed) as T;
     } catch (error) {
-      // If OpenClaw execution fails for any reason, fall back to the current Ollama path.
+      // If the external runtime bridge fails for any reason, fall back to the current Ollama path.
       // eslint-disable-next-line no-console
-      console.warn('[runtime] OpenClaw execution failed, falling back to Ollama path:', error);
+      console.warn('[runtime] External runtime bridge failed, falling back to Ollama path:', error);
       return null;
     }
   }
@@ -417,7 +420,7 @@ export class LocalRuntimeAdapter {
   private buildPrismCreateSystemPrompt() {
     return [
       'You are Prism inside Supreme Raman AI.',
-      'Create a single JSON object representing an OpenClaw-native chatbot spec.',
+      'Create a single JSON object representing a local-execution chatbot spec.',
       'Return JSON only. No markdown. No prose.',
       'Respect these runtime rules: local-first, Ollama-first, manual @mention groups, scheduled tasks supported, recurring tasks supported, council eligible when useful.'
     ].join(' ');

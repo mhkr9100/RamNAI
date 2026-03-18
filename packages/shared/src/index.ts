@@ -25,6 +25,11 @@ export interface ProviderAuthSelection {
   profileId: string | null;
 }
 
+export interface PrismProviderOverrideSettings {
+  provider: ProviderId;
+  modelId: string;
+}
+
 export type ProviderStrategy =
   | { mode: 'local_first'; preferredLocalModelIds: string[]; fallbackProviders: ProviderId[] }
   | { mode: 'fixed'; provider: ProviderId; modelId: string }
@@ -233,6 +238,8 @@ export interface OllamaModelRuntimeStatus {
   id: string;
   label: string;
   status: OllamaModelInstallStatus;
+  progress?: number | undefined;
+  phase?: string | undefined;
   lastError?: string;
 }
 

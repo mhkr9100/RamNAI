@@ -17,7 +17,7 @@ Locked decisions:
 - Ollama-first local runtime
 - optional provider keys later for OpenAI, Anthropic, and Google
 - Prism is the product architect
-- OpenClaw-style local runtime is the long-term execution target
+- the external runtime bridge is the long-term execution target
 - no external channels at launch
 - Telegram for Prism is phase 2
 
@@ -102,7 +102,7 @@ Implemented today:
 - council execution
 - durable memory extraction
 
-OpenClaw is not yet vendored. The current adapter is a real local stepping stone, not a mock runtime.
+The external runtime bridge is not yet vendored. The current adapter is a real local stepping stone, not a mock runtime.
 
 ### 5. Scheduler
 
@@ -132,7 +132,7 @@ Prism creates a persistent local chatbot spec containing:
 - runtime capabilities
 - safety policy
 
-OpenClaw-style execution remains the target runtime contract.
+Runtime-bridge execution remains the target runtime contract.
 
 ### Task Spec
 
@@ -199,7 +199,7 @@ What is real now:
 
 What is still pending:
 
-- vendored OpenClaw runtime integration
+- vendored runtime-bridge integration
 - provider settings UI and non-Ollama providers
 - dedicated chatbot chat surface
 - manual `@mention` group execution

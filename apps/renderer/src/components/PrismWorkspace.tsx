@@ -90,7 +90,7 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask,
             </div>
             <h1 className="mt-5 text-4xl font-semibold leading-tight text-white">Design chatbots, schedule work, and shape the local runtime from one place.</h1>
             <p className="mt-4 max-w-2xl text-base leading-8 text-white/60">
-              Prism is your local architect. It can answer directly, create OpenClaw-native chatbot specs, and schedule autonomous work that lands in Work without touching a cloud backend.
+              Prism is your local architect. It can answer directly, create local-execution chatbot specs, and schedule autonomous work that lands in Work without touching a cloud backend.
             </p>
           </div>
           <div className="grid w-full gap-3 sm:w-[340px]">

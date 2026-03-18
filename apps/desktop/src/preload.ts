@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld('supreme', {
   settings: {
     listProviderProfiles: () => ipcRenderer.invoke(channels.providerAuthList),
     saveProviderProfile: (input: unknown) => ipcRenderer.invoke(channels.providerAuthUpsert, input),
+    deleteProviderProfile: (input: unknown) => ipcRenderer.invoke(channels.providerAuthDelete, input),
+    testProviderProfile: (input: unknown) => ipcRenderer.invoke(channels.providerAuthTest, input),
+    getProviderSelection: (provider: string) => ipcRenderer.invoke(channels.providerAuthGetSelection, provider),
+    setProviderSelection: (selection: unknown) => ipcRenderer.invoke(channels.providerAuthSetSelection, selection),
+    getPrismOverride: () => ipcRenderer.invoke(channels.prismOverrideGet),
+    savePrismOverride: (override: unknown) => ipcRenderer.invoke(channels.prismOverrideSave, override),
     getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),
     installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults)
   }

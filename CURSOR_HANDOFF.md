@@ -79,10 +79,10 @@ Supreme Raman AI is:
 - provider profiles can be listed and saved through desktop IPC
 - Ollama status and default model installation are surfaced in the UI
 
-### OpenClaw adaptation
+### Runtime bridge adaptation
 
-- OpenClaw-style workspace generator exists in `packages/runtime/src/openclaw-workspace.ts`
-- desktop sync now emits OpenClaw-style files into the local workspace mirror
+- runtime workspace generator exists in `packages/runtime/src/runtime-workspace.ts`
+- desktop sync now emits runtime workspace files into the local workspace mirror
 
 ## Files To Know First
 
@@ -92,7 +92,7 @@ Supreme Raman AI is:
 - `apps/renderer/src/components/SpectrumView.tsx`
 - `apps/renderer/src/components/chat/`
 - `packages/runtime/src/local-runtime.ts`
-- `packages/runtime/src/openclaw-workspace.ts`
+- `packages/runtime/src/runtime-workspace.ts`
 - `packages/storage/src/sqlite-storage.ts`
 - `packages/shared/src/index.ts`
 - `ARCHITECTURE.md`
@@ -100,7 +100,7 @@ Supreme Raman AI is:
 
 ## Current Gaps
 
-1. OpenClaw is adapted as a workspace layer, but the live execution path is still Ollama-first through `LocalRuntimeAdapter`.
+1. The runtime bridge is adapted as a workspace layer, but the live execution path is still Ollama-first through `LocalRuntimeAdapter`.
 2. Provider profile delete/test and persisted Prism provider override are not finished yet.
 3. Group chat uses manual `@mention`, and richer participant management is still intentionally out of scope for this wave.
 4. Bundled Ollama runtime management and first-run model installation still need desktop-lane polish.
@@ -108,15 +108,15 @@ Supreme Raman AI is:
 
 ## Best Next Tasks For Cursor
 
-### Task 1: Replace runtime execution path with deeper OpenClaw integration
+### Task 1: Replace runtime execution path with deeper runtime-bridge integration
 
 Goal:
 - keep the current UI and storage model
-- move actual agent/chat execution toward OpenClaw-native runtime invocation
+- move actual agent/chat execution toward runtime-bridge invocation
 
 Focus files:
 - `packages/runtime/src/local-runtime.ts`
-- `packages/runtime/src/openclaw-workspace.ts`
+- `packages/runtime/src/runtime-workspace.ts`
 - possibly new runtime files under `packages/runtime/src/`
 
 Rules:
@@ -133,7 +133,7 @@ Goal:
 Focus files:
 - `apps/desktop/src/main.ts`
 - `apps/desktop/src/preload.ts`
-- `packages/runtime/src/openclaw-auth.ts`
+- `packages/runtime/src/provider-auth-store.ts`
 - `packages/storage/src/sqlite-storage.ts`
 - `packages/shared/src/index.ts`
 

@@ -8,7 +8,9 @@ import type {
   MemoryFact,
   OllamaRuntimeStatus,
   PrismReply,
+  PrismProviderOverrideSettings,
   ProviderAuthProfile,
+  ProviderAuthSelection,
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
@@ -32,7 +34,7 @@ export interface WorkspaceSnapshot {
   runtime: {
     available: boolean;
     ollamaReady: boolean;
-    openClawReady: boolean;
+    runtimeBridgeReady: boolean;
     message?: string;
   };
 }
@@ -116,6 +118,19 @@ export interface SupremeDesktopApi {
       token?: string;
       isDefault?: boolean;
     }) => Promise<ProviderAuthProfile>;
+    deleteProviderProfile: (input: {
+      provider: Exclude<ProviderId, 'ollama'>;
+      profileId: string;
+    }) => Promise<{ ok: true }>;
+    testProviderProfile: (input: {
+      provider: Exclude<ProviderId, 'ollama'>;
+      profileId: string;
+      probeWithRuntime?: boolean;
+    }) => Promise<{ ok: boolean; message: string }>;
+    getProviderSelection: (provider: ProviderId) => Promise<ProviderAuthSelection | null>;
+    setProviderSelection: (selection: ProviderAuthSelection) => Promise<ProviderAuthSelection>;
+    getPrismOverride: () => Promise<PrismProviderOverrideSettings | null>;
+    savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<PrismProviderOverrideSettings | null>;
     getOllamaStatus: () => Promise<OllamaRuntimeStatus>;
     installDefaultModels: () => Promise<OllamaRuntimeStatus>;
   };

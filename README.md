@@ -8,7 +8,7 @@ Desktop-first, privacy-first AI workspace combining RamN AI's product layer with
 - `apps/desktop` — Electron shell and IPC bridge
 - `packages/shared` — canonical domain types and defaults
 - `packages/storage` — local SQLite-backed storage layer
-- `packages/runtime` — local runtime adapter for Ollama/OpenClaw integration
+- `packages/runtime` — local runtime adapter for Ollama and runtime-bridge integration
 
 ## Current Status
 
@@ -24,7 +24,7 @@ This repo already contains a working local foundation:
 - Work surface
 - tree-first UserMap editor
 
-OpenClaw vendoring is still pending. The current runtime is real and local, but still Ollama-first.
+Runtime-bridge vendoring is still pending. The current runtime is real and local, but still Ollama-first.
 
 ## Commands
 
