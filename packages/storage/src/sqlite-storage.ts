@@ -49,6 +49,31 @@ export interface WorkspaceSnapshot {
 }
 
 type VisibilityScope = 'public' | 'private';
+const STORAGE_SCHEMA_VERSION = 2;
+
+interface TaskRunRow {
+  id: string;
+  task_id: string;
+  status?: string;
+  claimed_at?: string | null;
+  lease_expires_at?: string | null;
+  created_at?: string | null;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  worker_id?: string | null;
+  attempt?: number | null;
+  run_index?: number | null;
+  target?: string | null;
+  provider?: string | null;
+  model_id?: string | null;
+  summary?: string | null;
+  last_error?: string | null;
+  claim_token?: string | null;
+  artifact_ids?: string | null;
+  council_trace?: string | null;
+  payload?: string | null;
+}
 
 function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: VisibilityScope): UserMapNode {
   const visibility = node.visibility ?? inheritedVisibility;
@@ -111,6 +136,73 @@ function memoryVisibility(fact: MemoryFact): VisibilityScope {
   return fact.visibility ?? 'public';
 }
 
+function taskRunPayload(run: TaskRunRecord): string {
+  return JSON.stringify(run);
+}
+
+function taskRunColumns(run: TaskRunRecord) {
+  return {
+    id: run.id,
+    task_id: run.taskId,
+    status: run.status,
+    claimed_at: run.claimedAt ?? null,
+    lease_expires_at: run.leaseExpiresAt ?? null,
+    created_at: run.createdAt ?? null,
+    updated_at: run.updatedAt,
+    started_at: run.startedAt ?? null,
+    completed_at: run.completedAt ?? null,
+    worker_id: run.workerId ?? null,
+    attempt: run.attempt ?? null,
+    run_index: run.runIndex ?? null,
+    target: run.target ? JSON.stringify(run.target) : null,
+    provider: run.provider ?? null,
+    model_id: run.modelId ?? null,
+    summary: run.summary ?? null,
+    last_error: run.lastError ?? null,
+    claim_token: run.claimToken ?? null,
+    artifact_ids: run.artifactIds ? JSON.stringify(run.artifactIds) : null,
+    council_trace: run.councilTrace ? JSON.stringify(run.councilTrace) : null,
+    payload: taskRunPayload(run)
+  };
+}
+
+function taskRunFromRow(row: TaskRunRow): TaskRunRecord {
+  const payload = row.payload ? parseJson<TaskRunRecord | null>(row.payload, null) : null;
+  if (payload) {
+    return payload;
+  }
+
+  const target = row.target ? parseJson<TaskRunRecord['target'] | null>(row.target, null) : null;
+  const artifactIds = row.artifact_ids ? parseJson<string[]>(row.artifact_ids, []) : undefined;
+  const councilTrace = row.council_trace
+    ? parseJson<NonNullable<TaskRunRecord['councilTrace']> | null>(row.council_trace, null)
+    : null;
+  const provider = row.provider ? (row.provider as NonNullable<TaskRunRecord['provider']>) : null;
+
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    status: (row.status as TaskRunRecord['status']) ?? 'running',
+    updatedAt: row.updated_at,
+    ...(row.created_at ? { createdAt: row.created_at } : {}),
+    ...(row.claimed_at ? { claimedAt: row.claimed_at } : {}),
+    ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
+    ...(row.started_at ? { startedAt: row.started_at } : {}),
+    ...(row.completed_at ? { completedAt: row.completed_at } : {}),
+    ...(row.worker_id ? { workerId: row.worker_id } : {}),
+    ...(row.attempt !== null && row.attempt !== undefined ? { attempt: row.attempt } : {}),
+    ...(row.run_index !== null && row.run_index !== undefined ? { runIndex: row.run_index } : {}),
+    ...(target ? { target } : {}),
+    ...(provider ? { provider } : {}),
+    ...(row.model_id ? { modelId: row.model_id } : {}),
+    ...(row.summary ? { summary: row.summary } : {}),
+    ...(row.last_error ? { lastError: row.last_error } : {}),
+    ...(row.claim_token ? { claimToken: row.claim_token } : {}),
+    ...(artifactIds ? { artifactIds } : {}),
+    ...(councilTrace ? { councilTrace } : {})
+  };
+}
+
 export class SqliteStorage {
   private readonly db: DatabaseSync;
 
@@ -118,6 +210,94 @@ export class SqliteStorage {
     this.db = new DatabaseSync(dbPath);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
+  }
+
+  close() {
+    this.db.close();
+  }
+
+  private getSchemaVersion(): number {
+    const row = this.db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+    return row?.user_version ?? 0;
+  }
+
+  private setSchemaVersion(version: number) {
+    this.db.exec(`PRAGMA user_version = ${Math.max(0, Math.floor(version))};`);
+  }
+
+  private ensureTaskRunSchemaColumns() {
+    const columns = new Set(
+      (this.db.prepare('PRAGMA table_info(task_runs)').all() as Array<{ name: string }>)
+        .map((row) => row.name)
+    );
+    const additions: Array<[string, string]> = [
+      ['status', 'TEXT NOT NULL DEFAULT \'claimed\''],
+      ['claimed_at', 'TEXT'],
+      ['lease_expires_at', 'TEXT'],
+      ['created_at', 'TEXT'],
+      ['started_at', 'TEXT'],
+      ['completed_at', 'TEXT'],
+      ['worker_id', 'TEXT'],
+      ['attempt', 'INTEGER'],
+      ['run_index', 'INTEGER'],
+      ['target', 'TEXT'],
+      ['provider', 'TEXT'],
+      ['model_id', 'TEXT'],
+      ['summary', 'TEXT'],
+      ['last_error', 'TEXT'],
+      ['claim_token', 'TEXT'],
+      ['artifact_ids', 'TEXT'],
+      ['council_trace', 'TEXT']
+    ];
+
+    for (const [name, definition] of additions) {
+      if (columns.has(name)) {
+        continue;
+      }
+
+      this.db.exec(`ALTER TABLE task_runs ADD COLUMN ${name} ${definition};`);
+    }
+
+    this.db.exec('CREATE INDEX IF NOT EXISTS task_runs_task_id_idx ON task_runs(task_id, updated_at DESC, id DESC);');
+    this.db.exec('CREATE INDEX IF NOT EXISTS task_runs_lease_idx ON task_runs(status, lease_expires_at, updated_at DESC);');
+  }
+
+  private backfillTaskRunSchema() {
+    const rows = this.db.prepare('SELECT * FROM task_runs').all() as unknown as TaskRunRow[];
+    const update = this.db.prepare(`
+      UPDATE task_runs
+      SET status = ?, claimed_at = ?, lease_expires_at = ?, created_at = ?, updated_at = ?, started_at = ?,
+          completed_at = ?, worker_id = ?, attempt = ?, run_index = ?, target = ?, provider = ?, model_id = ?,
+          summary = ?, last_error = ?, claim_token = ?, artifact_ids = ?, council_trace = ?, payload = ?
+      WHERE id = ?
+    `);
+
+    for (const row of rows) {
+      const run = taskRunFromRow(row);
+      const columns = taskRunColumns(run);
+      update.run(
+        columns.status,
+        columns.claimed_at,
+        columns.lease_expires_at,
+        columns.created_at,
+        columns.updated_at,
+        columns.started_at,
+        columns.completed_at,
+        columns.worker_id,
+        columns.attempt,
+        columns.run_index,
+        columns.target,
+        columns.provider,
+        columns.model_id,
+        columns.summary,
+        columns.last_error,
+        columns.claim_token,
+        columns.artifact_ids,
+        columns.council_trace,
+        columns.payload,
+        columns.id
+      );
+    }
   }
 
   init() {
@@ -149,7 +329,24 @@ export class SqliteStorage {
       CREATE TABLE IF NOT EXISTS task_runs (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'claimed',
+        claimed_at TEXT,
+        lease_expires_at TEXT,
+        created_at TEXT,
         updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        worker_id TEXT,
+        attempt INTEGER,
+        run_index INTEGER,
+        target TEXT,
+        provider TEXT,
+        model_id TEXT,
+        summary TEXT,
+        last_error TEXT,
+        claim_token TEXT,
+        artifact_ids TEXT,
+        council_trace TEXT,
         payload TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS artifacts (
@@ -178,6 +375,8 @@ export class SqliteStorage {
       );
     `);
 
+    this.ensureTaskRunSchemaColumns();
+
     const count = this.db.prepare('SELECT COUNT(*) as count FROM models').get() as { count: number };
     if (count.count === 0) {
       const insert = this.db.prepare('INSERT INTO models (id, payload) VALUES (?, ?)');
@@ -198,6 +397,12 @@ export class SqliteStorage {
     const prismSettingsRow = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
     if (!prismSettingsRow) {
       this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify({}));
+    }
+
+    const schemaVersion = this.getSchemaVersion();
+    if (schemaVersion < STORAGE_SCHEMA_VERSION) {
+      this.backfillTaskRunSchema();
+      this.setSchemaVersion(STORAGE_SCHEMA_VERSION);
     }
   }
 
@@ -307,23 +512,55 @@ export class SqliteStorage {
 
   listTaskRuns(taskId?: string): TaskRunRecord[] {
     const rows = taskId
-      ? this.db.prepare('SELECT payload FROM task_runs WHERE task_id = ? ORDER BY updated_at DESC, id DESC').all(taskId) as Array<{ payload: string }>
-      : this.db.prepare('SELECT payload FROM task_runs ORDER BY updated_at DESC, id DESC').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+      ? (this.db.prepare('SELECT * FROM task_runs WHERE task_id = ? ORDER BY updated_at DESC, id DESC').all(taskId) as unknown as TaskRunRow[])
+      : (this.db.prepare('SELECT * FROM task_runs ORDER BY updated_at DESC, id DESC').all() as unknown as TaskRunRow[]);
+    return rows.map(taskRunFromRow);
+  }
+
+  listActiveTaskRuns(taskId?: string, now = new Date()): TaskRunRecord[] {
+    const rows = taskId
+      ? this.db.prepare(`
+          SELECT * FROM task_runs
+          WHERE task_id = ? AND status IN ('claimed', 'running')
+            AND (lease_expires_at IS NULL OR lease_expires_at > ?)
+          ORDER BY updated_at DESC, id DESC
+        `).all(taskId, now.toISOString()) as unknown as TaskRunRow[]
+      : this.db.prepare(`
+          SELECT * FROM task_runs
+          WHERE status IN ('claimed', 'running')
+            AND (lease_expires_at IS NULL OR lease_expires_at > ?)
+          ORDER BY updated_at DESC, id DESC
+        `).all(now.toISOString()) as unknown as TaskRunRow[];
+    return rows.map(taskRunFromRow);
+  }
+
+  nextTaskRunAttempt(taskId: string): number {
+    const rows = this.db.prepare('SELECT attempt, run_index FROM task_runs WHERE task_id = ?').all(taskId) as Array<{
+      attempt?: number | null;
+      run_index?: number | null;
+    }>;
+    const values = rows.flatMap((row) => [row.attempt, row.run_index]).filter((value): value is number => typeof value === 'number');
+    return (values.length ? Math.max(...values) : 0) + 1;
   }
 
   getTaskRun(runId: string): TaskRunRecord | null {
-    const row = this.db.prepare('SELECT payload FROM task_runs WHERE id = ?').get(runId) as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    const row = this.db.prepare('SELECT * FROM task_runs WHERE id = ?').get(runId) as unknown as TaskRunRow | undefined;
+    return row ? taskRunFromRow(row) : null;
   }
 
   upsertTaskRun(run: TaskRunRecord): TaskRunRecord {
-    this.db.prepare('INSERT OR REPLACE INTO task_runs (id, task_id, updated_at, payload) VALUES (?, ?, ?, ?)').run(
-      run.id,
-      run.taskId,
-      run.updatedAt,
-      JSON.stringify(run)
-    );
+    const columns = taskRunColumns(run);
+    this.db.prepare(`
+      INSERT OR REPLACE INTO task_runs (
+        id, task_id, status, claimed_at, lease_expires_at, created_at, updated_at, started_at, completed_at,
+        worker_id, attempt, run_index, target, provider, model_id, summary, last_error, claim_token,
+        artifact_ids, council_trace, payload
+      ) VALUES (
+        @id, @task_id, @status, @claimed_at, @lease_expires_at, @created_at, @updated_at, @started_at, @completed_at,
+        @worker_id, @attempt, @run_index, @target, @provider, @model_id, @summary, @last_error, @claim_token,
+        @artifact_ids, @council_trace, @payload
+      )
+    `).run(columns);
     return run;
   }
 

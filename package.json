@@ -14,7 +14,13 @@
     "renderer:build": "npm run build --workspace @supreme/renderer",
     "desktop:dev": "concurrently -k -n renderer,desktop -c cyan,magenta \"npm run dev --workspace @supreme/renderer\" \"npm run dev --workspace @supreme/desktop\"",
     "desktop:build": "npm run build --workspace @supreme/renderer && npm run build --workspace @supreme/desktop",
-    "desktop:package": "npm run build --workspace @supreme/renderer && npm run package --workspace @supreme/desktop"
+    "desktop:package": "npm run build --workspace @supreme/renderer && npm run package --workspace @supreme/desktop",
+    "desktop:package:mac:preview": "npm run package:mac:preview --workspace @supreme/desktop",
+    "desktop:package:mac:release": "npm run package:mac:release --workspace @supreme/desktop",
+    "desktop:package:win:preview": "npm run package:win:preview --workspace @supreme/desktop",
+    "desktop:package:win:release": "npm run package:win:release --workspace @supreme/desktop",
+    "smoke:runtime": "node scripts/smoke-runtime.mjs",
+    "release:gate": "node scripts/release-gate.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.11.2",

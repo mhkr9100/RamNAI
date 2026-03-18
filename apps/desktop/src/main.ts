@@ -1,11 +1,24 @@
-import { Notification, app, BrowserWindow, ipcMain, shell } from 'electron';
+import { Notification, app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { channels } from './preload-api.js';
+import {
+  TaskCreateInput,
+  buildTaskSpec,
+  computeNextRun,
+  isRecurring
+} from './task-scheduling.js';
+import {
+  WorkspacePaths,
+  buildWorkspacePaths,
+  syncStructuredExports as syncStructuredExportsToDisk,
+  writeJsonFile
+} from './workspace-sync.js';
 import type {
   AgentSpec,
   ArtifactMode,
@@ -30,20 +43,27 @@ import type {
   WorkItem
 } from '@supreme/shared';
 import { SqliteStorage } from '@supreme/storage';
-import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore } from '@supreme/runtime';
+import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, type SecretStoreCipher } from '@supreme/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 const runtime = new LocalRuntimeAdapter();
 const runtimeWorkspace = new RuntimeWorkspaceManager();
-const providerAuthStore = new ProviderAuthStore();
+const providerAuthStore = new ProviderAuthStore(createSecretStoreCipher());
 let mainWindow: BrowserWindow | null = null;
 let storage: SqliteStorage;
 let schedulerHandle: NodeJS.Timeout | null = null;
 let processingDueTasks = false;
+const TASK_RUN_LEASE_MS = 5 * 60 * 1000;
 const ollamaModelState = new Map<string, OllamaModelRuntimeState>();
 const DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD = 0.55;
 const USER_MAP_VISIBILITY_ORDER: Array<'public' | 'private'> = ['public', 'private'];
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
 
 interface GroupRoutingDecision {
   agent: AgentSpec;
@@ -51,40 +71,6 @@ interface GroupRoutingDecision {
   confidence: number;
   pinnedMentions: string[];
   hintMessage?: string;
-}
-
-interface WorkspacePaths {
-  root: string;
-  artifacts: string;
-  context: string;
-  agents: string;
-  tasks: string;
-  work: string;
-  logs: string;
-}
-
-interface TaskCreateInput {
-  title: string;
-  objective: string;
-  mode: TaskSpec['mode'];
-  target: TaskSpec['target'];
-  schedule: {
-    kind: TaskSpec['schedule']['kind'];
-    runAtLocal?: string;
-    preset?: 'daily' | 'weekly' | 'monthly';
-    time?: string;
-    expression?: string;
-  };
-  output?: {
-    artifactMode?: TaskSpec['outputPolicy']['artifactMode'];
-    notificationMode?: TaskSpec['outputPolicy']['notificationMode'];
-    defaultSendToChat?: boolean;
-  };
-  modelOverrideId?: string;
-  council?: {
-    workerModelIds?: string[];
-    judgeModelId?: string;
-  };
 }
 
 interface AgentChatInput {
@@ -123,6 +109,152 @@ interface OllamaModelRuntimeState {
   progress?: number;
   phase?: string;
   lastError?: string;
+}
+
+function createElectronSafeStorageCipher(): SecretStoreCipher {
+  const api = safeStorage as unknown as {
+    isEncryptionAvailable(): boolean;
+    encryptString(value: string): string | Buffer;
+    decryptString(value: string | Buffer): string;
+  };
+
+  return {
+    id: 'electron-safe-storage',
+    encrypt(value: string): string {
+      const encrypted = api.encryptString(value);
+      return Buffer.isBuffer(encrypted)
+        ? `buffer:${encrypted.toString('base64')}`
+        : `string:${encrypted}`;
+    },
+    decrypt(value: string): string {
+      if (value.startsWith('buffer:')) {
+        return api.decryptString(Buffer.from(value.slice('buffer:'.length), 'base64'));
+      }
+
+      if (value.startsWith('string:')) {
+        return api.decryptString(value.slice('string:'.length));
+      }
+
+      return api.decryptString(value);
+    }
+  };
+}
+
+function createFallbackSecretCipher(): SecretStoreCipher {
+  const key = createHash('sha256')
+    .update([os.homedir(), os.hostname(), process.platform, 'supreme-raman-ai'].join('|'))
+    .digest();
+
+  return {
+    id: 'aes-256-gcm-fallback',
+    encrypt(value: string): string {
+      const iv = randomBytes(12);
+      const cipher = createCipheriv('aes-256-gcm', key, iv);
+      const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+      const authTag = cipher.getAuthTag();
+      return `aesgcm:${Buffer.concat([iv, authTag, encrypted]).toString('base64')}`;
+    },
+    decrypt(value: string): string {
+      if (!value.startsWith('aesgcm:')) {
+        throw new Error('Unsupported secret envelope.');
+      }
+
+      const payload = Buffer.from(value.slice('aesgcm:'.length), 'base64');
+      const iv = payload.subarray(0, 12);
+      const authTag = payload.subarray(12, 28);
+      const encrypted = payload.subarray(28);
+      const decipher = createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAuthTag(authTag);
+      return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+    }
+  };
+}
+
+function createSecretStoreCipher(): SecretStoreCipher {
+  try {
+    const api = safeStorage as unknown as { isEncryptionAvailable(): boolean };
+    if (api.isEncryptionAvailable()) {
+      return createElectronSafeStorageCipher();
+    }
+  } catch {
+    // Fall back to a local envelope if Electron's keychain backend is not ready.
+  }
+
+  console.warn('[auth] Electron safeStorage unavailable; using local AES envelope for provider secrets.');
+  return createFallbackSecretCipher();
+}
+
+function getMainProcessLogPath() {
+  const baseDir = (() => {
+    try {
+      return app.getPath('userData');
+    } catch {
+      return process.cwd();
+    }
+  })();
+
+  return path.join(baseDir, 'logs', 'main-process.log');
+}
+
+function logMainProcessIssue(kind: 'unhandledRejection' | 'uncaughtException' | 'navigationBlocked' | 'windowOpenBlocked', error: unknown, extra: Record<string, unknown> = {}) {
+  const record = {
+    kind,
+    at: new Date().toISOString(),
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    ...extra
+  };
+
+  console.error('[main]', record);
+
+  try {
+    mkdirSync(path.dirname(getMainProcessLogPath()), { recursive: true });
+    writeFileSync(getMainProcessLogPath(), `${JSON.stringify(record)}\n`, { flag: 'a' });
+  } catch {
+    // Best-effort logging only.
+  }
+}
+
+function hardenWebContents(contents: BrowserWindow['webContents']) {
+  contents.setWindowOpenHandler(({ url }) => {
+    logMainProcessIssue('windowOpenBlocked', new Error('Blocked window.open request.'), { url });
+    return { action: 'deny' };
+  });
+
+  contents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    logMainProcessIssue('navigationBlocked', new Error('Blocked navigation request.'), { url });
+  });
+}
+
+app.on('web-contents-created', (_event, contents) => {
+  hardenWebContents(contents);
+});
+
+app.on('second-instance', () => {
+  if (!mainWindow) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
+});
+
+process.on('unhandledRejection', (reason) => {
+  logMainProcessIssue('unhandledRejection', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  logMainProcessIssue('uncaughtException', error);
+  app.exit(1);
+});
+
+async function withRuntimeBridgeCompatibility<T>(action: () => Promise<T>): Promise<T> {
+  return providerAuthStore.withRuntimeBridgeCompatibility(action);
 }
 
 function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: 'public' | 'private'): UserMapNode {
@@ -303,18 +435,7 @@ function getWorkspacePaths(): WorkspacePaths {
     return cachedWorkspacePaths;
   }
 
-  const root = path.join(app.getPath('userData'), 'workspace');
-  const paths: WorkspacePaths = {
-    root,
-    artifacts: path.join(root, 'artifacts'),
-    context: path.join(root, 'context'),
-    agents: path.join(root, 'agents'),
-    tasks: path.join(root, 'tasks'),
-    work: path.join(root, 'work'),
-    logs: path.join(root, 'logs')
-  };
-
-  Object.values(paths).forEach((directory) => mkdirSync(directory, { recursive: true }));
+  const paths = buildWorkspacePaths(path.join(app.getPath('userData'), 'workspace'));
   cachedWorkspacePaths = paths;
   return paths;
 }
@@ -467,48 +588,8 @@ async function buildSnapshot() {
   };
 }
 
-function writeJsonFile(filePath: string, value: unknown) {
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
 function syncStructuredExports() {
-  const paths = getWorkspacePaths();
-  const snapshot = storage.getWorkspaceSnapshot();
-
-  writeJsonFile(path.join(paths.context, 'profile.json'), snapshot.profile);
-  writeJsonFile(path.join(paths.context, 'usermap-tree.json'), snapshot.userMap);
-  writeJsonFile(path.join(paths.context, 'usermap-public-tree.json'), snapshot.publicUserMap);
-  writeJsonFile(path.join(paths.context, 'usermap-private-tree.json'), snapshot.privateUserMap);
-  writeJsonFile(path.join(paths.context, 'memory-facts.json'), snapshot.memoryFacts);
-  writeJsonFile(path.join(paths.context, 'memory-public-facts.json'), snapshot.publicMemoryFacts);
-  writeJsonFile(path.join(paths.context, 'memory-private-facts.json'), snapshot.privateMemoryFacts);
-  writeJsonFile(path.join(paths.context, 'models.json'), snapshot.models);
-  writeJsonFile(path.join(paths.agents, 'index.json'), snapshot.agents);
-  writeJsonFile(path.join(paths.work, 'chat-threads.json'), snapshot.chatThreads);
-  writeJsonFile(path.join(paths.tasks, 'index.json'), snapshot.tasks);
-  writeJsonFile(path.join(paths.tasks, 'task-runs.json'), snapshot.taskRuns);
-  writeJsonFile(path.join(paths.work, 'work-items.json'), snapshot.workItems);
-  writeJsonFile(path.join(paths.work, 'artifacts.json'), snapshot.artifacts);
-
-  for (const agent of snapshot.agents) {
-    writeJsonFile(path.join(paths.agents, `${agent.slug}.json`), agent);
-  }
-
-  for (const task of snapshot.tasks) {
-    writeJsonFile(path.join(paths.tasks, `${task.id}.json`), task);
-  }
-
-  void runtimeWorkspace.sync(paths.root, {
-    profile: snapshot.profile,
-    userMap: snapshot.userMap,
-    agents: snapshot.agents,
-    groups: snapshot.groups,
-    memoryFacts: snapshot.memoryFacts,
-    publicMemoryFacts: snapshot.publicMemoryFacts,
-    privateMemoryFacts: snapshot.privateMemoryFacts
-  }).catch((error) => {
-    console.warn('[runtime-workspace] sync failed:', error);
-  });
+  syncStructuredExportsToDisk(getWorkspacePaths(), storage.getWorkspaceSnapshot(), runtimeWorkspace);
 }
 
 function upsertFactsIntoTree(tree: UserMapState, facts: MemoryFact[]): UserMapState {
@@ -688,19 +769,38 @@ function buildEphemeralTask(input: { target: TaskSpec['target']; objective: stri
 }
 
 function buildTaskRunRecord(task: TaskSpec, runIndex: number, startedAt: string): TaskRunRecord {
+  const claimToken = randomUUID();
+  const leaseExpiresAt = new Date(Date.parse(startedAt) + TASK_RUN_LEASE_MS).toISOString();
   return {
     id: randomUUID(),
     taskId: task.id,
     taskTitle: task.title,
     taskObjective: task.objective,
     taskMode: task.mode,
-    status: 'running',
+    status: 'claimed',
+    claimToken,
+    claimedAt: startedAt,
+    leaseExpiresAt,
+    workerId: 'desktop-main',
+    attempt: runIndex,
     runIndex,
     target: task.target,
     createdAt: startedAt,
     updatedAt: startedAt,
-    startedAt,
     artifactIds: []
+  };
+}
+
+function activateTaskRun(run: TaskRunRecord, startedAt: string): TaskRunRecord {
+  const attempt = run.attempt ?? run.runIndex;
+  return {
+    ...run,
+    status: 'running',
+    startedAt: run.startedAt ?? startedAt,
+    updatedAt: startedAt,
+    leaseExpiresAt: new Date(Date.parse(startedAt) + TASK_RUN_LEASE_MS).toISOString(),
+    workerId: run.workerId ?? 'desktop-main',
+    ...(attempt !== undefined ? { attempt } : {})
   };
 }
 
@@ -719,10 +819,11 @@ function completeTaskRun(run: TaskRunRecord, input: {
     status: input.status,
     updatedAt: input.completedAt,
     completedAt: input.completedAt,
+    leaseExpiresAt: input.completedAt,
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.summary ? { summary: input.summary } : {}),
-    ...(input.error ? { error: input.error } : {}),
+    ...(input.error ? { lastError: input.error } : {}),
     ...(input.artifactIds ? { artifactIds: input.artifactIds } : {}),
     ...(input.councilTrace ? { councilTrace: input.councilTrace } : {})
   };
@@ -759,14 +860,14 @@ async function sendAgentChat(input: AgentChatInput) {
   });
   const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', route });
   const withUser = appendThreadMessages(thread, [userMessage]);
-  const result = await runtime.executeTask(buildEphemeralTask({
+  const result = await withRuntimeBridgeCompatibility(() => runtime.executeTask(buildEphemeralTask({
     target: { type: 'agent', agentId: agent.id },
     objective: buildAgentChatObjective(agent, withUser, input.message.trim())
   }), {
     userMap: snapshot.userMap,
     agents: snapshot.agents,
     groups: snapshot.groups
-  });
+  }));
 
   const assistantMessage = makeChatMessage({
     role: 'assistant',
@@ -853,7 +954,7 @@ async function sendGroupChat(input: GroupChatInput) {
     activeThread = appendThreadMessages(activeThread, [systemMessage]);
   }
 
-  const result = await runtime.executeTask(buildEphemeralTask({
+  const result = await withRuntimeBridgeCompatibility(() => runtime.executeTask(buildEphemeralTask({
       target: { type: 'agent', agentId: routingDecision.agent.id },
       objective: [
         `You are replying as "${routingDecision.agent.name}" inside the group "${group.name}".`,
@@ -865,7 +966,7 @@ async function sendGroupChat(input: GroupChatInput) {
       userMap: snapshot.userMap,
       agents: snapshot.agents,
       groups: snapshot.groups
-    });
+    }));
 
   const assistantMessage = makeChatMessage({
     role: 'assistant',
@@ -886,234 +987,6 @@ async function sendGroupChat(input: GroupChatInput) {
   };
 }
 
-function parseHourMinute(value: string) {
-  const [hourRaw, minuteRaw] = value.split(':');
-  const hour = Number(hourRaw);
-  const minute = Number(minuteRaw);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    throw new Error(`Invalid time value "${value}".`);
-  }
-  return { hour, minute };
-}
-
-function getZonedParts(value: Date, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    weekday: 'short',
-    hour12: false
-  });
-
-  const parts = formatter.formatToParts(value);
-  const lookup = new Map(parts.map((part) => [part.type, part.value]));
-  const year = Number(lookup.get('year'));
-  const month = Number(lookup.get('month'));
-  const day = Number(lookup.get('day'));
-  const hour = Number(lookup.get('hour'));
-  const minute = Number(lookup.get('minute'));
-  const weekdayRaw = lookup.get('weekday') ?? '';
-  const weekday = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(weekdayRaw.toLowerCase().slice(0, 3));
-
-  if (
-    !Number.isInteger(year) ||
-    !Number.isInteger(month) ||
-    !Number.isInteger(day) ||
-    !Number.isInteger(hour) ||
-    !Number.isInteger(minute) ||
-    weekday < 0
-  ) {
-    throw new Error(`Could not resolve zoned date parts for timezone "${timeZone}".`);
-  }
-
-  return { year, month, day, hour, minute, weekday };
-}
-
-function zonedDateTimeToUtc(input: { year: number; month: number; day: number; hour: number; minute: number }, timeZone: string): Date {
-  const initialGuessUtcMs = Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, 0, 0);
-  let guess = new Date(initialGuessUtcMs);
-
-  for (let i = 0; i < 3; i += 1) {
-    const parts = getZonedParts(guess, timeZone);
-    const deltaMinutes =
-      (input.year - parts.year) * 525600 +
-      (input.month - parts.month) * 43200 +
-      (input.day - parts.day) * 1440 +
-      (input.hour - parts.hour) * 60 +
-      (input.minute - parts.minute);
-
-    if (deltaMinutes === 0) {
-      return guess;
-    }
-    guess = new Date(guess.getTime() + deltaMinutes * 60000);
-  }
-
-  return guess;
-}
-
-function parseRunAt(runAt: string, timeZone: string): Date {
-  const parsed = new Date(runAt);
-  if (!Number.isNaN(parsed.getTime()) && /[zZ]|[+-]\d{2}:?\d{2}$/.test(runAt.trim())) {
-    return parsed;
-  }
-
-  const match = runAt.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-  if (!match) {
-    if (Number.isNaN(parsed.getTime())) {
-      throw new Error(`Invalid runAt value "${runAt}".`);
-    }
-    return parsed;
-  }
-
-  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw] = match;
-  return zonedDateTimeToUtc({
-    year: Number(yearRaw),
-    month: Number(monthRaw),
-    day: Number(dayRaw),
-    hour: Number(hourRaw),
-    minute: Number(minuteRaw)
-  }, timeZone);
-}
-
-function nextCronRun(expression: string, from: Date, timeZone: string): Date {
-  const fields = expression.trim().split(/\s+/);
-  if (fields.length !== 5) {
-    throw new Error('Cron schedule must use the standard 5-field format.');
-  }
-
-  const [
-    minuteField = '*',
-    hourField = '*',
-    dayField = '*',
-    monthField = '*',
-    weekdayField = '*'
-  ] = fields;
-  const start = new Date(from);
-  start.setSeconds(0, 0);
-  start.setMinutes(start.getMinutes() + 1);
-
-  for (let i = 0; i < 525600; i += 1) {
-    const candidate = new Date(start.getTime() + i * 60000);
-    const zoned = getZonedParts(candidate, timeZone);
-    if (
-      matchesCronField(zoned.minute, minuteField, 0, 59) &&
-      matchesCronField(zoned.hour, hourField, 0, 23) &&
-      matchesCronField(zoned.day, dayField, 1, 31) &&
-      matchesCronField(zoned.month, monthField, 1, 12) &&
-      matchesCronField(zoned.weekday, weekdayField, 0, 6)
-    ) {
-      return candidate;
-    }
-  }
-
-  throw new Error('Could not compute the next cron run within one year.');
-}
-
-function matchesCronField(value: number, field: string, min: number, max: number) {
-  if (field === '*') return true;
-
-  return field.split(',').some((part) => {
-    if (part.includes('/')) {
-      const [base = '*', stepRaw = '0'] = part.split('/');
-      const step = Number(stepRaw);
-      if (!Number.isInteger(step) || step <= 0) return false;
-      if (base === '*') {
-        return (value - min) % step === 0;
-      }
-      if (base.includes('-')) {
-        const [rangeStartRaw = '', rangeEndRaw = ''] = base.split('-');
-        const rangeStart = Number(rangeStartRaw);
-        const rangeEnd = Number(rangeEndRaw);
-        if (!Number.isInteger(rangeStart) || !Number.isInteger(rangeEnd)) return false;
-        return value >= rangeStart && value <= rangeEnd && (value - rangeStart) % step === 0;
-      }
-      const baseValue = Number(base);
-      return value === baseValue;
-    }
-
-    if (part.includes('-')) {
-      const [rangeStartRaw = '', rangeEndRaw = ''] = part.split('-');
-      const rangeStart = Number(rangeStartRaw);
-      const rangeEnd = Number(rangeEndRaw);
-      if (!Number.isInteger(rangeStart) || !Number.isInteger(rangeEnd)) return false;
-      return value >= rangeStart && value <= rangeEnd;
-    }
-
-    const numeric = Number(part);
-    return Number.isInteger(numeric) && numeric >= min && numeric <= max && value === numeric;
-  });
-}
-
-function computeNextRun(schedule: TaskSpec['schedule'], from = new Date()) {
-  if (schedule.kind === 'once') {
-    return parseRunAt(schedule.runAt, schedule.timezone);
-  }
-
-  if (schedule.kind === 'cron') {
-    return nextCronRun(schedule.expression, from, schedule.timezone);
-  }
-
-  const base = new Date(from);
-  const baseZoned = getZonedParts(base, schedule.timezone);
-  const { hour, minute } = parseHourMinute(schedule.time);
-  let candidate = zonedDateTimeToUtc({
-    year: baseZoned.year,
-    month: baseZoned.month,
-    day: baseZoned.day,
-    hour,
-    minute
-  }, schedule.timezone);
-
-  if (schedule.preset === 'daily') {
-    if (candidate <= base) {
-      const nextDay = getZonedParts(new Date(base.getTime() + 24 * 60 * 60000), schedule.timezone);
-      candidate = zonedDateTimeToUtc({
-        year: nextDay.year,
-        month: nextDay.month,
-        day: nextDay.day,
-        hour,
-        minute
-      }, schedule.timezone);
-    }
-    return candidate;
-  }
-
-  if (schedule.preset === 'weekly') {
-    if (candidate <= base) {
-      const nextWeek = new Date(base.getTime() + 7 * 24 * 60 * 60000);
-      const nextWeekZoned = getZonedParts(nextWeek, schedule.timezone);
-      candidate = zonedDateTimeToUtc({
-        year: nextWeekZoned.year,
-        month: nextWeekZoned.month,
-        day: nextWeekZoned.day,
-        hour,
-        minute
-      }, schedule.timezone);
-    }
-    return candidate;
-  }
-
-  if (candidate <= base) {
-    const nextMonthUtcGuess = zonedDateTimeToUtc({
-      year: baseZoned.year,
-      month: baseZoned.month + 1,
-      day: baseZoned.day,
-      hour,
-      minute
-    }, schedule.timezone);
-    return nextMonthUtcGuess;
-  }
-
-  return candidate;
-}
-
-function isRecurring(schedule: TaskSpec['schedule']) {
-  return schedule.kind !== 'once';
-}
-
 function makeTaskBase(task: TaskSpec) {
   const {
     providerOverride,
@@ -1129,76 +1002,6 @@ function makeTaskBase(task: TaskSpec) {
 
   return {
     ...rest,
-    ...(providerOverride ? { providerOverride } : {}),
-    ...(council ? { council } : {})
-  };
-}
-
-function buildTaskSpec(input: TaskCreateInput): TaskSpec {
-  const now = new Date();
-  const createdAt = now.toISOString();
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const schedule: TaskSpec['schedule'] =
-    input.schedule.kind === 'once'
-      ? {
-          kind: 'once',
-          runAt: parseRunAt(input.schedule.runAtLocal ?? now.toISOString(), timezone).toISOString(),
-          timezone
-        }
-      : input.schedule.kind === 'simple'
-        ? {
-            kind: 'simple',
-            preset: input.schedule.preset ?? 'daily',
-            time: input.schedule.time ?? '09:00',
-            timezone
-          }
-        : {
-            kind: 'cron',
-            expression: (input.schedule.expression ?? '0 9 * * 1-5').trim(),
-            timezone
-          };
-
-  const outputPolicy: TaskSpec['outputPolicy'] = {
-    saveResult: true,
-    artifactMode: input.output?.artifactMode ?? 'markdown',
-    notificationMode: input.output?.notificationMode ?? 'desktop',
-    defaultSendToChat: Boolean(input.output?.defaultSendToChat ?? false)
-  };
-
-  const installedModelIds = storage.listModels().filter((model) => model.installed).map((model) => model.id);
-  const modelOverrideId = input.modelOverrideId?.trim();
-  const providerOverride = modelOverrideId ? { provider: 'ollama' as const, modelId: modelOverrideId } : undefined;
-
-  const council = input.mode === 'council'
-    ? (() => {
-        const workers = (input.council?.workerModelIds ?? []).filter(Boolean);
-        const resolvedWorkers = workers.length ? workers : installedModelIds.slice(0, 2);
-        const judge = (input.council?.judgeModelId ?? '').trim() || resolvedWorkers[0] || installedModelIds[0] || '';
-        if (resolvedWorkers.length === 0 || !judge) {
-          throw new Error('No installed local models available for council mode.');
-        }
-        return {
-          workerModels: resolvedWorkers.map((modelId) => ({ provider: 'ollama' as const, modelId })),
-          judgeModel: { provider: 'ollama' as const, modelId: judge }
-        } satisfies TaskSpec['council'];
-      })()
-    : undefined;
-
-  const firstRun = computeNextRun(schedule, now);
-  return {
-    id: randomUUID(),
-    title: input.title.trim(),
-    objective: input.objective.trim(),
-    mode: input.mode,
-    target: input.target,
-    schedule,
-    outputPolicy,
-    status: firstRun <= now ? 'queued' : 'scheduled',
-    createdAt,
-    updatedAt: createdAt,
-    nextRunAt: firstRun.toISOString(),
-    runCount: 0,
-    artifactIds: [],
     ...(providerOverride ? { providerOverride } : {}),
     ...(council ? { council } : {})
   };
@@ -1264,7 +1067,9 @@ function maybeNotify(task: TaskSpec, message: string) {
 async function executeDueTask(task: TaskSpec) {
   const startedAt = new Date().toISOString();
   const workItemId = randomUUID();
-  const taskRun = buildTaskRunRecord(task, task.runCount + 1, startedAt);
+  const attempt = storage.nextTaskRunAttempt(task.id);
+  const claimedTaskRun = buildTaskRunRecord(task, attempt, startedAt);
+  const runningTaskRun = activateTaskRun(claimedTaskRun, startedAt);
   const runningTask: TaskSpec = {
     ...makeTaskBase(task),
     status: 'running',
@@ -1284,18 +1089,23 @@ async function executeDueTask(task: TaskSpec) {
     ...(task.target.type === 'agent' ? { sourceAgentId: task.target.agentId } : {})
   };
 
+  if (storage.listActiveTaskRuns(task.id).length > 0) {
+    return;
+  }
+
   storage.upsertTask(runningTask);
-  storage.upsertTaskRun(taskRun);
+  storage.upsertTaskRun(claimedTaskRun);
+  storage.upsertTaskRun(runningTaskRun);
   storage.upsertWorkItem(runningWorkItem);
   syncStructuredExports();
 
   try {
     const snapshot = storage.getWorkspaceSnapshot();
-    const result = await runtime.executeTask(task, {
+    const result = await withRuntimeBridgeCompatibility(() => runtime.executeTask(task, {
       userMap: snapshot.userMap,
       agents: snapshot.agents,
       groups: snapshot.groups
-    });
+    }));
     const artifacts = createArtifactRecords(task, workItemId, result, task.outputPolicy.artifactMode);
     const completedAt = new Date().toISOString();
     const nextRunAt = isRecurring(task.schedule) ? computeNextRun(task.schedule, new Date()).toISOString() : undefined;
@@ -1323,7 +1133,7 @@ async function executeDueTask(task: TaskSpec) {
     };
 
     storage.upsertTask(completedTask);
-    storage.upsertTaskRun(completeTaskRun(taskRun, {
+    storage.upsertTaskRun(completeTaskRun(runningTaskRun, {
       status: 'done',
       completedAt,
       provider: result.provider,
@@ -1362,7 +1172,7 @@ async function executeDueTask(task: TaskSpec) {
     };
 
     storage.upsertTask(failedTask);
-    storage.upsertTaskRun(completeTaskRun(taskRun, {
+    storage.upsertTaskRun(completeTaskRun(runningTaskRun, {
       status: 'failed',
       completedAt,
       error: message
@@ -1385,6 +1195,9 @@ async function processDueTasks() {
       .sort((left, right) => Date.parse(left.nextRunAt ?? left.createdAt) - Date.parse(right.nextRunAt ?? right.createdAt));
 
     for (const task of dueTasks) {
+      if (storage.listActiveTaskRuns(task.id).length > 0) {
+        continue;
+      }
       await executeDueTask(task);
     }
   } finally {
@@ -1451,12 +1264,16 @@ function recoverInterruptedWork() {
   const workItems = storage.listWorkItems();
 
   for (const task of tasks) {
-    if (task.status !== 'running') continue;
+    const interruptedRuns = storage
+      .listTaskRuns(task.id)
+      .filter((run) => run.status === 'claimed' || run.status === 'running');
+    if (task.status !== 'running' && interruptedRuns.length === 0) continue;
 
     const recurring = isRecurring(task.schedule);
     const nextRunAt = recurring ? computeNextRun(task.schedule, now).toISOString() : task.nextRunAt;
-    const runRecord = storage.listTaskRuns(task.id).find((run) => run.status === 'running')
-      ?? buildTaskRunRecord(task, task.runCount + 1, task.startedAt ?? nowIso);
+    const runRecords = interruptedRuns.length > 0
+      ? interruptedRuns
+      : [buildTaskRunRecord(task, storage.nextTaskRunAttempt(task.id), task.startedAt ?? nowIso)];
     const recovered: TaskSpec = {
       ...makeTaskBase(task),
       status: recurring ? 'scheduled' : 'failed',
@@ -1470,11 +1287,13 @@ function recoverInterruptedWork() {
     };
 
     storage.upsertTask(recovered);
-    storage.upsertTaskRun(completeTaskRun(runRecord, {
-      status: 'failed',
-      completedAt: nowIso,
-      error: 'Recovered after app restart during an in-progress run.'
-    }));
+    for (const runRecord of runRecords) {
+      storage.upsertTaskRun(completeTaskRun(runRecord, {
+        status: 'failed',
+        completedAt: nowIso,
+        error: 'Recovered after app restart during an in-progress run.'
+      }));
+    }
   }
 
   for (const item of workItems) {
@@ -1551,7 +1370,7 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle(channels.prismSend, async (_event, input: PrismRequest) => {
-    const reply = await runtime.sendPrismRequest(input);
+    const reply = await withRuntimeBridgeCompatibility(() => runtime.sendPrismRequest(input));
     if (reply.createdAgent) {
       storage.upsertAgent(reply.createdAgent);
       syncStructuredExports();
@@ -1567,7 +1386,9 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle(channels.taskCreate, async (_event, input: TaskCreateInput) => {
-    const task = buildTaskSpec(input);
+    const task = buildTaskSpec(input, {
+      installedModelIds: storage.listModels().filter((model) => model.installed).map((model) => model.id)
+    });
     storage.upsertTask(task);
     syncStructuredExports();
     return task;

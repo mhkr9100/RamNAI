@@ -50,15 +50,16 @@ export interface RuntimeWorkspaceManifest {
   profile: LocalProfile | null;
   prism: RuntimeWorkspaceSubjectManifest;
   agents: RuntimeWorkspaceSubjectManifest[];
-  groups: Array<{
-    id: string;
-    name: string;
-    description?: string;
-    memberAgentIds: string[];
-    routingMode: GroupSpec['routingMode'];
-    autoRouteThreshold: GroupSpec['autoRouteThreshold'];
-    defaultResponderAgentId?: GroupSpec['defaultResponderAgentId'];
-  }>;
+    groups: Array<{
+      id: string;
+      name: string;
+      description?: string;
+      memberAgentIds: string[];
+      routingMode: GroupSpec['routingMode'];
+      autoRouteThreshold: GroupSpec['autoRouteThreshold'];
+      defaultResponderAgentId?: GroupSpec['defaultResponderAgentId'];
+      autoRouting?: GroupSpec['autoRouting'];
+    }>;
   memoryDays: string[];
   publicMemoryDays: string[];
   privateMemoryDays: string[];
@@ -266,6 +267,7 @@ export class RuntimeWorkspaceManager {
             routingMode: GroupSpec['routingMode'];
             autoRouteThreshold: GroupSpec['autoRouteThreshold'];
             defaultResponderAgentId?: GroupSpec['defaultResponderAgentId'];
+            autoRouting?: GroupSpec['autoRouting'];
           } = {
             id: group.id,
             name: group.name,
@@ -280,6 +282,10 @@ export class RuntimeWorkspaceManager {
 
           if (group.defaultResponderAgentId) {
             manifestGroup.defaultResponderAgentId = group.defaultResponderAgentId;
+          }
+
+          if (group.autoRouting) {
+            manifestGroup.autoRouting = group.autoRouting;
           }
 
           return manifestGroup;

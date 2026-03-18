@@ -2,6 +2,21 @@
 
 This repo defaults to **unsigned preview builds** for local development.
 
+### Current commands
+
+Preview paths:
+
+- `npm run desktop:package`
+- `npm run desktop:package:mac:preview`
+- `npm run desktop:package:win:preview`
+
+Release-oriented paths:
+
+- `npm run desktop:package:mac:release`
+- `npm run desktop:package:win:release`
+
+Release scripts are **env-gated**. They fail fast if signing/notarization variables are missing instead of silently degrading to unsigned output.
+
 ### Icon pipeline (no binary assets committed)
 
 This repo keeps the **source-of-truth icon as SVG**:
@@ -90,4 +105,3 @@ Recommended next polish steps (still desktop-only):
   - `ollama` binary is missing
   - the daemon is not running
   - pulls fail due to disk/network constraints
-

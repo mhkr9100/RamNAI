@@ -78,12 +78,22 @@ interface RuntimeBridgeTaskResult {
   councilTrace?: Array<{ modelId: string; stage: 'worker' | 'revision' | 'judge'; output: string }>;
 }
 
+export interface RuntimeBridgeHooks {
+  beforeInvoke?: () => Promise<void>;
+  afterInvoke?: () => Promise<void>;
+}
+
 export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
   private runtimeBridgeAvailable: boolean | null = null;
+  private runtimeBridgeHooks: RuntimeBridgeHooks = {};
 
   setWorkspaceRoot(rootDir: string) {
     this.workspaceRoot = rootDir;
+  }
+
+  setRuntimeBridgeHooks(hooks: RuntimeBridgeHooks) {
+    this.runtimeBridgeHooks = hooks;
   }
 
   async getStatus(): Promise<RuntimeStatus> {
@@ -267,6 +277,7 @@ export class LocalRuntimeAdapter {
     }
 
     try {
+      await this.runtimeBridgeHooks.beforeInvoke?.();
       const { stdout, stderr } = await execFileAsync(EXTERNAL_RUNTIME_CLI, [
         'run',
         '--workspace',
@@ -287,6 +298,8 @@ export class LocalRuntimeAdapter {
       // eslint-disable-next-line no-console
       console.warn('[runtime] External runtime bridge failed, falling back to Ollama path:', error);
       return null;
+    } finally {
+      await this.runtimeBridgeHooks.afterInvoke?.();
     }
   }
 

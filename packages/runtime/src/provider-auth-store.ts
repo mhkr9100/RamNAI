@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -9,79 +9,38 @@ import {
   EXTERNAL_RUNTIME_CLI,
   EXTERNAL_SECRETS_PATH
 } from './runtime-compat.js';
+import type { SecretStoreCipher } from './secret-store.js';
 
 interface AuthProfilesFile {
   version: 1;
   profiles: ProviderAuthProfile[];
 }
 
+interface SecretEnvelope {
+  version: 1;
+  cipher: string;
+  payload: string;
+}
+
 interface SecretsFile {
-  providers: {
-    [key in Exclude<ProviderId, 'ollama'>]?: {
-      apiKey?: string;
-      token?: string;
-    };
-  };
+  providers: Partial<Record<Exclude<ProviderId, 'ollama'>, {
+    apiKey?: string;
+    token?: string;
+  }>>;
 }
 
 const APP_AUTH_DIR = path.join(os.homedir(), '.supreme-raman-ai', 'runtime-auth');
 const APP_AUTH_PROFILES_PATH = path.join(APP_AUTH_DIR, 'auth-profiles.json');
-// Legacy leftover from earlier iterations: ensure we never write provider secrets here again.
-const APP_SECRETS_PATH = path.join(APP_AUTH_DIR, 'secrets.json');
+const APP_SECRETS_PATH = path.join(APP_AUTH_DIR, 'secrets.enc.json');
+const LEGACY_APP_SECRETS_PATH = path.join(APP_AUTH_DIR, 'secrets.json');
 const execFileAsync = promisify(execFile);
 
 function makeFileSecretRef(provider: Exclude<ProviderId, 'ollama'>, field: 'apiKey' | 'token'): AuthSecretRef {
   return {
     source: 'file',
-    provider: 'filemain',
+    provider,
     id: `/providers/${provider}/${field}`
   };
-}
-
-async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
-  try {
-    const data = await readFile(filePath, 'utf8');
-    return JSON.parse(data) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-async function readJsonFileOptional<T>(filePath: string): Promise<T | null> {
-  try {
-    const data = await readFile(filePath, 'utf8');
-    return JSON.parse(data) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
-async function readMirroredJsonFile<T>(primaryPath: string, compatPath: string, fallback: T): Promise<T> {
-  const primary = await readJsonFileOptional<T>(primaryPath);
-  if (primary !== null) {
-    return primary;
-  }
-
-  const compat = await readJsonFileOptional<T>(compatPath);
-  if (compat !== null) {
-    return compat;
-  }
-
-  return fallback;
-}
-
-async function writeMirroredJsonFile(
-  primaryPath: string,
-  compatPath: string,
-  value: unknown
-): Promise<void> {
-  await writeJsonFile(primaryPath, value);
-  await writeJsonFile(compatPath, value);
 }
 
 function getJsonPointerValue(container: unknown, pointer: string): unknown {
@@ -106,14 +65,36 @@ function getJsonPointerValue(container: unknown, pointer: string): unknown {
   return current;
 }
 
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const data = await readFile(filePath, 'utf8');
+    return JSON.parse(data) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 export class ProviderAuthStore {
+  constructor(private readonly cipher: SecretStoreCipher) {}
+
   async listProfiles(): Promise<ProviderAuthProfile[]> {
-    const file = await readMirroredJsonFile<AuthProfilesFile>(
-      APP_AUTH_PROFILES_PATH,
-      EXTERNAL_AUTH_PROFILES_PATH,
-      { version: 1, profiles: [] }
-    );
-    return file.profiles;
+    const primary = await readJsonFile<AuthProfilesFile>(APP_AUTH_PROFILES_PATH);
+    if (primary?.profiles) {
+      return primary.profiles;
+    }
+
+    const compat = await readJsonFile<AuthProfilesFile>(EXTERNAL_AUTH_PROFILES_PATH);
+    if (compat?.profiles) {
+      await writeJsonFile(APP_AUTH_PROFILES_PATH, compat);
+      return compat.profiles;
+    }
+
+    return [];
   }
 
   async upsertProfile(input: {
@@ -127,6 +108,14 @@ export class ProviderAuthStore {
   }): Promise<ProviderAuthProfile> {
     const now = new Date().toISOString();
     const existingProfiles = await this.listProfiles();
+    const currentProfile = existingProfiles.find(
+      (profile) => profile.id === input.id && profile.provider === input.provider
+    );
+    const nextSecrets = await this.mergeProviderSecrets(input.provider, {
+      ...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
+      ...(input.token !== undefined ? { token: input.token } : {})
+    });
+
     const others = existingProfiles.filter(
       (profile) => !(profile.id === input.id && profile.provider === input.provider)
     );
@@ -135,54 +124,20 @@ export class ProviderAuthStore {
       id: input.id,
       provider: input.provider,
       label: input.label,
-      description: input.description ?? undefined,
-      isDefault: input.isDefault ?? false,
-      keyRef: input.apiKey ? makeFileSecretRef(input.provider, 'apiKey') : undefined,
-      tokenRef: input.token ? makeFileSecretRef(input.provider, 'token') : undefined,
-      createdAt: existingProfiles.find(
-        (profile) => profile.id === input.id && profile.provider === input.provider
-      )?.createdAt ?? now,
+      ...(input.description ? { description: input.description } : {}),
+      ...(nextSecrets.apiKey ? { keyRef: makeFileSecretRef(input.provider, 'apiKey') } : {}),
+      ...(nextSecrets.token ? { tokenRef: makeFileSecretRef(input.provider, 'token') } : {}),
+      isDefault: input.isDefault ?? currentProfile?.isDefault ?? false,
+      createdAt: currentProfile?.createdAt ?? now,
       updatedAt: now
     };
 
-    const nextProfiles = [...others, nextProfile];
-
-    await writeMirroredJsonFile(APP_AUTH_PROFILES_PATH, EXTERNAL_AUTH_PROFILES_PATH, {
+    await writeJsonFile(APP_AUTH_PROFILES_PATH, {
       version: 1,
-      profiles: nextProfiles
+      profiles: [...others, nextProfile]
     } satisfies AuthProfilesFile);
 
-    if (input.apiKey || input.token) {
-      await this.writeSecrets(input.provider, {
-        apiKey: input.apiKey,
-        token: input.token
-      });
-    }
-
     return nextProfile;
-  }
-
-  async writeSecrets(
-    provider: Exclude<ProviderId, 'ollama'>,
-    secrets: { apiKey?: string | undefined; token?: string | undefined }
-  ): Promise<void> {
-    // Best-effort cleanup: provider secrets must live only in the external runtime secrets store.
-    void rm(APP_SECRETS_PATH, { force: true }).catch(() => undefined);
-
-    const current = (await readJsonFileOptional<SecretsFile>(EXTERNAL_SECRETS_PATH)) ?? { providers: {} };
-    const providers = { ...current.providers };
-    const existing = providers[provider] ?? {};
-    const next = {
-      ...existing,
-      ...(secrets.apiKey !== undefined ? { apiKey: secrets.apiKey } : {}),
-      ...(secrets.token !== undefined ? { token: secrets.token } : {})
-    };
-
-    providers[provider] = next;
-
-    await writeJsonFile(EXTERNAL_SECRETS_PATH, {
-      providers
-    } satisfies SecretsFile);
   }
 
   async deleteProfile(provider: Exclude<ProviderId, 'ollama'>, profileId: string): Promise<{ ok: true }> {
@@ -191,20 +146,14 @@ export class ProviderAuthStore {
       (profile) => !(profile.provider === provider && profile.id === profileId)
     );
 
-    await writeMirroredJsonFile(APP_AUTH_PROFILES_PATH, EXTERNAL_AUTH_PROFILES_PATH, {
+    await writeJsonFile(APP_AUTH_PROFILES_PATH, {
       version: 1,
       profiles: nextProfiles
     } satisfies AuthProfilesFile);
 
     const hasRemainingForProvider = nextProfiles.some((profile) => profile.provider === provider);
     if (!hasRemainingForProvider) {
-      const currentSecrets = (await readJsonFileOptional<SecretsFile>(EXTERNAL_SECRETS_PATH)) ?? { providers: {} };
-      const providers = { ...currentSecrets.providers };
-      delete providers[provider];
-      void rm(APP_SECRETS_PATH, { force: true }).catch(() => undefined);
-      await writeJsonFile(EXTERNAL_SECRETS_PATH, {
-        providers
-      } satisfies SecretsFile);
+      await this.deleteProviderSecrets(provider);
     }
 
     return { ok: true };
@@ -221,7 +170,7 @@ export class ProviderAuthStore {
       return { ok: false, message: 'Auth profile not found.' };
     }
 
-    const secrets = await readMirroredJsonFile<unknown>(EXTERNAL_SECRETS_PATH, EXTERNAL_SECRETS_PATH, {});
+    const secrets = await this.readSecretState();
     const refs: Array<{ kind: 'apiKey' | 'token'; ref: AuthSecretRef }> = [];
     if (profile.keyRef) refs.push({ kind: 'apiKey', ref: profile.keyRef });
     if (profile.tokenRef) refs.push({ kind: 'token', ref: profile.tokenRef });
@@ -243,7 +192,9 @@ export class ProviderAuthStore {
 
     if (input.probeWithRuntime) {
       try {
-        await execFileAsync(EXTERNAL_RUNTIME_CLI, ['models', 'status', '--probe']);
+        await this.withRuntimeBridgeCompatibility(async () => {
+          await execFileAsync(EXTERNAL_RUNTIME_CLI, ['models', 'status', '--probe']);
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { ok: false, message: `Secrets are present, but the runtime bridge probe failed: ${message}` };
@@ -251,5 +202,107 @@ export class ProviderAuthStore {
     }
 
     return { ok: true, message: 'Auth profile looks valid.' };
+  }
+
+  async withRuntimeBridgeCompatibility<T>(action: () => Promise<T>): Promise<T> {
+    await this.writeCompatibilityFiles();
+    try {
+      return await action();
+    } finally {
+      await this.clearCompatibilityFiles();
+    }
+  }
+
+  private async mergeProviderSecrets(
+    provider: Exclude<ProviderId, 'ollama'>,
+    secrets: { apiKey?: string; token?: string }
+  ) {
+    const state = await this.readSecretState();
+    const next: { apiKey?: string; token?: string } = { ...(state.providers[provider] ?? {}) };
+
+    if (secrets.apiKey !== undefined) {
+      const apiKey = secrets.apiKey.trim();
+      if (apiKey) {
+        next.apiKey = apiKey;
+      } else {
+        delete next.apiKey;
+      }
+    }
+
+    if (secrets.token !== undefined) {
+      const token = secrets.token.trim();
+      if (token) {
+        next.token = token;
+      } else {
+        delete next.token;
+      }
+    }
+
+    if (!next.apiKey && !next.token) {
+      delete state.providers[provider];
+    } else {
+      state.providers[provider] = next;
+    }
+
+    await this.writeSecretState(state);
+    return next;
+  }
+
+  private async deleteProviderSecrets(provider: Exclude<ProviderId, 'ollama'>) {
+    const state = await this.readSecretState();
+    delete state.providers[provider];
+    await this.writeSecretState(state);
+  }
+
+  private async readSecretState(): Promise<SecretsFile> {
+    const encrypted = await readJsonFile<SecretEnvelope>(APP_SECRETS_PATH);
+    if (encrypted?.payload) {
+      const decrypted = this.cipher.decrypt(encrypted.payload);
+      return JSON.parse(decrypted) as SecretsFile;
+    }
+
+    const legacyAppSecrets = await readJsonFile<SecretsFile>(LEGACY_APP_SECRETS_PATH);
+    if (legacyAppSecrets?.providers) {
+      await this.writeSecretState(legacyAppSecrets);
+      await rm(LEGACY_APP_SECRETS_PATH, { force: true }).catch(() => undefined);
+      return legacyAppSecrets;
+    }
+
+    const compatSecrets = await readJsonFile<SecretsFile>(EXTERNAL_SECRETS_PATH);
+    if (compatSecrets?.providers) {
+      await this.writeSecretState(compatSecrets);
+      await rm(EXTERNAL_SECRETS_PATH, { force: true }).catch(() => undefined);
+      return compatSecrets;
+    }
+
+    return { providers: {} };
+  }
+
+  private async writeSecretState(state: SecretsFile): Promise<void> {
+    await mkdir(path.dirname(APP_SECRETS_PATH), { recursive: true });
+    const envelope: SecretEnvelope = {
+      version: 1,
+      cipher: this.cipher.id,
+      payload: this.cipher.encrypt(JSON.stringify(state))
+    };
+    await writeJsonFile(APP_SECRETS_PATH, envelope);
+    await rm(LEGACY_APP_SECRETS_PATH, { force: true }).catch(() => undefined);
+  }
+
+  private async writeCompatibilityFiles(): Promise<void> {
+    const profiles = await this.listProfiles();
+    const secrets = await this.readSecretState();
+    await writeJsonFile(EXTERNAL_AUTH_PROFILES_PATH, {
+      version: 1,
+      profiles
+    } satisfies AuthProfilesFile);
+    await writeJsonFile(EXTERNAL_SECRETS_PATH, secrets);
+  }
+
+  private async clearCompatibilityFiles(): Promise<void> {
+    await Promise.all([
+      rm(EXTERNAL_AUTH_PROFILES_PATH, { force: true }).catch(() => undefined),
+      rm(EXTERNAL_SECRETS_PATH, { force: true }).catch(() => undefined)
+    ]);
   }
 }
