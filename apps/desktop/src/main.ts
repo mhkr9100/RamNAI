@@ -19,6 +19,9 @@ import {
   syncStructuredExports as syncStructuredExportsToDisk,
   writeJsonFile
 } from './workspace-sync.js';
+import { createBackupExport, createSupportBundle } from './local-bundles.js';
+import { recoverInterruptedWork as recoverInterruptedWorkModule } from './scheduler-recovery.js';
+import { startTaskRunHeartbeat } from './task-run-heartbeat.js';
 import type {
   AgentSpec,
   ArtifactMode,
@@ -47,6 +50,7 @@ import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, type S
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const runtime = new LocalRuntimeAdapter();
 const runtimeWorkspace = new RuntimeWorkspaceManager();
 const providerAuthStore = new ProviderAuthStore(createSecretStoreCipher());
@@ -55,9 +59,12 @@ let storage: SqliteStorage;
 let schedulerHandle: NodeJS.Timeout | null = null;
 let processingDueTasks = false;
 const TASK_RUN_LEASE_MS = 5 * 60 * 1000;
+const TASK_RUN_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const TASK_RUN_HARD_TIMEOUT_MS = TASK_RUN_LEASE_MS * 4;
 const ollamaModelState = new Map<string, OllamaModelRuntimeState>();
 const DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD = 0.55;
 const USER_MAP_VISIBILITY_ORDER: Array<'public' | 'private'> = ['public', 'private'];
+const EXPORT_PROVIDER_IDS: ProviderId[] = ['ollama', 'openai', 'anthropic', 'google'];
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -592,6 +599,40 @@ function syncStructuredExports() {
   syncStructuredExportsToDisk(getWorkspacePaths(), storage.getWorkspaceSnapshot(), runtimeWorkspace);
 }
 
+async function buildLocalBundleContext() {
+  const workspacePaths = getWorkspacePaths();
+  const snapshot = storage.getWorkspaceSnapshot();
+  const [providerProfiles, runtimeStatus, ollamaStatus] = await Promise.all([
+    providerAuthStore.listProfiles(),
+    runtime.getStatus(),
+    getOllamaRuntimeStatus()
+  ]);
+
+  return {
+    workspacePaths,
+    snapshot,
+    providerProfiles,
+    providerSelections: EXPORT_PROVIDER_IDS.map((provider) => storage.getProviderAuthSelection(provider) ?? { provider, profileId: null }),
+    prismOverride: storage.getPrismProviderOverride(),
+    runtimeStatus,
+    ollamaStatus,
+    schemaVersion: storage.getSchemaVersion(),
+    databasePath: getDatabasePath(),
+    userDataPath: app.getPath('userData'),
+    mainProcessLogPath: getMainProcessLogPath(),
+    repoRoot: REPO_ROOT,
+    runtimeWorkspace,
+    appInfo: {
+      name: app.getName(),
+      version: app.getVersion(),
+      isPackaged: app.isPackaged,
+      platform: process.platform,
+      arch: process.arch,
+      processVersions: process.versions
+    }
+  };
+}
+
 function upsertFactsIntoTree(tree: UserMapState, facts: MemoryFact[]): UserMapState {
   const nextTree = normalizeUserMapState(tree);
   const categoryRoots = {
@@ -1070,6 +1111,9 @@ async function executeDueTask(task: TaskSpec) {
   const attempt = storage.nextTaskRunAttempt(task.id);
   const claimedTaskRun = buildTaskRunRecord(task, attempt, startedAt);
   const runningTaskRun = activateTaskRun(claimedTaskRun, startedAt);
+  if (!runningTaskRun.claimToken) {
+    throw new Error('Missing claim token for task run.');
+  }
   const runningTask: TaskSpec = {
     ...makeTaskBase(task),
     status: 'running',
@@ -1099,6 +1143,21 @@ async function executeDueTask(task: TaskSpec) {
   storage.upsertWorkItem(runningWorkItem);
   syncStructuredExports();
 
+  let heartbeatStopped = false;
+  const stopHeartbeat = () => {
+    if (heartbeatStopped) return;
+    heartbeatStopped = true;
+    heartbeat.stop();
+  };
+  const heartbeat = startTaskRunHeartbeat({
+    storage,
+    runId: runningTaskRun.id,
+    claimToken: runningTaskRun.claimToken,
+    leaseMs: TASK_RUN_LEASE_MS,
+    intervalMs: TASK_RUN_HEARTBEAT_INTERVAL_MS,
+    hardTimeoutMs: TASK_RUN_HARD_TIMEOUT_MS
+  });
+
   try {
     const snapshot = storage.getWorkspaceSnapshot();
     const result = await withRuntimeBridgeCompatibility(() => runtime.executeTask(task, {
@@ -1106,8 +1165,33 @@ async function executeDueTask(task: TaskSpec) {
       agents: snapshot.agents,
       groups: snapshot.groups
     }));
-    const artifacts = createArtifactRecords(task, workItemId, result, task.outputPolicy.artifactMode);
     const completedAt = new Date().toISOString();
+    stopHeartbeat();
+
+    // If another run has become active for this task, skip persisting to avoid duplicates.
+    const activeRuns = storage.listActiveTaskRuns(task.id, new Date());
+    const stale = activeRuns.some((run) => run.id !== runningTaskRun.id);
+    if (stale) {
+      const staleMessage = 'Stale run: lease expired or rerun occurred before commit.';
+      storage.upsertTaskRun({
+        ...runningTaskRun,
+        status: 'cancelled',
+        completedAt,
+        leaseExpiresAt: completedAt,
+        lastError: staleMessage,
+        updatedAt: completedAt
+      });
+      storage.upsertWorkItem({
+        ...runningWorkItem,
+        status: 'cancelled',
+        updatedAt: completedAt,
+        lastError: staleMessage
+      });
+      syncStructuredExports();
+      return;
+    }
+
+    const artifacts = createArtifactRecords(task, workItemId, result, task.outputPolicy.artifactMode);
     const nextRunAt = isRecurring(task.schedule) ? computeNextRun(task.schedule, new Date()).toISOString() : undefined;
     const nextStatus: TaskSpec['status'] = isRecurring(task.schedule) ? 'scheduled' : 'done';
 
@@ -1148,6 +1232,30 @@ async function executeDueTask(task: TaskSpec) {
     maybeNotify(completedTask, result.text);
   } catch (error) {
     const completedAt = new Date().toISOString();
+    stopHeartbeat();
+
+    const activeRuns = storage.listActiveTaskRuns(task.id, new Date());
+    const stale = activeRuns.some((run) => run.id !== runningTaskRun.id);
+    if (stale) {
+      const staleMessage = 'Stale run: lease expired or rerun occurred before failure commit.';
+      storage.upsertTaskRun({
+        ...runningTaskRun,
+        status: 'cancelled',
+        completedAt,
+        leaseExpiresAt: completedAt,
+        lastError: staleMessage,
+        updatedAt: completedAt
+      });
+      storage.upsertWorkItem({
+        ...runningWorkItem,
+        status: 'cancelled',
+        updatedAt: completedAt,
+        lastError: staleMessage
+      });
+      syncStructuredExports();
+      return;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     const recurring = isRecurring(task.schedule);
 
@@ -1180,6 +1288,9 @@ async function executeDueTask(task: TaskSpec) {
     storage.upsertWorkItem(failedWorkItem);
     syncStructuredExports();
     maybeNotify({ ...failedTask, status: 'failed' }, message);
+  } finally {
+    // Ensure heartbeat is not left running if runtime throws synchronously.
+    stopHeartbeat();
   }
 }
 
@@ -1191,7 +1302,21 @@ async function processDueTasks() {
     const now = Date.now();
     const dueTasks = storage
       .listTasks()
-      .filter((task) => ['scheduled', 'queued'].includes(task.status) && task.nextRunAt && Date.parse(task.nextRunAt) <= now)
+      .filter((task) => {
+        if (task.status === 'scheduled' || task.status === 'queued') {
+          if (!task.nextRunAt) return false;
+          return Date.parse(task.nextRunAt) <= now;
+        }
+
+        if (task.status === 'running') {
+          // Only resume "running" tasks once their lease is no longer active.
+          const dueAt = task.nextRunAt ?? task.startedAt ?? task.updatedAt ?? task.createdAt;
+          const due = dueAt ? Date.parse(dueAt) <= now : true;
+          return due && storage.listActiveTaskRuns(task.id, new Date(now)).length === 0;
+        }
+
+        return false;
+      })
       .sort((left, right) => Date.parse(left.nextRunAt ?? left.createdAt) - Date.parse(right.nextRunAt ?? right.createdAt));
 
     for (const task of dueTasks) {
@@ -1258,54 +1383,7 @@ async function createWindow() {
 }
 
 function recoverInterruptedWork() {
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const tasks = storage.listTasks();
-  const workItems = storage.listWorkItems();
-
-  for (const task of tasks) {
-    const interruptedRuns = storage
-      .listTaskRuns(task.id)
-      .filter((run) => run.status === 'claimed' || run.status === 'running');
-    if (task.status !== 'running' && interruptedRuns.length === 0) continue;
-
-    const recurring = isRecurring(task.schedule);
-    const nextRunAt = recurring ? computeNextRun(task.schedule, now).toISOString() : task.nextRunAt;
-    const runRecords = interruptedRuns.length > 0
-      ? interruptedRuns
-      : [buildTaskRunRecord(task, storage.nextTaskRunAttempt(task.id), task.startedAt ?? nowIso)];
-    const recovered: TaskSpec = {
-      ...makeTaskBase(task),
-      status: recurring ? 'scheduled' : 'failed',
-      updatedAt: nowIso,
-      completedAt: nowIso,
-      lastRunAt: nowIso,
-      runCount: task.runCount + 1,
-      lastError: 'Recovered after app restart during an in-progress run.',
-      artifactIds: [],
-      ...(nextRunAt ? { nextRunAt } : {})
-    };
-
-    storage.upsertTask(recovered);
-    for (const runRecord of runRecords) {
-      storage.upsertTaskRun(completeTaskRun(runRecord, {
-        status: 'failed',
-        completedAt: nowIso,
-        error: 'Recovered after app restart during an in-progress run.'
-      }));
-    }
-  }
-
-  for (const item of workItems) {
-    if (item.status !== 'running') continue;
-    const recovered: WorkItem = {
-      ...item,
-      status: 'failed',
-      updatedAt: nowIso,
-      lastError: 'Recovered after app restart during an in-progress run.'
-    };
-    storage.upsertWorkItem(recovered);
-  }
+  recoverInterruptedWorkModule(storage, new Date());
 }
 
 app.whenReady().then(async () => {
@@ -1325,6 +1403,10 @@ app.whenReady().then(async () => {
     return saved;
   });
   ipcMain.handle(channels.workspaceSnapshot, async () => buildSnapshot());
+  ipcMain.handle(channels.workspaceBackupExport, async () => {
+    syncStructuredExports();
+    return createBackupExport(await buildLocalBundleContext());
+  });
   ipcMain.handle(channels.userMapSave, async (_event, tree: UserMapState) => {
     const saved = storage.saveUserMap(tree);
     syncStructuredExports();
@@ -1370,6 +1452,7 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle(channels.prismSend, async (_event, input: PrismRequest) => {
+    runtime.setPrismProviderOverride(storage.getPrismProviderOverride());
     const reply = await withRuntimeBridgeCompatibility(() => runtime.sendPrismRequest(input));
     if (reply.createdAgent) {
       storage.upsertAgent(reply.createdAgent);
@@ -1426,11 +1509,25 @@ app.whenReady().then(async () => {
     if (!task) {
       throw new Error('Task not found.');
     }
+    const nowIso = new Date().toISOString();
+
+    // Cancel any in-flight claimed/running task runs so the scheduler can re-execute immediately.
+    storage.cancelTaskRunsByTaskId(task.id, nowIso, 'Cancelled due to task rerun.');
+    for (const item of storage.listWorkItems()) {
+      if (item.status !== 'running') continue;
+      if (item.sourceTaskId !== task.id) continue;
+      storage.upsertWorkItem({
+        ...item,
+        status: 'cancelled',
+        updatedAt: nowIso,
+        lastError: 'Cancelled due to task rerun.'
+      });
+    }
     const rerun: TaskSpec = {
       ...makeTaskBase(task),
       status: 'queued',
-      updatedAt: new Date().toISOString(),
-      nextRunAt: new Date().toISOString()
+      updatedAt: nowIso,
+      nextRunAt: nowIso
     };
     storage.upsertTask(rerun);
     syncStructuredExports();
@@ -1477,6 +1574,7 @@ app.whenReady().then(async () => {
     const selection = storage.getProviderAuthSelection(input.provider);
     if (selection?.profileId === input.profileId) {
       storage.upsertProviderAuthSelection({ provider: input.provider, profileId: null });
+      await providerAuthStore.setProviderDefaultProfile(input.provider as Exclude<ProviderId, 'ollama'>, null);
       syncStructuredExports();
     }
 
@@ -1497,6 +1595,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(channels.providerAuthSetSelection, async (_event, selection: ProviderAuthSelection) => {
     const saved = storage.upsertProviderAuthSelection(selection);
+    await providerAuthStore.setProviderDefaultProfile(selection.provider as Exclude<ProviderId, 'ollama'>, selection.profileId);
     syncStructuredExports();
     return saved;
   });
@@ -1512,6 +1611,10 @@ app.whenReady().then(async () => {
   ipcMain.handle(channels.ollamaInstallDefaults, async () => {
     await ensureDefaultOllamaModelsInstalled();
     return getOllamaRuntimeStatus();
+  });
+  ipcMain.handle(channels.supportBundleCreate, async () => {
+    syncStructuredExports();
+    return createSupportBundle(await buildLocalBundleContext());
   });
 
   schedulerHandle = setInterval(() => {

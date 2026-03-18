@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Bot, BrainCircuit, FolderKanban, LoaderCircle, Sparkles } from 'lucide-react';
+import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
 import { LocalProfileScreen } from './components/LocalProfileScreen';
 import { Sidebar, ViewId } from './components/Sidebar';
@@ -57,15 +57,6 @@ export default function App() {
   const [prismOverride, setPrismOverride] = useState<PrismProviderOverrideSettings | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaRuntimeStatus | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
-
-  const selectedAgent = useMemo(
-    () => selectedChatTarget?.type === 'agent' ? snapshot?.agents.find((agent) => agent.id === selectedChatTarget.id) ?? null : null,
-    [selectedChatTarget, snapshot?.agents]
-  );
-  const selectedGroup = useMemo(
-    () => selectedChatTarget?.type === 'group' ? snapshot?.groups.find((group) => group.id === selectedChatTarget.id) ?? null : null,
-    [selectedChatTarget, snapshot?.groups]
-  );
 
   const refreshSnapshot = useCallback(async () => {
     if (!api) {
@@ -655,12 +646,12 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-[#08090a] text-white">
       <Sidebar activeView={activeView} onSelect={setActiveView} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#111315]">
-        <header className="h-16 border-b border-white/6 bg-[#0c0f11]/95 px-5 backdrop-blur-xl">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0e1012]">
+        <header className="border-b border-white/6 bg-[#0b0d0f]/95 px-4 backdrop-blur-xl">
           <div className="flex h-full flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/35">RamN AI</div>
-              <div className="mt-1 text-lg font-semibold text-white">
+            <div className="py-3">
+              <div className="text-[8px] font-black uppercase tracking-[0.22em] text-white/30">RamN AI</div>
+              <div className="mt-1 text-sm font-semibold text-white">
                 {activeView === 'prism'
                   ? 'Prism'
                   : activeView === 'chats'
@@ -671,33 +662,33 @@ export default function App() {
                         ? 'Spectrum'
                         : activeView === 'work'
                           ? 'Work'
-                          : 'Settings'}
+                        : 'Settings'}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-white/50">
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-white/55">
                 {snapshot.profile.name}
               </div>
             </div>
           </div>
           {error || notice ? (
-            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto]">
+            <div className="grid gap-2 border-t border-white/6 py-2 lg:grid-cols-[1fr_auto]">
               {error ? (
-                <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
-                  <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-red-200"><AlertTriangle size={14} />Error</div>
+                <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-sm text-red-100">
+                  <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-red-200"><AlertTriangle size={13} />Error</div>
                   {error}
                 </div>
               ) : <div className="hidden lg:block" />}
               {notice ? (
-                <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/72">
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/72">
                   {notice}
                 </div>
               ) : null}
             </div>
           ) : null}
         </header>
-        <div className="flex min-h-0 flex-1">
-          <section className="min-w-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+          <section className="mx-auto min-w-0 w-full max-w-[1360px] px-3 py-3">
             {activeView === 'prism' ? (
               <PrismWorkspace
                 snapshot={snapshot}
@@ -775,60 +766,6 @@ export default function App() {
               />
             ) : null}
           </section>
-          <aside className="hidden w-[320px] shrink-0 border-l border-white/6 bg-[#0d1012] px-4 py-4 xl:block">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/40">
-                  {activeView === 'chats' && (selectedAgent || selectedGroup) ? 'Selected Chat' : 'Profile'}
-                </div>
-                <div className="mt-2 text-lg font-semibold text-white">
-                  {activeView === 'chats'
-                    ? selectedAgent?.name ?? selectedGroup?.name ?? snapshot.profile.name
-                    : snapshot.profile.name}
-                </div>
-                <div className="mt-1 text-sm text-white/55">
-                  {activeView === 'chats'
-                    ? selectedAgent?.persona.role ?? (selectedGroup ? `${selectedGroup.memberAgentIds.length} members` : snapshot.profile.email)
-                    : snapshot.profile.email}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Workspace</div>
-                <div className="grid gap-2.5">
-                  {[
-                    { label: 'Chatbots', value: snapshot.agents.length, icon: <Bot size={15} /> },
-                    { label: 'Groups', value: snapshot.groups.length, icon: <BrainCircuit size={15} /> },
-                    { label: 'Chat Threads', value: snapshot.chatThreads.length, icon: <Sparkles size={15} /> },
-                    { label: 'Tasks', value: snapshot.tasks.length, icon: <FolderKanban size={15} /> },
-                    { label: 'Prism Messages', value: prismMessages.length, icon: <Sparkles size={15} /> }
-                  ].map((item) => (
-                    <div key={item.label} className="flex items-center justify-between rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 text-sm text-white/75">
-                      <div className="flex items-center gap-3 text-white/55">{item.icon}{item.label}</div>
-                      <div className="text-sm font-semibold text-white">{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="mb-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/40">Models</div>
-                <div className="space-y-2.5">
-                  {snapshot.models.map((model) => (
-                    <div key={model.id} className="rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold text-white">{model.label}</div>
-                          <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/40">{model.provider}</div>
-                        </div>
-                        <div className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] ${model.installed ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/8 text-white/45'}`}>
-                          {model.installed ? 'Ready' : 'Not Installed'}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </aside>
         </div>
       </main>
     </div>

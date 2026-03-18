@@ -10,13 +10,13 @@
     "dev": "wait-on tcp:5180 && npm run build && cross-env SUPREME_RENDERER_URL=http://127.0.0.1:5180 electron dist/main.js",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
-    "package:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
-    "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
-    "package:mac:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac",
-    "package:mac:release": "node scripts/verify-signing-env.mjs mac && npm run build && node scripts/generate-icons.mjs && electron-builder --mac dmg zip --publish never",
-    "package:win:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --win --x64",
-    "package:win:release": "node scripts/verify-signing-env.mjs win && npm run build && node scripts/generate-icons.mjs && electron-builder --win nsis zip --x64 --publish never",
-    "package:win-x64": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --win --x64"
+    "package:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir",
+    "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir",
+    "package:mac:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir --mac",
+    "package:mac:release": "node scripts/verify-signing-env.mjs mac && cross-env HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --mac dmg zip --publish never",
+    "package:win:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir --win --x64",
+    "package:win:release": "node scripts/verify-signing-env.mjs win && cross-env HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --win nsis zip --x64 --publish never",
+    "package:win-x64": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir --win --x64"
   },
   "dependencies": {
     "@supreme/runtime": "file:../../packages/runtime",

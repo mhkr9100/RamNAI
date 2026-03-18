@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('supreme', {
     save: (profile: unknown) => ipcRenderer.invoke(channels.profileSave, profile)
   },
   workspace: {
-    getSnapshot: () => ipcRenderer.invoke(channels.workspaceSnapshot)
+    getSnapshot: () => ipcRenderer.invoke(channels.workspaceSnapshot),
+    createBackupExport: () => ipcRenderer.invoke(channels.workspaceBackupExport)
   },
   userMap: {
     save: (tree: unknown) => ipcRenderer.invoke(channels.userMapSave, tree),
@@ -46,5 +47,8 @@ contextBridge.exposeInMainWorld('supreme', {
     savePrismOverride: (override: unknown) => ipcRenderer.invoke(channels.prismOverrideSave, override),
     getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),
     installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults)
+  },
+  support: {
+    createBundle: () => ipcRenderer.invoke(channels.supportBundleCreate)
   }
 });

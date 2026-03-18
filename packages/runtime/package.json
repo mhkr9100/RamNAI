@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "@supreme/shared": "file:../shared"
+    "@supreme/shared": "file:../shared",
+    "keytar": "^7.9.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

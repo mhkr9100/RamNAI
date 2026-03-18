@@ -169,7 +169,16 @@ function taskRunColumns(run: TaskRunRecord) {
 function taskRunFromRow(row: TaskRunRow): TaskRunRecord {
   const payload = row.payload ? parseJson<TaskRunRecord | null>(row.payload, null) : null;
   if (payload) {
-    return payload;
+    // Some runtime paths (lease renewal / cancellation) update SQL columns without rewriting the JSON payload.
+    // Prefer column values for the fields we mutate via SQL updates.
+    return {
+      ...payload,
+      ...(row.status ? { status: row.status as TaskRunRecord['status'] } : {}),
+      ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
+      ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
+      ...(row.completed_at ? { completedAt: row.completed_at } : {}),
+      ...(row.last_error ? { lastError: row.last_error } : {})
+    };
   }
 
   const target = row.target ? parseJson<TaskRunRecord['target'] | null>(row.target, null) : null;
@@ -216,9 +225,13 @@ export class SqliteStorage {
     this.db.close();
   }
 
-  private getSchemaVersion(): number {
+  private readSchemaVersion(): number {
     const row = this.db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
     return row?.user_version ?? 0;
+  }
+
+  getSchemaVersion(): number {
+    return this.readSchemaVersion();
   }
 
   private setSchemaVersion(version: number) {
@@ -399,7 +412,7 @@ export class SqliteStorage {
       this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify({}));
     }
 
-    const schemaVersion = this.getSchemaVersion();
+    const schemaVersion = this.readSchemaVersion();
     if (schemaVersion < STORAGE_SCHEMA_VERSION) {
       this.backfillTaskRunSchema();
       this.setSchemaVersion(STORAGE_SCHEMA_VERSION);
@@ -532,6 +545,30 @@ export class SqliteStorage {
           ORDER BY updated_at DESC, id DESC
         `).all(now.toISOString()) as unknown as TaskRunRow[];
     return rows.map(taskRunFromRow);
+  }
+
+  renewTaskRunLease(runId: string, claimToken: string, newLeaseExpiresAt: string, updatedAt: string) {
+    // Lease renewal is guarded by (run id + claim token) so only the current holder can extend.
+    this.db.prepare(`
+      UPDATE task_runs
+      SET lease_expires_at = ?, updated_at = ?
+      WHERE id = ? AND claim_token = ?
+        AND status IN ('claimed', 'running')
+    `).run(newLeaseExpiresAt, updatedAt, runId, claimToken);
+  }
+
+  cancelTaskRunsByTaskId(taskId: string, completedAt: string, reason: string) {
+    // Used by rerun/cancel flows to prevent stale claimed/running runs from blocking new executions.
+    this.db.prepare(`
+      UPDATE task_runs
+      SET
+        status = 'cancelled',
+        lease_expires_at = ?,
+        completed_at = ?,
+        updated_at = ?,
+        last_error = ?
+      WHERE task_id = ? AND status IN ('claimed', 'running')
+    `).run(completedAt, completedAt, completedAt, reason, taskId);
   }
 
   nextTaskRunAttempt(taskId: string): number {

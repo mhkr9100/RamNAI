@@ -2,6 +2,7 @@ export const channels = {
   profileGet: 'profile:get',
   profileSave: 'profile:save',
   workspaceSnapshot: 'workspace:getSnapshot',
+  workspaceBackupExport: 'workspace:createBackupExport',
   userMapSave: 'usermap:save',
   userMapSync: 'usermap:syncMemories',
   groupUpsert: 'group:upsert',
@@ -25,5 +26,6 @@ export const channels = {
   prismOverrideGet: 'prismOverride:get',
   prismOverrideSave: 'prismOverride:save',
   ollamaStatus: 'ollama:status',
-  ollamaInstallDefaults: 'ollama:installDefaults'
+  ollamaInstallDefaults: 'ollama:installDefaults',
+  supportBundleCreate: 'support:createBundle'
 } as const;

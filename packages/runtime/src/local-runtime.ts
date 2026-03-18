@@ -9,6 +9,7 @@ import {
   MemoryFact,
   PrismReply,
   PrismRequest,
+  PrismProviderOverrideSettings,
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
@@ -87,6 +88,7 @@ export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
   private runtimeBridgeAvailable: boolean | null = null;
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
+  private prismOverride: PrismProviderOverrideSettings | null = null;
 
   setWorkspaceRoot(rootDir: string) {
     this.workspaceRoot = rootDir;
@@ -94,6 +96,10 @@ export class LocalRuntimeAdapter {
 
   setRuntimeBridgeHooks(hooks: RuntimeBridgeHooks) {
     this.runtimeBridgeHooks = hooks;
+  }
+
+  setPrismProviderOverride(override: PrismProviderOverrideSettings | null) {
+    this.prismOverride = override;
   }
 
   async getStatus(): Promise<RuntimeStatus> {
@@ -149,7 +155,10 @@ export class LocalRuntimeAdapter {
     }
 
     const models = await this.listModels();
-    const modelId = this.pickModelId(models);
+    const overrideModelId = this.prismOverride?.provider === 'ollama' ? this.prismOverride.modelId : null;
+    const modelId = overrideModelId && models.some((model) => model.installed && model.id === overrideModelId)
+      ? overrideModelId
+      : this.pickModelId(models);
 
     if (input.mode === 'create') {
       const jsonText = await this.generateText({
@@ -228,7 +237,8 @@ export class LocalRuntimeAdapter {
   private async tryRuntimeBridgePrism(input: PrismRequest): Promise<PrismReply | null> {
     const payload = {
       kind: 'prism',
-      request: input
+      request: input,
+      ...(this.prismOverride ? { prismOverride: this.prismOverride } : {})
     };
 
     const response = await this.invokeRuntimeBridge<RuntimeBridgePrismReply>(payload);

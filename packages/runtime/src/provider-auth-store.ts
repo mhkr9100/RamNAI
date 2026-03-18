@@ -11,6 +11,9 @@ import {
 } from './runtime-compat.js';
 import type { SecretStoreCipher } from './secret-store.js';
 
+const NATIVE_SECRETS_SERVICE = 'com.supreme-raman-ai.provider-secrets';
+const NATIVE_SECRETS_ACCOUNT = 'provider-secrets';
+
 interface AuthProfilesFile {
   version: 1;
   profiles: ProviderAuthProfile[];
@@ -80,7 +83,54 @@ async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
 }
 
 export class ProviderAuthStore {
+  private nativeKeytar: any | null = null;
+
   constructor(private readonly cipher: SecretStoreCipher) {}
+
+  private async getKeytar(): Promise<any | null> {
+    if (this.nativeKeytar) return this.nativeKeytar;
+    try {
+      const mod = await import('keytar');
+      // keytar is CJS; ESM import may expose default.
+      const keytar = (mod as any).default ?? mod;
+      if (typeof keytar?.getPassword !== 'function' || typeof keytar?.setPassword !== 'function') {
+        this.nativeKeytar = null;
+        return null;
+      }
+      this.nativeKeytar = keytar;
+      return keytar;
+    } catch {
+      this.nativeKeytar = null;
+      return null;
+    }
+  }
+
+  private async readNativeSecretState(): Promise<SecretsFile | null> {
+    const keytar = await this.getKeytar();
+    if (!keytar) return null;
+
+    try {
+      const json = await keytar.getPassword(NATIVE_SECRETS_SERVICE, NATIVE_SECRETS_ACCOUNT);
+      if (!json) return null;
+      const parsed = JSON.parse(json) as SecretsFile;
+      if (!parsed?.providers || typeof parsed.providers !== 'object') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeNativeSecretState(state: SecretsFile): Promise<boolean> {
+    const keytar = await this.getKeytar();
+    if (!keytar) return false;
+
+    try {
+      await keytar.setPassword(NATIVE_SECRETS_SERVICE, NATIVE_SECRETS_ACCOUNT, JSON.stringify(state));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async listProfiles(): Promise<ProviderAuthProfile[]> {
     const primary = await readJsonFile<AuthProfilesFile>(APP_AUTH_PROFILES_PATH);
@@ -115,10 +165,16 @@ export class ProviderAuthStore {
       ...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
       ...(input.token !== undefined ? { token: input.token } : {})
     });
+    const enforceSingleDefault = input.isDefault === true;
+    const nextIsDefault = input.isDefault ?? currentProfile?.isDefault ?? false;
 
-    const others = existingProfiles.filter(
-      (profile) => !(profile.id === input.id && profile.provider === input.provider)
-    );
+    const others = existingProfiles
+      .filter((profile) => !(profile.id === input.id && profile.provider === input.provider))
+      .map((profile) => {
+        if (!enforceSingleDefault) return profile;
+        if (profile.provider !== input.provider) return profile;
+        return { ...profile, isDefault: false };
+      });
 
     const nextProfile: ProviderAuthProfile = {
       id: input.id,
@@ -127,7 +183,7 @@ export class ProviderAuthStore {
       ...(input.description ? { description: input.description } : {}),
       ...(nextSecrets.apiKey ? { keyRef: makeFileSecretRef(input.provider, 'apiKey') } : {}),
       ...(nextSecrets.token ? { tokenRef: makeFileSecretRef(input.provider, 'token') } : {}),
-      isDefault: input.isDefault ?? currentProfile?.isDefault ?? false,
+      isDefault: nextIsDefault,
       createdAt: currentProfile?.createdAt ?? now,
       updatedAt: now
     };
@@ -138,6 +194,27 @@ export class ProviderAuthStore {
     } satisfies AuthProfilesFile);
 
     return nextProfile;
+  }
+
+  async setProviderDefaultProfile(
+    provider: Exclude<ProviderId, 'ollama'>,
+    profileId: string | null
+  ): Promise<{ ok: true }> {
+    const existingProfiles = await this.listProfiles();
+    const nextProfiles = existingProfiles.map((profile) => {
+      if (profile.provider !== provider) return profile;
+      return {
+        ...profile,
+        isDefault: profileId ? profile.id === profileId : false
+      };
+    });
+
+    await writeJsonFile(APP_AUTH_PROFILES_PATH, {
+      version: 1,
+      profiles: nextProfiles
+    } satisfies AuthProfilesFile);
+
+    return { ok: true };
   }
 
   async deleteProfile(provider: Exclude<ProviderId, 'ollama'>, profileId: string): Promise<{ ok: true }> {
@@ -255,10 +332,18 @@ export class ProviderAuthStore {
   }
 
   private async readSecretState(): Promise<SecretsFile> {
+    const native = await this.readNativeSecretState();
+    if (native) {
+      return native;
+    }
+
     const encrypted = await readJsonFile<SecretEnvelope>(APP_SECRETS_PATH);
     if (encrypted?.payload) {
       const decrypted = this.cipher.decrypt(encrypted.payload);
-      return JSON.parse(decrypted) as SecretsFile;
+      const parsed = JSON.parse(decrypted) as SecretsFile;
+      // Best-effort migration to native secure storage.
+      await this.writeNativeSecretState(parsed).catch(() => undefined);
+      return parsed;
     }
 
     const legacyAppSecrets = await readJsonFile<SecretsFile>(LEGACY_APP_SECRETS_PATH);
@@ -279,6 +364,20 @@ export class ProviderAuthStore {
   }
 
   private async writeSecretState(state: SecretsFile): Promise<void> {
+    const storedInNative = await this.writeNativeSecretState(state).catch(() => false);
+    if (storedInNative) {
+      // Native store is the preferred live backend, but keep the encrypted file updated as a fallback.
+      await mkdir(path.dirname(APP_SECRETS_PATH), { recursive: true });
+      const envelope: SecretEnvelope = {
+        version: 1,
+        cipher: this.cipher.id,
+        payload: this.cipher.encrypt(JSON.stringify(state))
+      };
+      await writeJsonFile(APP_SECRETS_PATH, envelope).catch(() => undefined);
+      await rm(LEGACY_APP_SECRETS_PATH, { force: true }).catch(() => undefined);
+      return;
+    }
+
     await mkdir(path.dirname(APP_SECRETS_PATH), { recursive: true });
     const envelope: SecretEnvelope = {
       version: 1,
@@ -291,12 +390,24 @@ export class ProviderAuthStore {
 
   private async writeCompatibilityFiles(): Promise<void> {
     const profiles = await this.listProfiles();
+    const defaultProfiles = profiles.filter((profile) => profile.isDefault);
+    const exportedProfiles = defaultProfiles.length ? defaultProfiles : profiles;
+    const providerIds = new Set(exportedProfiles.map((profile) => profile.provider));
+
     const secrets = await this.readSecretState();
+    const filteredProviders: SecretsFile['providers'] = {};
+    for (const [providerId, providerSecrets] of Object.entries(secrets.providers)) {
+      if (!providerSecrets) continue;
+      if (providerIds.has(providerId as Exclude<ProviderId, 'ollama'>)) {
+        filteredProviders[providerId as Exclude<ProviderId, 'ollama'>] = providerSecrets;
+      }
+    }
+
     await writeJsonFile(EXTERNAL_AUTH_PROFILES_PATH, {
       version: 1,
-      profiles
+      profiles: exportedProfiles
     } satisfies AuthProfilesFile);
-    await writeJsonFile(EXTERNAL_SECRETS_PATH, secrets);
+    await writeJsonFile(EXTERNAL_SECRETS_PATH, { providers: filteredProviders });
   }
 
   private async clearCompatibilityFiles(): Promise<void> {

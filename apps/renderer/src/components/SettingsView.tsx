@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, FlaskConical, KeyRound, LoaderCircle, Sparkles, Trash2, Wrench } from 'lucide-react';
+import { Download, FlaskConical, KeyRound, LoaderCircle, Sparkles, Trash2 } from 'lucide-react';
 import type {
   OllamaRuntimeStatus,
   PrismProviderOverrideSettings,
@@ -40,8 +40,8 @@ interface SettingsViewProps {
 }
 
 const sections: Array<{ id: SettingsSection; label: string }> = [
-  { id: 'runtime', label: 'Runtime' },
-  { id: 'providers', label: 'Providers' },
+  { id: 'runtime', label: 'Local' },
+  { id: 'providers', label: 'Accounts' },
   { id: 'prism', label: 'Prism' }
 ];
 
@@ -147,20 +147,20 @@ export function SettingsView({
   };
 
   return (
-    <div className="space-y-6">
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-[#0d1012] px-6 py-5">
+    <div className="space-y-4">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-[#0d1012] px-5 py-4">
         <div>
           <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Settings</div>
-          <h1 className="mt-2 text-2xl font-semibold text-white">Preferences</h1>
+          <h1 className="mt-1.5 text-lg font-semibold text-white">Local app</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <InfoChip label="Runtime" value={runtimeReady ? 'Ready' : 'Check'} />
+          <InfoChip label="Local" value={runtimeReady ? 'Ready' : 'Check'} />
           <InfoChip label="Models" value={`${installedModelCount}`} />
-          <InfoChip label="Profiles" value={`${providerProfiles.length}`} />
+          <InfoChip label="Accounts" value={`${providerProfiles.length}`} />
         </div>
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-3">
+      <section className="flex flex-wrap gap-2">
         {sections.map((section) => {
           const active = section.id === activeSection;
           return (
@@ -168,22 +168,21 @@ export function SettingsView({
               key={section.id}
               type="button"
               onClick={() => onSelectSection(section.id)}
-              className={`rounded-2xl border p-4 text-left transition ${active ? 'border-white/20 bg-white text-black shadow-[0_20px_60px_rgba(255,255,255,0.08)]' : 'border-white/10 bg-white/5 text-white hover:border-white/18 hover:bg-white/8'}`}
+              className={`rounded-full border px-4 py-2 text-[9px] font-black uppercase tracking-[0.16em] transition ${active ? 'border-white/18 bg-white text-black' : 'border-white/10 bg-white/5 text-white/70 hover:border-white/18 hover:text-white'}`}
             >
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] opacity-60">{section.label}</div>
-              <div className="mt-2 text-sm font-black uppercase tracking-[0.14em]">{section.label}</div>
+              {section.label}
             </button>
           );
         })}
       </section>
 
       {activeSection === 'runtime' ? (
-        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
+        <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Ollama Runtime</div>
-                <div className="mt-2 text-2xl font-semibold text-white">Models</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Local models</div>
+                <div className="mt-2 text-xl font-semibold text-white">Available now</div>
               </div>
               <button
                 type="button"
@@ -195,9 +194,9 @@ export function SettingsView({
               </button>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
-              <InfoCard label="Runtime" value={ollamaStatus?.running ? 'Running' : 'Not running'} />
+              <InfoCard label="App" value={ollamaStatus?.running ? 'Running' : 'Not running'} />
               <InfoCard label="Installed" value={`${installedModelCount}`} />
-              <InfoCard label="Tracked Models" value={`${ollamaStatus?.models.length ?? 0}`} />
+              <InfoCard label="Shown" value={`${ollamaStatus?.models.length ?? 0}`} />
             </div>
             <div className="mt-5 space-y-3">
               {ollamaStatus?.models.length ? (
@@ -247,10 +246,10 @@ export function SettingsView({
               )}
             </div>
           </div>
-          <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-            <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">First-run install</div>
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
+            <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Starter models</div>
             <div className="rounded-3xl border border-white/8 bg-black/20 p-5 text-sm leading-7 text-white/62">
-              Default models
+              Install the three local models this app expects first.
             </div>
             <div className="mt-4 space-y-3">
               {models.map((model) => (
@@ -267,29 +266,29 @@ export function SettingsView({
               className="mt-5 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
-              {busy ? 'Installing…' : 'Install Default Models'}
+              {busy ? 'Installing…' : 'Install Starter Models'}
             </button>
           </div>
         </section>
       ) : null}
 
       {activeSection === 'providers' ? (
-        <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-            <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Saved provider profiles</div>
+        <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
+            <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Connected accounts</div>
             {providerProfiles.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-                No provider profiles yet.
+                No accounts yet.
               </div>
             ) : (
               <div className="space-y-3">
                 {providerProfiles.map((profile) => (
-                  <div key={profile.id} className="rounded-3xl border border-white/8 bg-black/20 p-4">
+                  <div key={profile.id} className="rounded-[24px] border border-white/8 bg-black/20 p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{profile.provider}</div>
-                        <div className="mt-2 text-lg font-semibold text-white">{profile.label}</div>
-                        <div className="mt-2 text-sm leading-7 text-white/58">{profile.description || 'No description.'}</div>
+                        <div className="mt-2 text-base font-semibold text-white">{profile.label}</div>
+                        <div className="mt-1.5 text-sm leading-6 text-white/58">{profile.description || 'No notes.'}</div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {providerSelections[profile.provider as RemoteProviderId] === profile.id ? (
@@ -305,8 +304,8 @@ export function SettingsView({
                       </div>
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <InfoCard label="Key Ref" value={profile.keyRef?.id ?? 'None'} />
-                      <InfoCard label="Token Ref" value={profile.tokenRef?.id ?? 'None'} />
+                      <InfoCard label="Key" value={profile.keyRef ? 'Saved' : 'Not added'} />
+                      <InfoCard label="Token" value={profile.tokenRef ? 'Saved' : 'Not added'} />
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button
@@ -315,7 +314,7 @@ export function SettingsView({
                         onClick={() => void onSetProviderSelection(profile.provider as RemoteProviderId, profile.id)}
                         className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                       >
-                        Use Profile
+                        Make Active
                       </button>
                       <button
                         type="button"
@@ -324,7 +323,7 @@ export function SettingsView({
                         className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                       >
                         <FlaskConical size={12} />
-                        Test Refs
+                        Check Keys
                       </button>
                       <button
                         type="button"
@@ -332,7 +331,7 @@ export function SettingsView({
                         onClick={() => void onTestProfile(profile, true)}
                         className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                       >
-                        Probe Runtime
+                        Test Connection
                       </button>
                       <button
                         type="button"
@@ -349,10 +348,10 @@ export function SettingsView({
               </div>
             )}
           </div>
-          <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
             <div className="mb-5 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">
               <KeyRound size={14} />
-              Save provider profile
+              Add account
             </div>
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <label className="space-y-2">
@@ -364,7 +363,7 @@ export function SettingsView({
                 </select>
               </label>
               <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Profile Label</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Name</span>
                 <input
                   ref={labelRef}
                   className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
@@ -372,11 +371,11 @@ export function SettingsView({
                 />
               </label>
               <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Description</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Notes</span>
                 <textarea
                   ref={descriptionRef}
                   className="min-h-[112px] w-full rounded-3xl border border-white/10 bg-black/25 px-4 py-4 text-sm leading-7 text-white outline-none"
-                  placeholder="Optional description"
+                  placeholder="Optional"
                 />
               </label>
               <label className="space-y-2">
@@ -390,7 +389,7 @@ export function SettingsView({
                 />
               </label>
               <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Token</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Access token</span>
                 <input
                   ref={tokenRef}
                   type="password"
@@ -401,7 +400,7 @@ export function SettingsView({
               </label>
               <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/70">
                 <input ref={defaultRef} type="checkbox" className="h-4 w-4 rounded border-white/20 bg-transparent" />
-                Set as default
+                Make this the default for this service
               </label>
               {formError ? <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{formError}</div> : null}
               <button
@@ -410,7 +409,7 @@ export function SettingsView({
                 className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busy ? <LoaderCircle size={15} className="animate-spin" /> : <KeyRound size={15} />}
-                {busy ? 'Saving…' : 'Save Provider Profile'}
+                {busy ? 'Saving…' : 'Save Account'}
               </button>
             </form>
           </div>
@@ -418,23 +417,23 @@ export function SettingsView({
       ) : null}
 
       {activeSection === 'prism' ? (
-        <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
+        <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
             <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Prism</div>
             <div className="space-y-3">
-              <InfoCard label="Default" value={prismOverride ? `${prismOverride.provider} · ${prismOverride.modelId}` : 'Automatic'} />
-              <InfoCard label="Profiles" value={providerProfiles.length ? 'Available' : 'None'} />
+              <InfoCard label="Current" value={prismOverride ? `${prismOverride.provider} · ${prismOverride.modelId}` : 'Automatic'} />
+              <InfoCard label="Accounts" value={providerProfiles.length ? 'Available' : 'None'} />
               <InfoCard label="Active" value={REMOTE_PROVIDER_LABELS.map((provider) => `${provider.label}: ${providerSelections[provider.id] ?? 'none'}`).join(' • ')} />
             </div>
           </div>
-          <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
+          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
             <div className="mb-4 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">
               <Sparkles size={14} />
-              Prism override
+              Prism model
             </div>
             <form onSubmit={handleSavePrismOverride} className="space-y-4">
               <div className="rounded-3xl border border-white/8 bg-black/20 p-5 text-sm leading-7 text-white/62">
-                Choose a default only if you want to pin Prism to one model.
+                Leave this on automatic unless you want Prism to stay on one model.
               </div>
               <label className="space-y-2">
                 <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Provider</span>
@@ -472,7 +471,7 @@ export function SettingsView({
                 </label>
               ) : (
                 <label className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Remote Model Id</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Model ID</span>
                   <input
                     value={overrideModelId}
                     onChange={(event) => setOverrideModelId(event.target.value)}
@@ -488,7 +487,7 @@ export function SettingsView({
                   className="inline-flex items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}
-                  Save Override
+                  Save
                 </button>
                 <button
                   type="button"
@@ -496,7 +495,7 @@ export function SettingsView({
                   onClick={() => void onSavePrismOverride(null)}
                   className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                 >
-                  Clear Override
+                  Use Automatic
                 </button>
               </div>
             </form>

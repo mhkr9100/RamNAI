@@ -78,6 +78,12 @@ export interface ChatSendResult {
   newMessages: ChatMessage[];
 }
 
+export interface LocalBundleMetadata {
+  outputPath: string;
+  createdAt: string;
+  includedItems: string[];
+}
+
 export interface SupremeDesktopApi {
   profile: {
     get: () => Promise<LocalProfile | null>;
@@ -85,6 +91,7 @@ export interface SupremeDesktopApi {
   };
   workspace: {
     getSnapshot: () => Promise<WorkspaceSnapshot>;
+    createBackupExport: () => Promise<LocalBundleMetadata>;
   };
   userMap: {
     save: (tree: UserMapState) => Promise<UserMapState>;
@@ -138,6 +145,9 @@ export interface SupremeDesktopApi {
     savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<PrismProviderOverrideSettings | null>;
     getOllamaStatus: () => Promise<OllamaRuntimeStatus>;
     installDefaultModels: () => Promise<OllamaRuntimeStatus>;
+  };
+  support: {
+    createBundle: () => Promise<LocalBundleMetadata>;
   };
 }
 
