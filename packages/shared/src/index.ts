@@ -1,5 +1,30 @@
 export type ProviderId = 'ollama' | 'openai' | 'anthropic' | 'google';
 
+export type AuthSecretRefSource = 'env' | 'file' | 'exec';
+
+export interface AuthSecretRef {
+  source: AuthSecretRefSource;
+  provider: string;
+  id: string;
+}
+
+export interface ProviderAuthProfile {
+  id: string;
+  provider: ProviderId;
+  label: string;
+  description?: string | undefined;
+  keyRef?: AuthSecretRef | undefined;
+  tokenRef?: AuthSecretRef | undefined;
+  isDefault?: boolean | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderAuthSelection {
+  provider: ProviderId;
+  profileId: string | null;
+}
+
 export type ProviderStrategy =
   | { mode: 'local_first'; preferredLocalModelIds: string[]; fallbackProviders: ProviderId[] }
   | { mode: 'fixed'; provider: ProviderId; modelId: string }
@@ -200,6 +225,20 @@ export interface ProviderModelPreset {
   label: string;
   recommended: boolean;
   installed: boolean;
+}
+
+export type OllamaModelInstallStatus = 'not_installed' | 'installing' | 'installed' | 'error';
+
+export interface OllamaModelRuntimeStatus {
+  id: string;
+  label: string;
+  status: OllamaModelInstallStatus;
+  lastError?: string;
+}
+
+export interface OllamaRuntimeStatus {
+  running: boolean;
+  models: OllamaModelRuntimeStatus[];
 }
 
 export type PrismMode = 'ask' | 'create';

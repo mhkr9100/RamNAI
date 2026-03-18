@@ -94,6 +94,9 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
                         <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{item.type}</div>
                         <div className="mt-2 text-xl font-semibold text-white">{item.title}</div>
                         <div className="mt-2 text-sm text-white/52">{sourceTask ? `From ${sourceTask.title}` : 'Standalone work item'}</div>
+                        <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/38">
+                          {item.sourceAgentId ? 'Send to Chat routes back to the originating chatbot thread.' : 'Send to Chat routes back to Prism.'}
+                        </div>
                       </div>
                       <StatusPill status={item.status} />
                     </div>

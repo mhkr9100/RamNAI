@@ -1,14 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bot, BrainCircuit, FolderKanban, LoaderCircle, Sparkles } from 'lucide-react';
-import { ChatsWorkspace } from './components/ChatsWorkspace';
+import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
 import { LocalProfileScreen } from './components/LocalProfileScreen';
 import { Sidebar, ViewId } from './components/Sidebar';
 import { PrismWorkspace } from './components/PrismWorkspace';
+import { SettingsView } from './components/SettingsView';
 import { SpectrumView } from './components/SpectrumView';
 import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from './lib/electron';
-import type { PrismMode, UserMapNode, WorkItem } from '@supreme/shared';
+import type { OllamaRuntimeStatus, PrismMode, ProviderAuthProfile, UserMapNode, WorkItem } from '@supreme/shared';
 
 interface PrismMessage {
   id: string;
@@ -27,20 +28,46 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [prismMessages, setPrismMessages] = useState<PrismMessage[]>([]);
+  const [selectedChatTarget, setSelectedChatTarget] = useState<ChatTarget | null>(null);
+  const [chatDraftSeed, setChatDraftSeed] = useState<ChatDraftSeed | null>(null);
+  const [selectedSettingsSection, setSelectedSettingsSection] = useState<'runtime' | 'providers' | 'prism'>('runtime');
+  const [providerProfiles, setProviderProfiles] = useState<ProviderAuthProfile[]>([]);
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaRuntimeStatus | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
-  const refreshSnapshot = async () => {
+  const refreshSnapshot = useCallback(async () => {
     const next = await api.workspace.getSnapshot();
     setSnapshot(next);
     return next;
-  };
+  }, [api]);
+
+  const refreshSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const [profiles, runtimeStatus] = await Promise.all([
+        api.settings.listProviderProfiles(),
+        api.settings.getOllamaStatus()
+      ]);
+      setProviderProfiles(profiles);
+      setOllamaStatus(runtimeStatus);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [api]);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const next = await api.workspace.getSnapshot();
+        const [next, profiles, runtimeStatus] = await Promise.all([
+          api.workspace.getSnapshot(),
+          api.settings.listProviderProfiles(),
+          api.settings.getOllamaStatus()
+        ]);
         if (!mounted) return;
         setSnapshot(next);
+        setProviderProfiles(profiles);
+        setOllamaStatus(runtimeStatus);
       } catch (nextError) {
         if (!mounted) return;
         setError(nextError instanceof Error ? nextError.message : String(nextError));
@@ -66,7 +93,7 @@ export default function App() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [snapshot?.profile]);
+  }, [refreshSnapshot, snapshot?.profile]);
 
   const handleSaveProfile = async (profile: { name: string; email: string }) => {
     setSavingProfile(true);
@@ -260,6 +287,19 @@ export default function App() {
   };
 
   const handleSendWorkToChat = (item: WorkItem) => {
+    if (item.sourceAgentId && snapshot?.agents.some((agent) => agent.id === item.sourceAgentId)) {
+      const target: ChatTarget = { type: 'agent', id: item.sourceAgentId };
+      setSelectedChatTarget(target);
+      setChatDraftSeed({
+        target,
+        token: crypto.randomUUID(),
+        text: `From Work — ${item.title}\n\n${item.summary ?? item.lastError ?? 'No saved body.'}`
+      });
+      setActiveView('chats');
+      setNotice('Loaded the Work result into the chatbot composer.');
+      return;
+    }
+
     setPrismMessages((current) => [
       ...current,
       {
@@ -270,6 +310,67 @@ export default function App() {
       }
     ]);
     setActiveView('prism');
+  };
+
+  const handleDeleteThread = async (threadId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.chat.deleteThread(threadId);
+      await refreshSnapshot();
+      setNotice('Thread reset.');
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpenChatTarget = useCallback((target: ChatTarget) => {
+    setSelectedChatTarget(target);
+    setActiveView('chats');
+  }, []);
+
+  const handleSelectChatTarget = useCallback((target: ChatTarget | null) => {
+    setSelectedChatTarget(target);
+  }, []);
+
+  const handleSaveProviderProfile = async (input: {
+    id: string;
+    provider: 'openai' | 'anthropic' | 'google';
+    label: string;
+    description?: string;
+    apiKey?: string;
+    token?: string;
+    isDefault?: boolean;
+  }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.settings.saveProviderProfile(input);
+      await refreshSettings();
+      setNotice(`Saved ${input.provider} profile ${input.label}.`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      throw nextError;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleInstallDefaultModels = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const status = await api.settings.installDefaultModels();
+      setOllamaStatus(status);
+      await refreshSnapshot();
+      setNotice('Requested installation of the default local models.');
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleSaveUserMap = async (tree: UserMapNode) => {
@@ -325,7 +426,17 @@ export default function App() {
             <div>
               <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/35">Supreme Raman AI</div>
               <div className="mt-2 text-2xl font-semibold text-white">
-                {activeView === 'prism' ? 'Prism Workspace' : activeView === 'chats' ? 'Chats' : activeView === 'usermap' ? 'UserMap' : activeView === 'spectrum' ? 'Spectrum' : 'Work'}
+                {activeView === 'prism'
+                  ? 'Prism Workspace'
+                  : activeView === 'chats'
+                    ? 'Chats'
+                    : activeView === 'usermap'
+                      ? 'UserMap'
+                      : activeView === 'spectrum'
+                        ? 'Spectrum'
+                        : activeView === 'work'
+                          ? 'Work'
+                          : 'Settings'}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-white/50">
@@ -369,9 +480,13 @@ export default function App() {
               <ChatsWorkspace
                 snapshot={snapshot}
                 busy={busy}
+                selectedTarget={selectedChatTarget}
+                draftSeed={chatDraftSeed}
+                onSelectTarget={handleSelectChatTarget}
                 onSendAgentMessage={handleSendAgentMessage}
                 onSendGroupMessage={handleSendGroupMessage}
                 onCreateTask={handleTaskCreate}
+                onDeleteThread={handleDeleteThread}
               />
             ) : null}
             {activeView === 'spectrum' ? (
@@ -381,6 +496,7 @@ export default function App() {
                 onCreateAgentTask={handleTaskCreate}
                 onUpsertGroup={handleUpsertGroup}
                 onDeleteGroup={handleDeleteGroup}
+                onOpenChat={handleOpenChatTarget}
               />
             ) : null}
             {activeView === 'work' ? (
@@ -402,6 +518,21 @@ export default function App() {
                 busy={busy}
                 onSave={handleSaveUserMap}
                 onSync={handleSyncUserMap}
+              />
+            ) : null}
+            {activeView === 'settings' ? (
+              <SettingsView
+                activeSection={selectedSettingsSection}
+                onSelectSection={setSelectedSettingsSection}
+                runtimeReady={snapshot.runtime.available}
+                providerProfiles={providerProfiles}
+                ollamaStatus={ollamaStatus}
+                models={snapshot.models}
+                busy={busy}
+                loading={settingsLoading}
+                onRefresh={refreshSettings}
+                onInstallDefaults={handleInstallDefaultModels}
+                onSaveProfile={handleSaveProviderProfile}
               />
             ) : null}
           </section>

@@ -43,6 +43,7 @@ Supreme Raman AI is:
 - council runs
 - artifact output
 - desktop notifications
+- Work send-to-chat now routes to chatbot thread when `sourceAgentId` exists, otherwise Prism
 
 ### UserMap
 
@@ -58,11 +59,20 @@ Supreme Raman AI is:
 - Task button beside chatbot chat input
 - group chat threads
 - manual `@mention` routing for groups
+- app-level selected chat target state now controls Chats
+- thread reset is available in chatbot and group chats
 
 ### Groups
 
 - local group creation in Spectrum
 - local group deletion
+- Spectrum deep-links directly into group chats
+
+### Settings
+
+- renderer Settings view exists
+- provider profiles can be listed and saved through desktop IPC
+- Ollama status and default model installation are surfaced in the UI
 
 ### OpenClaw adaptation
 
@@ -86,10 +96,10 @@ Supreme Raman AI is:
 ## Current Gaps
 
 1. OpenClaw is adapted as a workspace layer, but the live execution path is still Ollama-first through `LocalRuntimeAdapter`.
-2. Provider settings UI for OpenAI, Anthropic, and Google is not built yet.
-3. Dedicated chatbot chat routing exists, but Spectrum does not yet deep-link into a selected chat.
-4. Group chat uses manual `@mention`, but there is no richer participant management yet.
-5. Bundled Ollama runtime management and first-run model installation are not implemented yet.
+2. Provider profile delete/test and persisted Prism provider override are not finished yet.
+3. Group chat uses manual `@mention`, and richer participant management is still intentionally out of scope for this wave.
+4. Bundled Ollama runtime management and first-run model installation still need desktop-lane polish.
+5. Scheduler timezone handling still needs correction in the desktop lane.
 
 ## Best Next Tasks For Cursor
 
@@ -109,39 +119,29 @@ Rules:
 - no cloud dependencies
 - keep APIs backward-compatible where possible
 
-### Task 2: Add provider settings and Prism provider override UI
+### Task 2: Finish provider auth flows and Prism override persistence
 
 Goal:
-- support user-supplied OpenAI / Anthropic / Google keys
-- keep Ollama as default
+- finish the backend side for provider profile selection, testing, and persisted Prism override
+- keep Ollama as default fallback
 
 Focus files:
-- `apps/renderer/src/App.tsx`
-- new settings components under `apps/renderer/src/components/`
-- `packages/shared/src/index.ts`
-- `packages/storage/src/sqlite-storage.ts`
 - `apps/desktop/src/main.ts`
+- `apps/desktop/src/preload.ts`
+- `packages/runtime/src/openclaw-auth.ts`
+- `packages/storage/src/sqlite-storage.ts`
+- `packages/shared/src/index.ts`
 
-### Task 3: Deep-link Spectrum -> Chats
-
-Goal:
-- opening a chatbot or group in Spectrum should navigate into the correct chat thread
-
-Focus files:
-- `apps/renderer/src/App.tsx`
-- `apps/renderer/src/components/SpectrumView.tsx`
-- `apps/renderer/src/components/ChatsWorkspace.tsx`
-
-### Task 4: Improve group execution UX
+### Task 3: Harden group execution UX and scheduler correctness
 
 Goal:
 - keep manual `@mention`
-- make it easier to route to multiple members
-- improve visibility of who replied
+- keep execution and scheduling correct in the desktop lane
+- fix timezone-aware next-run computation
 
 Focus files:
-- `apps/renderer/src/components/chat/GroupChatView.tsx`
 - `apps/desktop/src/main.ts`
+- `packages/runtime/src/local-runtime.ts`
 
 ## Validation Commands
 

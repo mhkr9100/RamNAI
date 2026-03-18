@@ -9,6 +9,7 @@ import {
   LocalProfile,
   MemoryFact,
   ProviderModelPreset,
+  ProviderAuthSelection,
   TaskSpec,
   UserMapNode,
   WorkItem
@@ -86,6 +87,10 @@ export class SqliteStorage {
       );
       CREATE TABLE IF NOT EXISTS models (
         id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS provider_auth_state (
+        provider TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );
     `);
@@ -258,6 +263,21 @@ export class SqliteStorage {
   updateModel(model: ProviderModelPreset): ProviderModelPreset {
     this.db.prepare('INSERT OR REPLACE INTO models (id, payload) VALUES (?, ?)').run(model.id, JSON.stringify(model));
     return model;
+  }
+
+  getProviderAuthSelection(provider: string): ProviderAuthSelection | null {
+    const row = this.db.prepare('SELECT payload FROM provider_auth_state WHERE provider = ?').get(provider) as {
+      payload?: string;
+    } | undefined;
+    return row?.payload ? parseJson(row.payload, null) : null;
+  }
+
+  upsertProviderAuthSelection(selection: ProviderAuthSelection): ProviderAuthSelection {
+    this.db.prepare('INSERT OR REPLACE INTO provider_auth_state (provider, payload) VALUES (?, ?)').run(
+      selection.provider,
+      JSON.stringify(selection)
+    );
+    return selection;
   }
 
   getWorkspaceSnapshot(): WorkspaceSnapshot {

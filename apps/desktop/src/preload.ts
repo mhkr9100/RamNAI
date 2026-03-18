@@ -34,5 +34,11 @@ contextBridge.exposeInMainWorld('supreme', {
   work: {
     delete: (workItemId: string) => ipcRenderer.invoke(channels.workDelete, workItemId),
     openArtifact: (artifactId: string) => ipcRenderer.invoke(channels.artifactOpen, artifactId)
+  },
+  settings: {
+    listProviderProfiles: () => ipcRenderer.invoke(channels.providerAuthList),
+    saveProviderProfile: (input: unknown) => ipcRenderer.invoke(channels.providerAuthUpsert, input),
+    getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),
+    installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults)
   }
 });

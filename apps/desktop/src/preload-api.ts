@@ -15,5 +15,9 @@ export const channels = {
   taskDuplicate: 'task:duplicate',
   taskRerun: 'task:rerun',
   workDelete: 'work:delete',
-  artifactOpen: 'artifact:open'
+  artifactOpen: 'artifact:open',
+  providerAuthList: 'providerAuth:list',
+  providerAuthUpsert: 'providerAuth:upsert',
+  ollamaStatus: 'ollama:status',
+  ollamaInstallDefaults: 'ollama:installDefaults'
 } as const;

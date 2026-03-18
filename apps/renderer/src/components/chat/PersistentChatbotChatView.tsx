@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Bot, FolderKanban, Send, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Bot, FolderKanban, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react';
 import type { ChatTranscriptMessage, PersistentChatbotIdentity } from './types';
 
 export interface PersistentChatbotChatViewProps {
@@ -12,6 +12,8 @@ export interface PersistentChatbotChatViewProps {
   taskLabel?: string;
   onSendMessage: (message: string) => Promise<void> | void;
   onTaskClick?: () => void;
+  onResetThread?: () => Promise<void> | void;
+  draftSeed?: { token: string; text: string } | null;
 }
 
 export function PersistentChatbotChatView({
@@ -23,9 +25,18 @@ export function PersistentChatbotChatView({
   sendLabel = 'Send',
   taskLabel = 'Task',
   onSendMessage,
-  onTaskClick
+  onTaskClick,
+  onResetThread,
+  draftSeed
 }: PersistentChatbotChatViewProps) {
   const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    if (!draftSeed) {
+      return;
+    }
+    setDraft((current) => current ? `${current}\n\n${draftSeed.text}` : draftSeed.text);
+  }, [draftSeed]);
 
   const transcriptSummary = useMemo(() => {
     const userCount = transcript.filter((message) => message.role === 'user').length;
@@ -82,8 +93,19 @@ export function PersistentChatbotChatView({
             <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Transcript</div>
             <div className="mt-2 text-2xl font-semibold text-white">Persistent conversation</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
-            <Bot size={16} />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onResetThread?.()}
+              disabled={!onResetThread || busy}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+              Reset Thread
+            </button>
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
+              <Bot size={16} />
+            </div>
           </div>
         </div>
 
@@ -151,11 +173,13 @@ export function PersistentChatbotChatView({
               {transcriptSummary.userCount} user message{transcriptSummary.userCount === 1 ? '' : 's'} and {transcriptSummary.assistantCount}{' '}
               assistant message{transcriptSummary.assistantCount === 1 ? '' : 's'} in this thread.
             </div>
-            <div>Persistent chatbot chat surface ready for App integration.</div>
+            <div className="inline-flex items-center gap-2">
+              <RotateCcw size={14} />
+              One persistent thread per chatbot for this wave.
+            </div>
           </div>
         </form>
       </section>
     </section>
   );
 }
-

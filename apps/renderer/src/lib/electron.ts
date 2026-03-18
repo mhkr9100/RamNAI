@@ -6,7 +6,9 @@ import type {
   GroupSpec,
   LocalProfile,
   MemoryFact,
+  OllamaRuntimeStatus,
   PrismReply,
+  ProviderAuthProfile,
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
@@ -102,6 +104,20 @@ export interface SupremeDesktopApi {
   work: {
     delete: (workItemId: string) => Promise<{ ok: true }>;
     openArtifact: (artifactId: string) => Promise<{ ok: true }>;
+  };
+  settings: {
+    listProviderProfiles: () => Promise<ProviderAuthProfile[]>;
+    saveProviderProfile: (input: {
+      id: string;
+      provider: Exclude<ProviderId, 'ollama'>;
+      label: string;
+      description?: string;
+      apiKey?: string;
+      token?: string;
+      isDefault?: boolean;
+    }) => Promise<ProviderAuthProfile>;
+    getOllamaStatus: () => Promise<OllamaRuntimeStatus>;
+    installDefaultModels: () => Promise<OllamaRuntimeStatus>;
   };
 }
 

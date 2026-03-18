@@ -5,21 +5,40 @@ import type { AgentChatInput, GroupChatInput, TaskCreateInput, WorkspaceSnapshot
 import { TaskComposerCard } from './TaskComposerCard';
 import { GroupChatView, PersistentChatbotChatView } from './chat';
 
-interface ChatTarget {
+export interface ChatTarget {
   type: 'agent' | 'group';
   id: string;
+}
+
+export interface ChatDraftSeed {
+  target: ChatTarget;
+  token: string;
+  text: string;
 }
 
 interface ChatsWorkspaceProps {
   snapshot: WorkspaceSnapshot;
   busy: boolean;
+  selectedTarget: ChatTarget | null;
+  draftSeed: ChatDraftSeed | null;
+  onSelectTarget: (target: ChatTarget | null) => void;
   onSendAgentMessage: (input: AgentChatInput) => Promise<void>;
   onSendGroupMessage: (input: GroupChatInput) => Promise<void>;
   onCreateTask: (input: TaskCreateInput) => Promise<void>;
+  onDeleteThread: (threadId: string) => Promise<void>;
 }
 
-export function ChatsWorkspace({ snapshot, busy, onSendAgentMessage, onSendGroupMessage, onCreateTask }: ChatsWorkspaceProps) {
-  const [selectedTarget, setSelectedTarget] = useState<ChatTarget | null>(null);
+export function ChatsWorkspace({
+  snapshot,
+  busy,
+  selectedTarget,
+  draftSeed,
+  onSelectTarget,
+  onSendAgentMessage,
+  onSendGroupMessage,
+  onCreateTask,
+  onDeleteThread
+}: ChatsWorkspaceProps) {
   const [showTaskComposer, setShowTaskComposer] = useState(false);
 
   useEffect(() => {
@@ -34,18 +53,18 @@ export function ChatsWorkspace({ snapshot, busy, onSendAgentMessage, onSendGroup
 
     const firstAgent = snapshot.agents[0];
     if (firstAgent) {
-      setSelectedTarget({ type: 'agent', id: firstAgent.id });
+      onSelectTarget({ type: 'agent', id: firstAgent.id });
       return;
     }
 
     const firstGroup = snapshot.groups[0];
     if (firstGroup) {
-      setSelectedTarget({ type: 'group', id: firstGroup.id });
+      onSelectTarget({ type: 'group', id: firstGroup.id });
       return;
     }
 
-    setSelectedTarget(null);
-  }, [snapshot.agents, snapshot.groups, selectedTarget]);
+    onSelectTarget(null);
+  }, [onSelectTarget, selectedTarget, snapshot.agents, snapshot.groups]);
 
   const selectedAgent = useMemo(
     () => selectedTarget?.type === 'agent' ? snapshot.agents.find((agent) => agent.id === selectedTarget.id) ?? null : null,
@@ -97,7 +116,7 @@ export function ChatsWorkspace({ snapshot, busy, onSendAgentMessage, onSendGroup
             getBody={(agent) => agent.description}
             icon={<Bot size={16} />}
             onSelect={(agent) => {
-              setSelectedTarget({ type: 'agent', id: agent.id });
+              onSelectTarget({ type: 'agent', id: agent.id });
               setShowTaskComposer(false);
             }}
           />
@@ -110,7 +129,7 @@ export function ChatsWorkspace({ snapshot, busy, onSendAgentMessage, onSendGroup
             getBody={(group) => group.description || `${group.memberAgentIds.length} members`}
             icon={<BrainCircuit size={16} />}
             onSelect={(group) => {
-              setSelectedTarget({ type: 'group', id: group.id });
+              onSelectTarget({ type: 'group', id: group.id });
               setShowTaskComposer(false);
             }}
           />
@@ -137,6 +156,8 @@ export function ChatsWorkspace({ snapshot, busy, onSendAgentMessage, onSendGroup
               busy={busy}
               onSendMessage={(message) => onSendAgentMessage({ agentId: selectedAgent.id, message })}
               onTaskClick={() => setShowTaskComposer((current) => !current)}
+              {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
+              {...(draftSeed && draftSeed.target.type === 'agent' && draftSeed.target.id === selectedAgent.id ? { draftSeed } : {})}
               emptyState="Start the first local conversation with this chatbot."
             />
             {showTaskComposer ? (
@@ -163,6 +184,7 @@ export function ChatsWorkspace({ snapshot, busy, onSendAgentMessage, onSendGroup
             transcript={transcript}
             busy={busy}
             onSendMessage={(message) => onSendGroupMessage({ groupId: selectedGroup.id, message })}
+            {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
             emptyState="Mention one or more member chatbots with @chatbot-name to route the message manually."
             placeholder="Message the group. Use @chatbot-name to route replies."
           />

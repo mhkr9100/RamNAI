@@ -59,7 +59,28 @@ export interface TaskExecutionContext {
   groups: GroupSpec[];
 }
 
+interface OpenClawPrismReply {
+  id: string;
+  text: string;
+  provider?: ProviderId;
+  modelId?: string;
+  createdAgent?: AgentSpec;
+}
+
+interface OpenClawTaskResult {
+  text: string;
+  provider?: ProviderId;
+  modelId?: string;
+  councilTrace?: Array<{ modelId: string; stage: 'worker' | 'revision' | 'judge'; output: string }>;
+}
+
 export class LocalRuntimeAdapter {
+  private workspaceRoot?: string;
+
+  setWorkspaceRoot(rootDir: string) {
+    this.workspaceRoot = rootDir;
+  }
+
   async getStatus(): Promise<RuntimeStatus> {
     const ollamaReady = await this.isOllamaReachable();
     const openClawReady = await this.hasBinary('openclaw', ['--version']);
@@ -107,6 +128,11 @@ export class LocalRuntimeAdapter {
   }
 
   async sendPrismRequest(input: PrismRequest): Promise<PrismReply> {
+    const openClawReply = await this.tryOpenClawPrism(input);
+    if (openClawReply) {
+      return openClawReply;
+    }
+
     const models = await this.listModels();
     const modelId = this.pickModelId(models);
 
@@ -145,6 +171,11 @@ export class LocalRuntimeAdapter {
   }
 
   async executeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult> {
+    const openClawResult = await this.tryOpenClawTask(task, context);
+    if (openClawResult) {
+      return openClawResult;
+    }
+
     if (task.mode === 'council') {
       return this.executeCouncil(task, context);
     }
@@ -177,6 +208,78 @@ export class LocalRuntimeAdapter {
       provider: 'ollama',
       modelId
     };
+  }
+
+  private async tryOpenClawPrism(input: PrismRequest): Promise<PrismReply | null> {
+    const payload = {
+      kind: 'prism',
+      request: input
+    };
+
+    const response = await this.invokeOpenClaw<OpenClawPrismReply>(payload);
+    if (!response) return null;
+
+    return {
+      id: response.id ?? randomUUID(),
+      text: response.text,
+      provider: response.provider ?? 'ollama',
+      modelId: response.modelId ?? 'openclaw',
+      ...(response.createdAgent ? { createdAgent: response.createdAgent } : {})
+    };
+  }
+
+  private async tryOpenClawTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
+    const payload = {
+      kind: 'task',
+      task,
+      context
+    };
+
+    const response = await this.invokeOpenClaw<OpenClawTaskResult>(payload);
+    if (!response) return null;
+
+    const result: TaskExecutionResult = {
+      text: response.text,
+      provider: response.provider ?? 'ollama',
+      modelId: response.modelId ?? 'openclaw'
+    };
+
+    if (response.councilTrace) {
+      result.councilTrace = response.councilTrace;
+    }
+
+    return result;
+  }
+
+  private async invokeOpenClaw<T>(payload: unknown): Promise<T | null> {
+    if (!this.workspaceRoot) {
+      return null;
+    }
+
+    const hasOpenClaw = await this.hasBinary('openclaw', ['--version']);
+    if (!hasOpenClaw) {
+      return null;
+    }
+
+    try {
+      const { stdout } = await execFileAsync('openclaw', [
+        'run',
+        '--workspace',
+        this.workspaceRoot,
+        '--request',
+        JSON.stringify(payload)
+      ]);
+      const trimmed = stdout.trim();
+      if (!trimmed) {
+        return null;
+      }
+      return JSON.parse(trimmed) as T;
+    } catch (error) {
+      // If OpenClaw execution fails for any reason, fall back to the current Ollama path.
+      // eslint-disable-next-line no-console
+      console.warn('[runtime] OpenClaw execution failed, falling back to Ollama path:', error);
+      return null;
+    }
   }
 
   async extractMemoryFacts(source: MemoryFact['source'], sourceRef: string, text: string, existingFacts: MemoryFact[]): Promise<MemoryFact[]> {

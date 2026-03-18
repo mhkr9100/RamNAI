@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Bot, BrainCircuit, Sparkles, Trash2 } from 'lucide-react';
+import { Bot, BrainCircuit, MessageSquareMore, Sparkles, Trash2 } from 'lucide-react';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
+import type { ChatTarget } from './ChatsWorkspace';
 
 interface SpectrumViewProps {
   snapshot: WorkspaceSnapshot;
@@ -9,9 +10,10 @@ interface SpectrumViewProps {
   onCreateAgentTask: (input: TaskCreateInput) => Promise<void>;
   onUpsertGroup: (group: { id?: string; name: string; description?: string; memberAgentIds: string[] }) => Promise<void>;
   onDeleteGroup: (groupId: string) => Promise<void>;
+  onOpenChat: (target: ChatTarget) => void;
 }
 
-export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup, onDeleteGroup }: SpectrumViewProps) {
+export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup, onDeleteGroup, onOpenChat }: SpectrumViewProps) {
   const [taskAgentId, setTaskAgentId] = useState<string | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
@@ -88,9 +90,15 @@ export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup,
                       <div className="mt-2 text-2xl font-semibold text-white">{agent.name}</div>
                       <p className="mt-3 max-w-2xl text-sm leading-7 text-white/62">{agent.description}</p>
                     </div>
-                    <button type="button" onClick={() => setTaskAgentId((current) => current === agent.id ? null : agent.id)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white">
-                      {taskAgentId === agent.id ? 'Close Task' : 'Schedule Task'}
-                    </button>
+                    <div className="flex flex-wrap gap-3">
+                      <button type="button" onClick={() => onOpenChat({ type: 'agent', id: agent.id })} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white">
+                        <MessageSquareMore size={14} />
+                        Open Chat
+                      </button>
+                      <button type="button" onClick={() => setTaskAgentId((current) => current === agent.id ? null : agent.id)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white">
+                        {taskAgentId === agent.id ? 'Close Task' : 'Schedule Task'}
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-5 grid gap-3 md:grid-cols-3">
                     <InfoPill label="Provider Strategy" value={agent.providerStrategy.mode.replaceAll('_', ' ')} />
@@ -176,15 +184,37 @@ export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup,
                       <div className="mt-2 text-lg font-semibold text-white">{group.name}</div>
                       <div className="mt-2 text-sm leading-7 text-white/58">{group.description || 'No description yet.'}</div>
                       <div className="mt-3 text-[11px] uppercase tracking-[0.18em] text-white/38">{group.memberAgentIds.length} members</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {group.memberAgentIds.map((agentId) => {
+                          const member = snapshot.agents.find((agent) => agent.id === agentId);
+                          if (!member) return null;
+                          const handle = `@${member.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+                          return (
+                            <div key={agentId} className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">
+                              {handle}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => onDeleteGroup(group.id)}
-                      className="rounded-2xl border border-red-400/20 bg-red-400/10 px-3 py-3 text-red-100 transition hover:border-red-400/30 disabled:opacity-50"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex flex-col gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onOpenChat({ type: 'group', id: group.id })}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
+                      >
+                        <MessageSquareMore size={14} />
+                        Open Chat
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onDeleteGroup(group.id)}
+                        className="rounded-2xl border border-red-400/20 bg-red-400/10 px-3 py-3 text-red-100 transition hover:border-red-400/30 disabled:opacity-50"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))

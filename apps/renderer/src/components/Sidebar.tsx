@@ -1,8 +1,8 @@
 import React from 'react';
-import { Bot, BrainCircuit, FolderKanban, Layers3, MessageSquareMore, Sparkles } from 'lucide-react';
+import { Bot, BrainCircuit, FolderKanban, MessageSquareMore, Settings2, Sparkles } from 'lucide-react';
 import { RamanIcon } from './RamanIcon';
 
-export type ViewId = 'prism' | 'chats' | 'spectrum' | 'work' | 'usermap';
+export type ViewId = 'prism' | 'chats' | 'spectrum' | 'work' | 'usermap' | 'settings';
 
 interface SidebarProps {
   activeView: ViewId;
@@ -43,9 +43,19 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
           );
         })}
       </div>
-      <div className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/40">
-        <Layers3 size={18} />
-      </div>
+      <button
+        type="button"
+        onClick={() => onSelect('settings')}
+        className={`mt-auto flex w-full flex-col items-center gap-1 rounded-2xl px-2 py-3 text-[9px] font-black uppercase tracking-[0.18em] transition ${
+          activeView === 'settings'
+            ? 'bg-white text-black shadow-[0_12px_40px_rgba(255,255,255,0.12)]'
+            : 'bg-transparent text-white/45 hover:bg-white/6 hover:text-white/80'
+        }`}
+        title="Settings"
+      >
+        <Settings2 size={18} />
+        <span>Settings</span>
+      </button>
     </aside>
   );
 }

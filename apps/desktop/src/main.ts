@@ -1,5 +1,7 @@
 import { Notification, app, BrowserWindow, ipcMain, shell } from 'electron';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -13,21 +15,28 @@ import type {
   GroupSpec,
   LocalProfile,
   MemoryFact,
+  OllamaRuntimeStatus,
+  OllamaModelInstallStatus,
   PrismRequest,
+  ProviderAuthProfile,
+  ProviderId,
   TaskSpec,
   UserMapNode,
   WorkItem
 } from '@supreme/shared';
 import { SqliteStorage } from '@supreme/storage';
-import { LocalRuntimeAdapter, OpenClawWorkspaceManager } from '@supreme/runtime';
+import { LocalRuntimeAdapter, OpenClawWorkspaceManager, OpenClawAuthManager } from '@supreme/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 const runtime = new LocalRuntimeAdapter();
 const openClawWorkspace = new OpenClawWorkspaceManager();
+const openClawAuth = new OpenClawAuthManager();
 let mainWindow: BrowserWindow | null = null;
 let storage: SqliteStorage;
 let schedulerHandle: NodeJS.Timeout | null = null;
 let processingDueTasks = false;
+const ollamaModelState = new Map<string, OllamaModelRuntimeState>();
 
 interface WorkspacePaths {
   root: string;
@@ -60,9 +69,30 @@ interface GroupChatInput {
   message: string;
 }
 
+interface ProviderAuthUpsertInput {
+  id: string;
+  provider: ProviderId;
+  label: string;
+  description?: string;
+  apiKey?: string;
+  token?: string;
+  isDefault?: boolean;
+}
+
+interface OllamaModelRuntimeState {
+  status: OllamaModelInstallStatus;
+  lastError?: string;
+}
+
+let cachedWorkspacePaths: WorkspacePaths | null = null;
+
 function getWorkspacePaths(): WorkspacePaths {
+  if (cachedWorkspacePaths) {
+    return cachedWorkspacePaths;
+  }
+
   const root = path.join(app.getPath('userData'), 'workspace');
-  const paths = {
+  const paths: WorkspacePaths = {
     root,
     artifacts: path.join(root, 'artifacts'),
     context: path.join(root, 'context'),
@@ -70,9 +100,10 @@ function getWorkspacePaths(): WorkspacePaths {
     tasks: path.join(root, 'tasks'),
     work: path.join(root, 'work'),
     logs: path.join(root, 'logs')
-  } satisfies WorkspacePaths;
+  };
 
   Object.values(paths).forEach((directory) => mkdirSync(directory, { recursive: true }));
+  cachedWorkspacePaths = paths;
   return paths;
 }
 
@@ -86,6 +117,55 @@ async function refreshStoredModels() {
     storage.updateModel(model);
   }
   return models;
+}
+
+async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus> {
+  const models = await runtime.listModels();
+  const status = await runtime.getStatus();
+  const byId = new Map(models.map((model) => [model.id, model]));
+
+  const entries = Array.from(byId.values()).map((model) => {
+    const state = ollamaModelState.get(model.id);
+    const derivedStatus: OllamaModelInstallStatus =
+      model.installed ? 'installed' : state?.status ?? 'not_installed';
+
+    return {
+      id: model.id,
+      label: model.label,
+      status: derivedStatus,
+      ...(state?.lastError ? { lastError: state.lastError } : {})
+    };
+  });
+
+  return {
+    running: status.ollamaReady,
+    models: entries
+  };
+}
+
+async function ensureDefaultOllamaModelsInstalled() {
+  const status = await runtime.getStatus();
+  if (!status.ollamaReady) {
+    throw new Error('Ollama runtime is not reachable. Start Ollama before installing models.');
+  }
+
+  const models = await runtime.listModels();
+  for (const preset of models.filter((model) => model.recommended)) {
+    if (preset.installed) {
+      ollamaModelState.set(preset.id, { status: 'installed' });
+      continue;
+    }
+
+    ollamaModelState.set(preset.id, { status: 'installing' });
+    try {
+      // Use the Ollama CLI to pull the model so the local runtime can discover it.
+      await execFileAsync('ollama', ['pull', preset.id]);
+      ollamaModelState.set(preset.id, { status: 'installed' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ollamaModelState.set(preset.id, { status: 'error', lastError: message });
+    }
+  }
 }
 
 async function buildSnapshot() {
@@ -801,7 +881,10 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  storage = new SqliteStorage(getDatabasePath());
+  const workspacePaths = getWorkspacePaths();
+  runtime.setWorkspaceRoot(workspacePaths.root);
+
+  storage = new SqliteStorage(path.join(workspacePaths.root, 'supreme-raman-ai.sqlite'));
   storage.init();
   await refreshStoredModels();
   syncStructuredExports();
@@ -921,6 +1004,33 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle(channels.artifactOpen, async (_event, artifactId: string) => openArtifact(artifactId));
+  ipcMain.handle(channels.providerAuthList, async () => {
+    const profiles = await openClawAuth.listProfiles();
+    return profiles as ProviderAuthProfile[];
+  });
+  ipcMain.handle(channels.providerAuthUpsert, async (_event, input: ProviderAuthUpsertInput) => {
+    if (input.provider === 'ollama') {
+      throw new Error('Auth profiles are only supported for remote providers.');
+    }
+    const payload: Parameters<typeof openClawAuth.upsertProfile>[0] = {
+      id: input.id,
+      provider: input.provider as Exclude<ProviderId, 'ollama'>,
+      label: input.label
+    };
+
+    if (input.description !== undefined) payload.description = input.description;
+    if (input.apiKey !== undefined) payload.apiKey = input.apiKey;
+    if (input.token !== undefined) payload.token = input.token;
+    if (input.isDefault !== undefined) payload.isDefault = input.isDefault;
+
+    const profile = await openClawAuth.upsertProfile(payload);
+    return profile as ProviderAuthProfile;
+  });
+  ipcMain.handle(channels.ollamaStatus, async () => getOllamaRuntimeStatus());
+  ipcMain.handle(channels.ollamaInstallDefaults, async () => {
+    await ensureDefaultOllamaModelsInstalled();
+    return getOllamaRuntimeStatus();
+  });
 
   schedulerHandle = setInterval(() => {
     void processDueTasks();

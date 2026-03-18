@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { AtSign, BrainCircuit, Send, Users2 } from 'lucide-react';
+import { AtSign, BrainCircuit, Send, Trash2, Users2 } from 'lucide-react';
 import type { ChatTranscriptMessage, GroupChatIdentity, MentionableParticipant } from './types';
 
 export interface GroupChatViewProps {
@@ -11,6 +11,7 @@ export interface GroupChatViewProps {
   placeholder?: string;
   sendLabel?: string;
   onSendMessage?: (message: string) => Promise<void> | void;
+  onResetThread?: () => Promise<void> | void;
 }
 
 interface MentionRange {
@@ -27,7 +28,8 @@ export function GroupChatView({
   emptyState = 'No group messages yet.',
   placeholder = 'Compose a note and use @ to mention a teammate or chatbot.',
   sendLabel = 'Send',
-  onSendMessage
+  onSendMessage,
+  onResetThread
 }: GroupChatViewProps) {
   const [draft, setDraft] = useState('');
   const [mentionRange, setMentionRange] = useState<MentionRange | null>(null);
@@ -133,6 +135,19 @@ export function GroupChatView({
             ))}
           </div>
         </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {members.length === 0 ? (
+            <div className="rounded-full border border-dashed border-white/12 bg-black/20 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+              No members configured
+            </div>
+          ) : (
+            members.map((member) => (
+              <div key={member.id} className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">
+                {member.handle || `@${member.label}`}
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       <section className="rounded-[32px] border border-white/10 bg-white/5 p-6">
@@ -141,8 +156,19 @@ export function GroupChatView({
             <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Transcript</div>
             <div className="mt-2 text-2xl font-semibold text-white">Group conversation</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
-            <Users2 size={16} />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onResetThread?.()}
+              disabled={!onResetThread || busy}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+              Reset Thread
+            </button>
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
+              <Users2 size={16} />
+            </div>
           </div>
         </div>
 
@@ -244,7 +270,7 @@ export function GroupChatView({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm leading-6 text-white/48">
             <div>
-              Manual @mention composition is fully local. No response is fabricated here.
+              Manual @mention composition is fully local. Use one handle or chain several together, for example: {members.slice(0, 2).map((member) => member.handle || `@${member.label}`).join(' ')}.
             </div>
             <div>{onSendMessage ? 'Send hook available.' : 'Send hook pending.'}</div>
           </div>
@@ -253,4 +279,3 @@ export function GroupChatView({
     </section>
   );
 }
-
