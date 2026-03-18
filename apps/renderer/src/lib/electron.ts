@@ -1,26 +1,29 @@
-import type { AgentSpec, MemoryFact, UserMapNode, WorkItem } from '@supreme/shared';
+import type {
+  AgentSpec,
+  ArtifactRecord,
+  GroupSpec,
+  LocalProfile,
+  MemoryFact,
+  PrismReply,
+  ProviderId,
+  ProviderModelPreset,
+  TaskSpec,
+  UserMapNode,
+  WorkItem
+} from '@supreme/shared';
 
-export interface LocalProfile {
-  name: string;
-  email: string;
-}
-
-export interface ProviderModel {
-  id: string;
-  provider: 'ollama' | 'openai' | 'anthropic' | 'google';
-  label: string;
-  installed: boolean;
-  recommended?: boolean;
-}
+export type { LocalProfile };
 
 export interface WorkspaceSnapshot {
   profile: LocalProfile | null;
   agents: AgentSpec[];
-  groups: Array<{ id: string; name: string; description?: string; memberAgentIds: string[] }>;
+  groups: GroupSpec[];
+  tasks: TaskSpec[];
   workItems: WorkItem[];
+  artifacts: ArtifactRecord[];
   userMap: UserMapNode;
   memoryFacts: MemoryFact[];
-  models: ProviderModel[];
+  models: ProviderModelPreset[];
   runtime: {
     available: boolean;
     ollamaReady: boolean;
@@ -29,10 +32,23 @@ export interface WorkspaceSnapshot {
   };
 }
 
-export interface PrismReply {
-  id: string;
-  text: string;
-  createdAgent?: AgentSpec;
+export interface TaskCreateInput {
+  title: string;
+  objective: string;
+  mode: TaskSpec['mode'];
+  target: TaskSpec['target'];
+  providerOverride?: {
+    provider: ProviderId;
+    modelId: string;
+  };
+  schedule: TaskSpec['schedule'];
+  outputPolicy: {
+    saveResult: true;
+    artifactMode: TaskSpec['outputPolicy']['artifactMode'];
+    notificationMode: TaskSpec['outputPolicy']['notificationMode'];
+    defaultSendToChat: boolean;
+  };
+  council?: TaskSpec['council'];
 }
 
 export interface SupremeDesktopApi {
@@ -48,7 +64,17 @@ export interface SupremeDesktopApi {
     syncMemories: () => Promise<{ tree: UserMapNode; facts: MemoryFact[] }>;
   };
   prism: {
-    sendMessage: (input: { message: string }) => Promise<PrismReply>;
+    sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapNode; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<PrismReply>;
+  };
+  tasks: {
+    create: (task: TaskCreateInput) => Promise<TaskSpec>;
+    delete: (taskId: string) => Promise<{ ok: true }>;
+    duplicate: (taskId: string) => Promise<TaskSpec>;
+    rerun: (taskId: string) => Promise<TaskSpec>;
+  };
+  work: {
+    delete: (workItemId: string) => Promise<{ ok: true }>;
+    openArtifact: (artifactId: string) => Promise<{ ok: true }>;
   };
 }
 

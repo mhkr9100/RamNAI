@@ -4,9 +4,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": [
-      "ES2022"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -17,16 +15,6 @@
     "declarationMap": true,
     "sourceMap": true,
     "resolveJsonModule": true,
-    "types": [
-      "node"
-    ],
-    "paths": {
-      "@supreme-raman-ai/shared": [
-        "packages/shared/src/index.ts"
-      ],
-      "@supreme-raman-ai/shared/*": [
-        "packages/shared/src/*"
-      ]
-    }
+    "types": ["node"]
   }
 }

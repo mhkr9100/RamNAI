@@ -1,14 +1,10 @@
 {
   "files": [],
   "references": [
-    {
-      "path": "./packages/shared"
-    },
-    {
-      "path": "./packages/storage"
-    },
-    {
-      "path": "./packages/runtime"
-    }
+    { "path": "./packages/shared" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/runtime" },
+    { "path": "./apps/renderer" },
+    { "path": "./apps/desktop" }
   ]
 }

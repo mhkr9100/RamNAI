@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true,
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "@supreme/shared": ["../../packages/shared/src/index.ts"],
+      "@supreme/storage": ["../../packages/storage/src/index.ts"],
+      "@supreme/runtime": ["../../packages/runtime/src/index.ts"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/runtime" }
+  ],
+  "include": ["src"]
+}

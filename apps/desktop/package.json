@@ -1,0 +1,40 @@
+{
+  "name": "@supreme/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "wait-on tcp:5180 && npm run build && cross-env SUPREME_RENDERER_URL=http://127.0.0.1:5180 electron dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
+    "package": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@supreme/runtime": "file:../../packages/runtime",
+    "@supreme/shared": "file:../../packages/shared",
+    "@supreme/storage": "file:../../packages/storage",
+    "electron": "^37.4.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "electron-builder": "^26.0.12",
+    "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "ai.raman.supreme",
+    "productName": "Supreme Raman AI",
+    "files": [
+      "dist/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": ["dir"]
+    },
+    "win": {
+      "target": ["dir"]
+    }
+  }
+}

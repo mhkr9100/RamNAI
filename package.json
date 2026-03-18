@@ -4,14 +4,21 @@
   "version": "0.1.0",
   "type": "module",
   "workspaces": [
+    "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "npm run typecheck --workspace @supreme/shared && npm run typecheck --workspace @supreme/storage && npm run typecheck --workspace @supreme/runtime && npm run typecheck --workspace @supreme/renderer && npm run typecheck --workspace @supreme/desktop",
+    "build": "npm run build --workspace @supreme/shared && npm run build --workspace @supreme/storage && npm run build --workspace @supreme/runtime && npm run build --workspace @supreme/renderer && npm run build --workspace @supreme/desktop",
+    "renderer:dev": "npm run dev --workspace @supreme/renderer",
+    "renderer:build": "npm run build --workspace @supreme/renderer",
+    "desktop:dev": "concurrently -k -n renderer,desktop -c cyan,magenta \"npm run dev --workspace @supreme/renderer\" \"npm run dev --workspace @supreme/desktop\"",
+    "desktop:build": "npm run build --workspace @supreme/renderer && npm run build --workspace @supreme/desktop",
+    "desktop:package": "npm run build --workspace @supreme/renderer && npm run package --workspace @supreme/desktop"
   },
   "devDependencies": {
     "@types/node": "^24.11.2",
+    "concurrently": "^9.2.1",
     "typescript": "^5.9.3"
   }
 }
