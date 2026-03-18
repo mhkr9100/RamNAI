@@ -2,6 +2,8 @@
   "name": "@supreme/desktop",
   "private": true,
   "version": "0.1.0",
+  "description": "Desktop shell for Supreme Raman AI",
+  "author": "Raman AI",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
@@ -13,11 +15,11 @@
   "dependencies": {
     "@supreme/runtime": "file:../../packages/runtime",
     "@supreme/shared": "file:../../packages/shared",
-    "@supreme/storage": "file:../../packages/storage",
-    "electron": "^37.4.0"
+    "@supreme/storage": "file:../../packages/storage"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
+    "electron": "37.4.0",
     "electron-builder": "^26.0.12",
     "wait-on": "^9.0.1"
   },
