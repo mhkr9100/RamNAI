@@ -1,8 +1,20 @@
 import React, { useMemo, useState } from 'react';
-import { Bot, MessageSquareMore, Trash2, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Bot, MessageSquareMore, Sparkles, Trash2, Users } from 'lucide-react';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
 import type { ChatTarget } from './ChatsWorkspace';
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Divider,
+  EmptyState,
+  Input,
+  SectionLabel,
+  Select,
+} from './ui';
 
 interface SpectrumViewProps {
   snapshot: WorkspaceSnapshot;
@@ -21,30 +33,69 @@ interface SpectrumViewProps {
   onOpenChat: (target: ChatTarget) => void;
 }
 
-export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup, onDeleteGroup, onOpenChat }: SpectrumViewProps) {
+const listVariants = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.06,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0 },
+};
+
+export function SpectrumView({
+  snapshot,
+  busy,
+  onCreateAgentTask,
+  onUpsertGroup,
+  onDeleteGroup,
+  onOpenChat,
+}: SpectrumViewProps) {
   const [taskAgentId, setTaskAgentId] = useState<string | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [routingMode, setRoutingMode] = useState<'auto' | 'manual'>('auto');
   const [defaultResponderAgentId, setDefaultResponderAgentId] = useState('');
-  const taskAgent = useMemo(() => snapshot.agents.find((agent) => agent.id === taskAgentId) ?? null, [snapshot.agents, taskAgentId]);
+
+  const taskAgent = useMemo(
+    () => snapshot.agents.find((agent) => agent.id === taskAgentId) ?? null,
+    [snapshot.agents, taskAgentId],
+  );
+
+  const fallbackOptions = useMemo(
+    () => [
+      { value: '', label: 'None' },
+      ...snapshot.agents
+        .filter((agent) => selectedMemberIds.includes(agent.id))
+        .map((agent) => ({ value: agent.id, label: agent.name })),
+    ],
+    [selectedMemberIds, snapshot.agents],
+  );
 
   const toggleMember = (agentId: string) => {
-    setSelectedMemberIds((current) => current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId]);
+    setSelectedMemberIds((current) =>
+      current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId],
+    );
   };
 
   const handleCreateGroup = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!groupName.trim()) return;
+
     await onUpsertGroup({
       name: groupName.trim(),
       ...(groupDescription.trim() ? { description: groupDescription.trim() } : {}),
       memberAgentIds: selectedMemberIds,
       routingMode,
       autoRouteThreshold: 0.55,
-      ...(defaultResponderAgentId ? { defaultResponderAgentId } : {})
+      ...(defaultResponderAgentId ? { defaultResponderAgentId } : {}),
     });
+
     setGroupName('');
     setGroupDescription('');
     setSelectedMemberIds([]);
@@ -53,214 +104,281 @@ export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup,
   };
 
   return (
-    <div className="space-y-4">
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-[#0d1012] px-5 py-4">
-        <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Spectrum</div>
-          <h1 className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white">Chatbots & Groups</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <CountPill label="Chatbots" value={snapshot.agents.length} />
-          <CountPill label="Groups" value={snapshot.groups.length} />
-          <CountPill label="Models" value={snapshot.models.filter((model) => model.installed).length} />
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Chatbots</div>
-              <div className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white">Saved</div>
+    <div className="space-y-5">
+      <Card variant="elevated" padding="lg" animate={false} className="bg-surface-2">
+        <CardHeader
+          title="Chatbots & Groups"
+          subtitle="Manage saved chatbots, build groups, and route new work without leaving Spectrum."
+          icon={<Sparkles size={16} className="text-brand-light" />}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="brand">Chatbots {snapshot.agents.length}</Badge>
+              <Badge variant="brand">Groups {snapshot.groups.length}</Badge>
+              <Badge variant="brand">
+                Models {snapshot.models.filter((model) => model.installed).length}
+              </Badge>
             </div>
-            <Bot size={18} className="text-white/45" />
-          </div>
+          }
+        />
+      </Card>
+
+      <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+        <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+          <SectionLabel count={snapshot.agents.length} action={<Bot size={16} className="text-white/35" />}>
+            Chatbots
+          </SectionLabel>
+          <Divider className="my-4" />
 
           {snapshot.agents.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-              No chatbots yet.
-            </div>
+            <EmptyState
+              icon={<Bot size={18} className="text-white/45" />}
+              title="No chatbots yet"
+              description="Create your first assistant in Prism, then return here to open chats or schedule work."
+              compact
+            />
           ) : (
-            <div className="space-y-4">
+            <motion.div
+              className="space-y-4"
+              variants={listVariants}
+              initial="hidden"
+              animate="show"
+            >
               {snapshot.agents.map((agent) => (
-                <div key={agent.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{agent.persona.role}</div>
-                      <div className="mt-1 text-base font-semibold text-white">{agent.name}</div>
-                      {agent.description ? <p className="mt-2 text-sm leading-6 text-white/62">{agent.description}</p> : null}
+                <motion.div key={agent.id} variants={itemVariants}>
+                  <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                    <CardHeader
+                      title={agent.name}
+                      subtitle={agent.persona.role}
+                      action={
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            icon={<MessageSquareMore size={14} />}
+                            onClick={() => onOpenChat({ type: 'agent', id: agent.id })}
+                          >
+                            Open Chat
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={taskAgentId === agent.id ? 'brand' : 'ghost'}
+                            onClick={() => setTaskAgentId((current) => (current === agent.id ? null : agent.id))}
+                          >
+                            {taskAgentId === agent.id ? 'Close Task' : 'Task'}
+                          </Button>
+                        </div>
+                      }
+                    />
+
+                    {agent.description ? (
+                      <p className="mt-3 text-sm leading-6 text-white/65">{agent.description}</p>
+                    ) : null}
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <InfoTile
+                        label="Provider"
+                        value={agent.providerStrategy.mode.replaceAll('_', ' ')}
+                      />
+                      <InfoTile
+                        label="Tools"
+                        value={agent.tools.length ? agent.tools.join(', ') : 'None'}
+                      />
+                      <InfoTile
+                        label="Skills"
+                        value={agent.skills.length ? agent.skills.join(', ') : 'None'}
+                      />
                     </div>
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => onOpenChat({ type: 'agent', id: agent.id })}
-                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                      >
-                        <MessageSquareMore size={14} />
-                        Open Chat
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTaskAgentId((current) => current === agent.id ? null : agent.id)}
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                      >
-                        {taskAgentId === agent.id ? 'Close Task' : 'Task'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-2.5 md:grid-cols-3">
-                    <InfoPill label="Provider" value={agent.providerStrategy.mode.replaceAll('_', ' ')} />
-                    <InfoPill label="Tools" value={agent.tools.length ? agent.tools.join(', ') : 'None'} />
-                    <InfoPill label="Skills" value={agent.skills.length ? agent.skills.join(', ') : 'None'} />
-                  </div>
-                </div>
+                  </Card>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
-        </div>
+        </Card>
 
-        <div className="space-y-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Groups</div>
-              <div className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white">Manage</div>
-            </div>
-            <Users size={18} className="text-white/45" />
-          </div>
+        <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+          <SectionLabel count={snapshot.groups.length} action={<Users size={16} className="text-white/35" />}>
+            Groups
+          </SectionLabel>
+          <Divider className="my-4" />
 
-          <form onSubmit={handleCreateGroup} className="rounded-2xl border border-white/8 bg-black/20 p-4">
-            <div className="space-y-3">
-              <input
+          <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+            <form onSubmit={handleCreateGroup} className="space-y-4">
+              <Input
+                label="Group Name"
                 value={groupName}
                 onChange={(event) => setGroupName(event.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none"
                 placeholder="Growth Council"
               />
-              <textarea
-                value={groupDescription}
-                onChange={(event) => setGroupDescription(event.target.value)}
-                className="min-h-[88px] w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm leading-6 text-white outline-none"
-                placeholder="Optional description"
-              />
+
+              <label className="block space-y-1.5">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                  Description
+                </span>
+                <textarea
+                  value={groupDescription}
+                  onChange={(event) => setGroupDescription(event.target.value)}
+                  className="min-h-[104px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20"
+                  placeholder="Optional description"
+                />
+              </label>
+
               <div className="space-y-2">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">Members</div>
-                <div className="flex flex-wrap gap-2">
-                  {snapshot.agents.length === 0 ? (
-                    <div className="text-sm text-white/45">No chatbots available.</div>
-                  ) : (
-                    snapshot.agents.map((agent) => {
+                <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                  Members
+                </div>
+                {snapshot.agents.length === 0 ? (
+                  <EmptyState
+                    icon={<Bot size={16} className="text-white/45" />}
+                    title="No chatbots available"
+                    description="Create chatbots first, then add them to a group."
+                    compact
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {snapshot.agents.map((agent) => {
                       const selected = selectedMemberIds.includes(agent.id);
+
                       return (
-                        <button
+                        <Button
                           key={agent.id}
                           type="button"
+                          size="xs"
+                          variant={selected ? 'brand' : 'secondary'}
                           onClick={() => toggleMember(agent.id)}
-                          className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] transition ${selected ? 'bg-white text-black' : 'border border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'}`}
                         >
                           {agent.name}
-                        </button>
+                        </Button>
                       );
-                    })
-                  )}
-                </div>
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
+
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">Routing</div>
-                  <div className="flex gap-2">
-                    <button
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                    Routing
+                  </div>
+                  <div className="flex gap-2 rounded-2xl border border-white/[0.08] bg-surface-1 p-1">
+                    <Button
                       type="button"
+                      variant={routingMode === 'auto' ? 'brand' : 'ghost'}
+                      size="sm"
+                      className="flex-1 justify-center"
                       onClick={() => setRoutingMode('auto')}
-                      className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] transition ${routingMode === 'auto' ? 'bg-white text-black' : 'border border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'}`}
                     >
                       Auto
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant={routingMode === 'manual' ? 'brand' : 'ghost'}
+                      size="sm"
+                      className="flex-1 justify-center"
                       onClick={() => setRoutingMode('manual')}
-                      className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] transition ${routingMode === 'manual' ? 'bg-white text-black' : 'border border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'}`}
                     >
                       Manual
-                    </button>
+                    </Button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">Fallback Agent</div>
-                  <select
-                    value={defaultResponderAgentId}
-                    onChange={(event) => setDefaultResponderAgentId(event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none"
-                  >
-                    <option value="">None</option>
-                    {snapshot.agents
-                      .filter((agent) => selectedMemberIds.includes(agent.id))
-                      .map((agent) => (
-                        <option key={agent.id} value={agent.id}>
-                          {agent.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
+
+                <Select
+                  label="Fallback Agent"
+                  value={defaultResponderAgentId}
+                  onChange={(event) => setDefaultResponderAgentId(event.target.value)}
+                  options={fallbackOptions}
+                />
               </div>
-              <button
+
+              <Button
                 type="submit"
-                disabled={busy || !groupName.trim()}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-3 text-[9px] font-black uppercase tracking-[0.16em] text-black transition hover:bg-white/90 disabled:opacity-50"
+                variant="brand"
+                size="lg"
+                fullWidth
+                loading={busy}
+                disabled={!groupName.trim()}
               >
                 Save Group
-              </button>
-            </div>
-          </form>
+              </Button>
+            </form>
+          </Card>
+
+          <Divider label="Saved Groups" className="my-5" />
 
           {snapshot.groups.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-              No groups yet.
-            </div>
+            <EmptyState
+              icon={<Users size={18} className="text-white/45" />}
+              title="No groups yet"
+              description="Create a group to route work across multiple chatbots."
+              compact
+            />
           ) : (
-            <div className="space-y-3">
+            <motion.div
+              className="space-y-4"
+              variants={listVariants}
+              initial="hidden"
+              animate="show"
+            >
               {snapshot.groups.map((group) => (
-                <div key={group.id} className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-base font-semibold text-white">{group.name}</div>
-                      {group.description ? <div className="mt-2 text-sm leading-6 text-white/62">{group.description}</div> : null}
-                      <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-white/38">
-                        {group.memberAgentIds.length} member{group.memberAgentIds.length === 1 ? '' : 's'}
-                      </div>
-                      <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/38">
-                        {group.routingMode === 'auto' ? `Auto routing · ${Math.round(group.autoRouteThreshold * 100)}%` : 'Manual routing'}
-                      </div>
+                <motion.div key={group.id} variants={itemVariants}>
+                  <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                    <CardHeader
+                      title={group.name}
+                      subtitle={`${group.memberAgentIds.length} member${group.memberAgentIds.length === 1 ? '' : 's'}`}
+                      action={
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="info">
+                            {group.routingMode === 'auto'
+                              ? `Auto ${Math.round(group.autoRouteThreshold * 100)}%`
+                              : 'Manual'}
+                          </Badge>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            icon={<MessageSquareMore size={14} />}
+                            onClick={() => onOpenChat({ type: 'group', id: group.id })}
+                          >
+                            Open Chat
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            icon={<Trash2 size={14} />}
+                            disabled={busy}
+                            onClick={() => onDeleteGroup(group.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      }
+                    />
+
+                    {group.description ? (
+                      <p className="mt-3 text-sm leading-6 text-white/65">{group.description}</p>
+                    ) : null}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Badge variant="default">Members {group.memberAgentIds.length}</Badge>
+                      {group.defaultResponderAgentId ? (
+                        <Badge variant="outline">Fallback Set</Badge>
+                      ) : (
+                        <Badge variant="outline">No Fallback</Badge>
+                      )}
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onOpenChat({ type: 'group', id: group.id })}
-                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                      >
-                        <MessageSquareMore size={14} />
-                        Open Chat
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => onDeleteGroup(group.id)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-red-100 transition hover:border-red-400/30 disabled:opacity-50"
-                      >
-                        <Trash2 size={14} />
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                  </Card>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
-        </div>
+        </Card>
       </section>
 
       {taskAgent ? (
         <TaskComposerCard
-          title={`New Task · ${taskAgent.name}`}
+          title={`New Task - ${taskAgent.name}`}
           subtitle=""
           target={{ type: 'agent', agentId: taskAgent.id }}
           defaultMode="task"
@@ -273,19 +391,13 @@ export function SpectrumView({ snapshot, busy, onCreateAgentTask, onUpsertGroup,
   );
 }
 
-function CountPill({ label, value }: { label: string; value: number }) {
+function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70">
-      {label} · {value}
-    </div>
-  );
-}
-
-function InfoPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-white/5 px-3 py-2.5">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{label}</div>
-      <div className="mt-1.5 text-sm leading-5 text-white/72">{value}</div>
+    <div className="rounded-2xl border border-white/[0.08] bg-surface-1 px-3.5 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+        {label}
+      </div>
+      <div className="mt-2 text-sm leading-6 text-white/72">{value}</div>
     </div>
   );
 }

@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, CopyPlus, Eye, EyeOff, Plus, RefreshCw, Save, Shield, ShieldOff, Trash2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import {
+  ChevronRight,
+  CopyPlus,
+  Eye,
+  EyeOff,
+  Plus,
+  RefreshCw,
+  Save,
+  Shield,
+  ShieldOff,
+  Trash2,
+} from 'lucide-react';
 import type { MemoryFact, MemoryVisibility, UserMapNode, UserMapState } from '@supreme/shared';
+import { Badge, Button, Card, Divider, EmptyState, Input, SectionLabel } from './ui';
 
 interface UserMapPanelProps {
   tree: UserMapState;
@@ -17,13 +30,14 @@ export function UserMapPanel({ tree, facts, busy, onSave, onSync }: UserMapPanel
   useEffect(() => {
     setDraft(tree);
   }, [tree]);
+
   const privateFacts = useMemo(() => facts.filter((fact) => fact.visibility === 'private'), [facts]);
   const publicFacts = useMemo(() => facts.filter((fact) => fact.visibility === 'public'), [facts]);
 
   const replaceTree = (visibility: MemoryVisibility, nextRoot: UserMapNode) => {
     setDraft((current) => ({
       ...current,
-      ...(visibility === 'private' ? { privateTree: nextRoot } : { publicTree: nextRoot })
+      ...(visibility === 'private' ? { privateTree: nextRoot } : { publicTree: nextRoot }),
     }));
   };
 
@@ -31,78 +45,105 @@ export function UserMapPanel({ tree, facts, busy, onSave, onSync }: UserMapPanel
     const targetTree: MemoryVisibility = sourceTree === 'private' ? 'public' : 'private';
     const duplicated = cloneNodeForVisibility(node, targetTree);
     setDraft((current) => ({
-      privateTree: targetTree === 'private' ? appendChild(current.privateTree, duplicated) : current.privateTree,
-      publicTree: targetTree === 'public' ? appendChild(current.publicTree, duplicated) : current.publicTree
+      privateTree:
+        targetTree === 'private' ? appendChild(current.privateTree, duplicated) : current.privateTree,
+      publicTree:
+        targetTree === 'public' ? appendChild(current.publicTree, duplicated) : current.publicTree,
     }));
   };
 
   return (
-    <div className={`grid gap-4 ${showFacts ? 'xl:grid-cols-[minmax(0,1fr)_280px]' : ''}`}>
-      <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0d1012]">
-        <header className="h-14 border-b border-white/8 px-4">
+    <div className={`grid gap-5 ${showFacts ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : ''}`}>
+      <Card
+        variant="elevated"
+        padding="none"
+        animate={false}
+        className="overflow-hidden bg-surface-2"
+      >
+        <div className="border-b border-white/[0.08] px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex h-14 items-center">
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">UserMap</div>
-            </div>
+            <SectionLabel>UserMap</SectionLabel>
             <div className="flex flex-wrap items-center gap-2">
-              <button
+              <Button
                 type="button"
+                size="sm"
+                variant={showFacts ? 'secondary' : 'ghost'}
+                icon={showFacts ? <EyeOff size={14} /> : <Eye size={14} />}
                 onClick={() => setShowFacts((current) => !current)}
-                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] transition ${
-                  showFacts
-                    ? 'border-white/12 bg-white text-black'
-                    : 'border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'
-                }`}
               >
-                {showFacts ? <EyeOff size={14} /> : <Eye size={14} />}
                 Facts
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                size="sm"
+                variant="secondary"
+                icon={<RefreshCw size={14} />}
                 disabled={busy}
                 onClick={() => onSync()}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
               >
-                <RefreshCw size={14} />
                 Sync
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                size="sm"
+                variant="brand"
+                icon={<Save size={14} />}
                 disabled={busy}
                 onClick={() => onSave(draft)}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] text-black transition hover:bg-white/90 disabled:opacity-50"
               >
-                <Save size={14} />
                 Save
-              </button>
+              </Button>
             </div>
           </div>
-        </header>
-
-        <div className="space-y-4 px-4 py-4">
-          <TreeSection
-            title="Private"
-            node={draft.privateTree}
-            onAdd={() => replaceTree('private', addChildNode(draft.privateTree, draft.privateTree.id, 'New private node'))}
-            onChange={(nextRoot) => replaceTree('private', nextRoot)}
-            onDuplicateAcrossTrees={(node) => duplicateNodeAcrossTrees('private', node)}
-          />
-          <TreeSection
-            title="Public"
-            node={draft.publicTree}
-            onAdd={() => replaceTree('public', addChildNode(draft.publicTree, draft.publicTree.id, 'New public node'))}
-            onChange={(nextRoot) => replaceTree('public', nextRoot)}
-            onDuplicateAcrossTrees={(node) => duplicateNodeAcrossTrees('public', node)}
-          />
         </div>
-      </section>
+
+        <div className="space-y-4 p-4">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <TreeSection
+              title="Private"
+              node={draft.privateTree}
+              onAdd={() =>
+                replaceTree('private', addChildNode(draft.privateTree, draft.privateTree.id, 'New private node'))
+              }
+              onChange={(nextRoot) => replaceTree('private', nextRoot)}
+              onDuplicateAcrossTrees={(node) => duplicateNodeAcrossTrees('private', node)}
+            />
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, delay: 0.05, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <TreeSection
+              title="Public"
+              node={draft.publicTree}
+              onAdd={() =>
+                replaceTree('public', addChildNode(draft.publicTree, draft.publicTree.id, 'New public node'))
+              }
+              onChange={(nextRoot) => replaceTree('public', nextRoot)}
+              onDuplicateAcrossTrees={(node) => duplicateNodeAcrossTrees('public', node)}
+            />
+          </motion.div>
+        </div>
+      </Card>
 
       {showFacts ? (
-        <aside className="rounded-3xl border border-white/10 bg-white/5 p-4">
-          <FactColumn title="Private Facts" facts={privateFacts} />
-          <div className="my-4 border-t border-white/8" />
-          <FactColumn title="Public Facts" facts={publicFacts} />
-        </aside>
+        <motion.aside
+          initial={{ opacity: 0, x: 10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+        >
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <FactColumn title="Private Facts" facts={privateFacts} />
+            <Divider className="my-5" />
+            <FactColumn title="Public Facts" facts={publicFacts} />
+          </Card>
+        </motion.aside>
       ) : null}
     </div>
   );
@@ -113,7 +154,7 @@ function TreeSection({
   node,
   onAdd,
   onChange,
-  onDuplicateAcrossTrees
+  onDuplicateAcrossTrees,
 }: {
   title: string;
   node: UserMapNode;
@@ -122,26 +163,18 @@ function TreeSection({
   onDuplicateAcrossTrees: (node: UserMapNode) => void;
 }) {
   return (
-    <section className="rounded-[28px] border border-white/8 bg-black/20">
-      <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/38">
-          <span>{title}</span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[8px] text-white/50">
-            {countNodes(node)} nodes
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[8px] text-white/50">
-            {countProtectedNodes(node)} protected
-          </span>
+    <Card variant="default" padding="none" animate={false} className="bg-surface-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <SectionLabel>{title}</SectionLabel>
+          <Badge variant="default">Nodes {countNodes(node)}</Badge>
+          <Badge variant="brand">Protected {countProtectedNodes(node)}</Badge>
         </div>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-        >
-          <Plus size={14} />
+        <Button type="button" size="sm" variant="secondary" icon={<Plus size={14} />} onClick={onAdd}>
           Add
-        </button>
+        </Button>
       </div>
+
       <div className="px-4 py-4">
         <TreeNodeEditor
           node={node}
@@ -151,35 +184,46 @@ function TreeSection({
           isRoot
         />
       </div>
-    </section>
+    </Card>
   );
 }
 
 function FactColumn({ title, facts }: { title: string; facts: MemoryFact[] }) {
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{title}</div>
-        <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">{facts.length}</div>
+      <SectionLabel count={facts.length}>{title}</SectionLabel>
+      <div className="mt-4">
+        {facts.length === 0 ? (
+          <EmptyState
+            icon={<Eye size={16} className="text-white/45" />}
+            title="No facts"
+            description="Sync UserMap with memories to populate this column."
+            compact
+          />
+        ) : (
+          <div className="space-y-3">
+            {facts.map((fact, index) => (
+              <motion.div
+                key={fact.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, delay: index * 0.03, ease: [0.4, 0, 0.2, 1] }}
+              >
+                <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                      {fact.category}
+                    </div>
+                    <Badge variant="outline">{Math.round(fact.confidence * 100)}%</Badge>
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-white">{fact.label}</div>
+                  <div className="mt-1 text-sm leading-6 text-white/65">{fact.value}</div>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </div>
-      {facts.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/12 bg-black/20 px-4 py-6 text-center text-sm leading-6 text-white/45">
-          No facts.
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          {facts.map((fact) => (
-            <div key={fact.id} className="rounded-2xl border border-white/8 bg-black/20 px-3 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{fact.category}</div>
-                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">{Math.round(fact.confidence * 100)}%</div>
-              </div>
-              <div className="mt-2 text-sm font-semibold text-white">{fact.label}</div>
-              <div className="mt-1 text-sm leading-5 text-white/65">{fact.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
@@ -190,7 +234,7 @@ function TreeNodeEditor({
   onChange,
   onDelete,
   onDuplicateAcrossTrees,
-  isRoot = false
+  isRoot = false,
 }: {
   node: UserMapNode;
   depth: number;
@@ -216,7 +260,7 @@ function TreeNodeEditor({
     onChange({
       ...rest,
       label: label.trim() || node.label,
-      ...(value.trim() ? { value: value.trim() } : {})
+      ...(value.trim() ? { value: value.trim() } : {}),
     });
     setIsEditing(false);
   };
@@ -230,19 +274,28 @@ function TreeNodeEditor({
   };
 
   return (
-    <div className={depth > 0 ? 'ml-3 border-l border-white/8 pl-3' : ''}>
-      <div className={`group rounded-xl px-2 py-1.5 transition hover:bg-white/5 ${isRoot ? 'mb-2 bg-white/[0.03]' : ''}`}>
+    <div className={depth > 0 ? 'ml-4 border-l border-white/[0.06] pl-3' : ''}>
+      <div
+        className={`group rounded-2xl px-2 py-2 transition ${
+          isRoot ? 'mb-2 bg-surface-2' : 'hover:bg-surface-2'
+        }`}
+      >
         <div className="flex items-start gap-2">
           {node.children.length > 0 ? (
-            <button
+            <Button
               type="button"
+              size="xs"
+              variant="ghost"
+              className="mt-0.5 h-7 w-7 px-0"
               onClick={() => setIsExpanded((current) => !current)}
-              className="mt-1 flex h-5 w-5 items-center justify-center rounded-md text-white/35 transition hover:bg-white/5 hover:text-white/70"
             >
-              <ChevronRight size={14} className={isExpanded ? 'rotate-90 transition-transform' : 'transition-transform'} />
-            </button>
+              <ChevronRight
+                size={14}
+                className={isExpanded ? 'rotate-90 transition-transform' : 'transition-transform'}
+              />
+            </Button>
           ) : (
-            <div className="mt-2 flex h-5 w-5 items-center justify-center">
+            <div className="mt-2 flex h-7 w-7 items-center justify-center">
               <div className="h-1.5 w-1.5 rounded-full bg-white/20" />
             </div>
           )}
@@ -250,107 +303,130 @@ function TreeNodeEditor({
           <div className="min-w-0 flex-1">
             {isEditing ? (
               <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <input
+                <Input
                   value={label}
                   onChange={(event) => setLabel(event.target.value)}
-                  className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
                   placeholder="Label"
                 />
-                <input
+                <Input
                   value={value}
                   onChange={(event) => setValue(event.target.value)}
-                  className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
                   placeholder="Value"
                 />
-                <div className="flex gap-2">
-                  <button type="button" onClick={handleSave} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/75">
+                <div className="flex flex-wrap gap-2 self-end">
+                  <Button type="button" size="sm" variant="brand" onClick={handleSave}>
                     Save
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    size="sm"
+                    variant="ghost"
                     onClick={() => {
                       setLabel(node.label);
                       setValue(node.value ?? '');
                       setIsEditing(false);
                     }}
-                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/45"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className={isRoot ? 'text-sm font-black uppercase tracking-[0.16em] text-white/90' : 'text-sm font-semibold text-white/80'}>
+                  <span
+                    className={
+                      isRoot
+                        ? 'text-sm font-semibold uppercase tracking-[0.04em] text-white'
+                        : 'text-sm font-semibold text-white/85'
+                    }
+                  >
                     {node.label}
                   </span>
-                  {!isRoot ? (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/50">
-                      {node.visibility}
-                    </span>
-                  ) : null}
-                  {!isRoot && node.protected ? (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/50">
-                      Protected
-                    </span>
-                  ) : null}
+                  {!isRoot ? <Badge variant="default">{node.visibility}</Badge> : null}
+                  {!isRoot && node.protected ? <Badge variant="brand">Protected</Badge> : null}
                 </div>
-                {node.value ? <div className="mt-1 text-xs leading-5 text-white/45">{node.value}</div> : null}
+                {node.value ? <div className="mt-1 text-xs leading-5 text-white/50">{node.value}</div> : null}
               </div>
             )}
           </div>
 
           {!isEditing ? (
-            <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+            <div className="flex flex-wrap items-center gap-1 opacity-0 transition group-hover:opacity-100">
               {!isRoot ? (
-                <button type="button" onClick={() => setIsEditing(true)} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-white/60">
+                <Button type="button" size="xs" variant="ghost" onClick={() => setIsEditing(true)}>
                   Edit
-                </button>
+                </Button>
               ) : null}
-              <button type="button" onClick={() => setIsAddingChild((current) => !current)} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-white/60">
-                <Plus size={12} />
-              </button>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                icon={<Plus size={12} />}
+                onClick={() => setIsAddingChild((current) => !current)}
+              >
+                Add
+              </Button>
               {!isRoot && onDuplicateAcrossTrees ? (
-                <button type="button" onClick={() => onDuplicateAcrossTrees(node)} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-white/60">
-                  <CopyPlus size={12} />
-                </button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  icon={<CopyPlus size={12} />}
+                  onClick={() => onDuplicateAcrossTrees(node)}
+                >
+                  Copy
+                </Button>
               ) : null}
               {!isRoot ? (
-                <button type="button" onClick={() => onChange({ ...node, protected: !node.protected })} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-white/60">
-                  {node.protected ? <Shield size={12} /> : <ShieldOff size={12} />}
-                </button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  icon={node.protected ? <Shield size={12} /> : <ShieldOff size={12} />}
+                  onClick={() => onChange({ ...node, protected: !node.protected })}
+                >
+                  {node.protected ? 'Lock' : 'Protect'}
+                </Button>
               ) : null}
               {!isRoot && onDelete ? (
-                <button type="button" onClick={onDelete} className="rounded-lg border border-red-400/20 bg-red-400/10 px-2 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-red-100">
-                  <Trash2 size={12} />
-                </button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="danger"
+                  icon={<Trash2 size={12} />}
+                  onClick={onDelete}
+                >
+                  Delete
+                </Button>
               ) : null}
             </div>
           ) : null}
         </div>
 
         {isAddingChild ? (
-          <div className="ml-7 mt-2.5 flex flex-wrap items-center gap-2">
-            <input
-              value={newChildLabel}
-              onChange={(event) => setNewChildLabel(event.target.value)}
-              className="min-w-[220px] flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
-              placeholder="New node"
-            />
-            <button type="button" onClick={handleAddChild} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/75">
+          <div className="ml-9 mt-3 flex flex-wrap items-end gap-2">
+            <div className="min-w-[220px] flex-1">
+              <Input
+                value={newChildLabel}
+                onChange={(event) => setNewChildLabel(event.target.value)}
+                placeholder="New node"
+              />
+            </div>
+            <Button type="button" size="sm" variant="brand" onClick={handleAddChild}>
               Add
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="sm"
+              variant="ghost"
               onClick={() => {
                 setNewChildLabel('');
                 setIsAddingChild(false);
               }}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/45"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>

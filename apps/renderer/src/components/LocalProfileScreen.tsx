@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
-import { RamanIcon } from './RamanIcon';
+import { motion } from 'framer-motion';
 import type { LocalProfile } from '@/lib/electron';
+import { RamanIcon } from './RamanIcon';
+import { Button, Card, Input } from './ui';
 
-export function LocalProfileScreen({ onSave, isSaving }: { onSave: (profile: LocalProfile) => Promise<void>; isSaving: boolean }) {
+export function LocalProfileScreen({
+  onSave,
+  isSaving,
+}: {
+  onSave: (profile: LocalProfile) => Promise<void>;
+  isSaving: boolean;
+}) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -19,51 +27,62 @@ export function LocalProfileScreen({ onSave, isSaving }: { onSave: (profile: Loc
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-6 py-10 text-white">
-      <form
-        onSubmit={handleSubmit}
-        className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-white/10 bg-[#0d1012] px-7 py-8 shadow-[0_32px_96px_rgba(0,0,0,0.42)]"
+    <div className="flex min-h-screen items-center justify-center bg-surface-0 px-6 py-10 text-white">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
+        className="w-full max-w-md"
       >
-        <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-white">
-          <RamanIcon size={44} />
-        </div>
-        <div className="mt-6 text-center">
-          <h1 className="text-2xl font-semibold text-white">RamN AI &quot;Beta&quot;</h1>
-          <p className="mt-2 text-sm text-white/60">AI Agents made Simple</p>
-        </div>
-
-        <div className="mt-8 w-full space-y-4">
-          <label className="block space-y-2">
-            <span className="text-xs font-bold uppercase tracking-[0.22em] text-white/42">Name</span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none transition focus:border-white/25"
-              placeholder="Hemanth"
-            />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-xs font-bold uppercase tracking-[0.22em] text-white/42">Email</span>
-            <input
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none transition focus:border-white/25"
-              placeholder="you@example.com"
-              type="email"
-            />
-          </label>
-        </div>
-
-        {error ? <div className="mt-4 w-full rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div> : null}
-
-        <button
-          type="submit"
-          disabled={isSaving}
-          className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-white px-5 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+        <Card
+          variant="elevated"
+          padding="lg"
+          animate={false}
+          className="w-full bg-surface-elevated shadow-elevated"
         >
-          {isSaving ? 'Entering Raman AI…' : 'Enter Raman AI'}
-        </button>
-      </form>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="flex flex-col items-center text-center">
+              <div className="shadow-glow rounded-3xl bg-surface-2 p-4">
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-white/[0.08] bg-surface-3 text-brand-light">
+                  <RamanIcon size={44} />
+                </div>
+              </div>
+              <div className="mt-6">
+                <h1 className="font-display text-2xl font-bold text-white">RamN AI</h1>
+                <p className="mt-2 text-sm text-white/60">AI agents made simple.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <Input
+                label="Name"
+                inputSize="lg"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Hemanth"
+              />
+              <Input
+                label="Email"
+                inputSize="lg"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+
+            {error ? (
+              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+                {error}
+              </div>
+            ) : null}
+
+            <Button type="submit" variant="brand" size="lg" fullWidth loading={isSaving}>
+              {isSaving ? 'Entering Raman AI...' : 'Enter Raman AI'}
+            </Button>
+          </form>
+        </Card>
+      </motion.div>
     </div>
   );
 }

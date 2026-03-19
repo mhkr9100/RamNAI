@@ -1,8 +1,20 @@
 import React, { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Copy, MessageSquareMore, Play, Search, Send, Trash2, X } from 'lucide-react';
 import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@supreme/shared';
 import type { WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTarget } from './ChatsWorkspace';
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Divider,
+  EmptyState,
+  Input,
+  SectionLabel,
+  Select,
+} from './ui';
 
 interface WorkViewProps {
   snapshot: WorkspaceSnapshot;
@@ -16,14 +28,48 @@ interface WorkViewProps {
   onOpenArtifact: (artifactId: string) => Promise<void>;
 }
 
-export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onRerunTask, onDeleteWorkItem, onSendToChat, onOpenChat, onOpenArtifact }: WorkViewProps) {
+const listVariants = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.05,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0 },
+};
+
+export function WorkView({
+  snapshot,
+  busy,
+  onDeleteTask,
+  onDuplicateTask,
+  onRerunTask,
+  onDeleteWorkItem,
+  onSendToChat,
+  onOpenChat,
+  onOpenArtifact,
+}: WorkViewProps) {
   const [expandedWorkId, setExpandedWorkId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | TaskSpec['status']>('all');
   const [kindFilter, setKindFilter] = useState<'all' | 'task' | 'council' | 'artifact'>('all');
-  const taskLookup = useMemo(() => new Map(snapshot.tasks.map((task) => [task.id, task])), [snapshot.tasks]);
-  const artifactLookup = useMemo(() => new Map(snapshot.artifacts.map((artifact) => [artifact.id, artifact])), [snapshot.artifacts]);
-  const agentLookup = useMemo(() => new Map(snapshot.agents.map((agent) => [agent.id, agent])), [snapshot.agents]);
+
+  const taskLookup = useMemo(
+    () => new Map(snapshot.tasks.map((task) => [task.id, task])),
+    [snapshot.tasks],
+  );
+  const artifactLookup = useMemo(
+    () => new Map(snapshot.artifacts.map((artifact) => [artifact.id, artifact])),
+    [snapshot.artifacts],
+  );
+  const agentLookup = useMemo(
+    () => new Map(snapshot.agents.map((agent) => [agent.id, agent])),
+    [snapshot.agents],
+  );
   const normalizedQuery = query.trim().toLowerCase();
 
   const filteredTasks = useMemo(() => {
@@ -34,15 +80,21 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
       if (kindFilter !== 'all' && task.mode !== kindFilter) {
         return false;
       }
-
       if (!normalizedQuery) {
         return true;
       }
 
       const targetLabel = describeTaskTarget(task, agentLookup);
-      const searchBody = [task.title, task.objective, targetLabel, task.lastError ?? '', task.resultSummary ?? '']
+      const searchBody = [
+        task.title,
+        task.objective,
+        targetLabel,
+        task.lastError ?? '',
+        task.resultSummary ?? '',
+      ]
         .join(' ')
         .toLowerCase();
+
       return searchBody.includes(normalizedQuery);
     });
   }, [agentLookup, kindFilter, normalizedQuery, snapshot.tasks, statusFilter]);
@@ -55,16 +107,22 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
       if (kindFilter !== 'all' && item.type !== kindFilter) {
         return false;
       }
-
       if (!normalizedQuery) {
         return true;
       }
 
       const sourceTask = item.sourceTaskId ? taskLookup.get(item.sourceTaskId) : null;
       const sourceAgent = item.sourceAgentId ? agentLookup.get(item.sourceAgentId) : null;
-      const searchBody = [item.title, item.summary ?? '', item.lastError ?? '', sourceTask?.title ?? '', sourceAgent?.name ?? '']
+      const searchBody = [
+        item.title,
+        item.summary ?? '',
+        item.lastError ?? '',
+        sourceTask?.title ?? '',
+        sourceAgent?.name ?? '',
+      ]
         .join(' ')
         .toLowerCase();
+
       return searchBody.includes(normalizedQuery);
     });
   }, [agentLookup, kindFilter, normalizedQuery, snapshot.workItems, statusFilter, taskLookup]);
@@ -72,225 +130,369 @@ export function WorkView({ snapshot, busy, onDeleteTask, onDuplicateTask, onReru
   const filtersActive = query.trim().length > 0 || statusFilter !== 'all' || kindFilter !== 'all';
 
   return (
-    <div className="space-y-4">
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-[#0d1012] px-5 py-4">
-        <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Work</div>
-          <h1 className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white">Tasks & Results</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {[
-            ['Tasks', snapshot.tasks.length],
-            ['Runs', snapshot.workItems.length],
-            ['Files', snapshot.artifacts.length]
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70">
-              {label} · {value}
+    <div className="space-y-5">
+      <Card variant="elevated" padding="lg" animate={false} className="bg-surface-2">
+        <CardHeader
+          title="Tasks & Results"
+          subtitle="Track scheduled work, inspect results, and send useful outputs back into a chat."
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="brand">Tasks {snapshot.tasks.length}</Badge>
+              <Badge variant="brand">Runs {snapshot.workItems.length}</Badge>
+              <Badge variant="brand">Files {snapshot.artifacts.length}</Badge>
             </div>
-          ))}
-        </div>
-      </section>
+          }
+        />
+      </Card>
 
-      <section className="rounded-3xl border border-white/10 bg-white/5 p-4">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Filter</div>
-            <div className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white">Search</div>
-          </div>
-          {filtersActive ? (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery('');
-                setStatusFilter('all');
-                setKindFilter('all');
-              }}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-            >
-              <X size={14} />
-              Clear Filters
-            </button>
-          ) : null}
-        </div>
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_0.8fr_0.8fr]">
-          <label className="space-y-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Search</span>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/28" size={16} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/25 py-3 pl-10 pr-4 text-sm text-white outline-none transition focus:border-white/20"
-                placeholder="Search"
-              />
-            </div>
-          </label>
-          <label className="space-y-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Status</span>
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-              className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none"
-            >
-              <option value="all">All statuses</option>
-              {['draft', 'scheduled', 'queued', 'running', 'done', 'failed', 'cancelled'].map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Kind</span>
-            <select
-              value={kindFilter}
-              onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}
-              className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none"
-            >
-              <option value="all">All kinds</option>
-              <option value="task">Task</option>
-              <option value="council">Council</option>
-              <option value="artifact">Artifact results</option>
-            </select>
-          </label>
-        </div>
-        <div className="mt-3 grid gap-2.5 md:grid-cols-2">
-          <InfoRow label="Matching Tasks" value={`${filteredTasks.length}`} />
-          <InfoRow label="Matching Results" value={`${filteredWorkItems.length}`} />
-        </div>
-      </section>
+      <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+        <SectionLabel
+          action={
+            filtersActive ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                icon={<X size={14} />}
+                onClick={() => {
+                  setQuery('');
+                  setStatusFilter('all');
+                  setKindFilter('all');
+                }}
+              >
+                Clear Filters
+              </Button>
+            ) : undefined
+          }
+        >
+          Filters
+        </SectionLabel>
+        <Divider className="my-4" />
 
-      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-          <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Tasks · {filteredTasks.length}</div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_0.8fr_0.8fr]">
+          <Input
+            label="Search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search tasks, results, agents, or errors"
+            icon={<Search size={16} />}
+          />
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+            options={[
+              { value: 'all', label: 'All statuses' },
+              ...['draft', 'scheduled', 'queued', 'running', 'done', 'failed', 'cancelled'].map(
+                (status) => ({
+                  value: status,
+                  label: status,
+                }),
+              ),
+            ]}
+          />
+          <Select
+            label="Kind"
+            value={kindFilter}
+            onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}
+            options={[
+              { value: 'all', label: 'All kinds' },
+              { value: 'task', label: 'Task' },
+              { value: 'council', label: 'Council' },
+              { value: 'artifact', label: 'Artifact results' },
+            ]}
+          />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <InfoTile label="Matching Tasks" value={`${filteredTasks.length}`} />
+          <InfoTile label="Matching Results" value={`${filteredWorkItems.length}`} />
+        </div>
+      </Card>
+
+      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+          <SectionLabel count={filteredTasks.length}>Tasks</SectionLabel>
+          <Divider className="my-4" />
+
           {snapshot.tasks.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-              No tasks yet.
-            </div>
+            <EmptyState
+              icon={<Play size={18} className="text-white/45" />}
+              title="No tasks yet"
+              description="Create a task from Prism or Spectrum to start scheduling work."
+              compact
+            />
           ) : filteredTasks.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-              No tasks match the current filters.
-            </div>
+            <EmptyState
+              icon={<Search size={18} className="text-white/45" />}
+              title="No tasks match"
+              description="Try widening your filters or clearing the search query."
+              compact
+            />
           ) : (
-            <div className="space-y-4">
+            <motion.div
+              className="space-y-4"
+              variants={listVariants}
+              initial="hidden"
+              animate="show"
+            >
               {filteredTasks.map((task) => (
-                <div key={task.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{task.mode}</div>
-                      <div className="mt-1 text-base font-semibold text-white">{task.title}</div>
-                      <div className="mt-2 text-sm leading-6 text-white/60">{task.objective}</div>
-                    </div>
-                    <StatusPill status={task.status} />
-                  </div>
-                  <div className="mt-3 grid gap-2.5 md:grid-cols-2">
-                    <InfoRow label="Next Run" value={task.nextRunAt ? new Date(task.nextRunAt).toLocaleString() : 'Not scheduled'} />
-                    <InfoRow label="Target" value={describeTaskTarget(task, agentLookup)} />
-                    <InfoRow label="Artifacts" value={task.outputPolicy.artifactMode} />
-                    <InfoRow label="Notifications" value={task.outputPolicy.notificationMode} />
-                  </div>
-                  {task.lastError ? <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{task.lastError}</div> : null}
-                  <div className="mt-5 flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => onOpenChat(task.target.type === 'prism' ? 'prism' : { type: 'agent', id: task.target.agentId })}
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                    >
-                      <MessageSquareMore size={14} />
-                      Open Chat
-                    </button>
-                    <button type="button" disabled={busy} onClick={() => onDuplicateTask(task.id)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Copy size={14} />Duplicate</button>
-                    <button type="button" disabled={busy} onClick={() => onRerunTask(task.id)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Play size={14} />Rerun</button>
-                    <button type="button" disabled={busy} onClick={() => onDeleteTask(task.id)} className="inline-flex items-center gap-2 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-red-100 transition hover:border-red-400/30 disabled:opacity-50"><Trash2 size={14} />Delete</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <motion.div key={task.id} variants={itemVariants}>
+                  <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                    <CardHeader
+                      title={task.title}
+                      subtitle={describeTaskTarget(task, agentLookup)}
+                      action={
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="default">{task.mode}</Badge>
+                          <StatusBadge status={task.status} />
+                        </div>
+                      }
+                    />
 
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-          <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Results & Artifacts · {filteredWorkItems.length}</div>
+                    <p className="mt-3 text-sm leading-6 text-white/65">{task.objective}</p>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <InfoTile
+                        label="Next Run"
+                        value={task.nextRunAt ? new Date(task.nextRunAt).toLocaleString() : 'Not scheduled'}
+                      />
+                      <InfoTile label="Target" value={describeTaskTarget(task, agentLookup)} />
+                      <InfoTile label="Artifacts" value={task.outputPolicy.artifactMode} />
+                      <InfoTile label="Notifications" value={task.outputPolicy.notificationMode} />
+                    </div>
+
+                    {task.lastError ? (
+                      <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                        {task.lastError}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        icon={<MessageSquareMore size={14} />}
+                        onClick={() =>
+                          onOpenChat(
+                            task.target.type === 'prism'
+                              ? 'prism'
+                              : { type: 'agent', id: task.target.agentId },
+                          )
+                        }
+                      >
+                        Open Chat
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        icon={<Copy size={14} />}
+                        disabled={busy}
+                        onClick={() => onDuplicateTask(task.id)}
+                      >
+                        Duplicate
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        icon={<Play size={14} />}
+                        disabled={busy}
+                        onClick={() => onRerunTask(task.id)}
+                      >
+                        Rerun
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="danger"
+                        icon={<Trash2 size={14} />}
+                        disabled={busy}
+                        onClick={() => onDeleteTask(task.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </Card>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </Card>
+
+        <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+          <SectionLabel count={filteredWorkItems.length}>Results</SectionLabel>
+          <Divider className="my-4" />
+
           {snapshot.workItems.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-              No results yet.
-            </div>
+            <EmptyState
+              icon={<Send size={18} className="text-white/45" />}
+              title="No results yet"
+              description="Completed tasks and their artifacts will appear here."
+              compact
+            />
           ) : filteredWorkItems.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-              No results or artifacts match the current filters.
-            </div>
+            <EmptyState
+              icon={<Search size={18} className="text-white/45" />}
+              title="No results match"
+              description="Adjust the current filters to reveal more runs or artifacts."
+              compact
+            />
           ) : (
-            <div className="space-y-4">
+            <motion.div
+              className="space-y-4"
+              variants={listVariants}
+              initial="hidden"
+              animate="show"
+            >
               {filteredWorkItems.map((item) => {
                 const expanded = expandedWorkId === item.id;
                 const sourceTask = item.sourceTaskId ? taskLookup.get(item.sourceTaskId) : null;
                 const artifacts = item.artifactIds
                   .map((artifactId) => artifactLookup.get(artifactId))
                   .filter((artifact): artifact is ArtifactRecord => Boolean(artifact));
+
                 return (
-                  <div key={item.id} className="rounded-[28px] border border-white/10 bg-black/25 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{item.type}</div>
-                        <div className="mt-2 text-xl font-semibold text-white">{item.title}</div>
-                        <div className="mt-2 text-sm text-white/52">{sourceTask ? `From ${sourceTask.title}` : 'Standalone work item'}</div>
-                        <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/38">
-                          {item.sourceAgentId ? `Routes back to ${agentLookup.get(item.sourceAgentId)?.name ?? 'the originating chatbot'}.` : 'Routes back to Prism.'}
-                        </div>
+                  <motion.div key={item.id} variants={itemVariants}>
+                    <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                      <CardHeader
+                        title={item.title}
+                        subtitle={sourceTask ? `From ${sourceTask.title}` : 'Standalone work item'}
+                        action={<StatusBadge status={item.status} />}
+                      />
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Badge variant="default">{item.type}</Badge>
+                        <Badge variant="outline">
+                          {item.sourceAgentId
+                            ? `Routes to ${agentLookup.get(item.sourceAgentId)?.name ?? 'chatbot'}`
+                            : 'Routes to Prism'}
+                        </Badge>
                       </div>
-                      <StatusPill status={item.status} />
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'prism')}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white"
-                      >
-                        <MessageSquareMore size={14} />
-                        Open Chat
-                      </button>
-                      <button type="button" onClick={() => setExpandedWorkId((current) => current === item.id ? null : item.id)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white">
-                        {expanded ? 'Close' : 'Open'}
-                      </button>
-                      <button type="button" disabled={!item.summary} onClick={() => onSendToChat(item)} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Send size={14} />Send to Chat</button>
-                      <button type="button" disabled={!item.sourceTaskId || busy} onClick={() => item.sourceTaskId ? onDuplicateTask(item.sourceTaskId) : Promise.resolve()} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Copy size={14} />Duplicate</button>
-                      <button type="button" disabled={!item.sourceTaskId || busy} onClick={() => item.sourceTaskId ? onRerunTask(item.sourceTaskId) : Promise.resolve()} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"><Play size={14} />Rerun</button>
-                      <button type="button" disabled={busy} onClick={() => onDeleteWorkItem(item.id)} className="inline-flex items-center gap-2 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-red-100 transition hover:border-red-400/30 disabled:opacity-50"><Trash2 size={14} />Delete</button>
-                    </div>
-                    {expanded ? (
-                      <div className="mt-5 space-y-4">
-                        {item.summary ? <div className="whitespace-pre-wrap rounded-3xl border border-white/8 bg-white/5 px-5 py-4 text-sm leading-7 text-white/74">{item.summary}</div> : null}
-                        {item.lastError ? <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{item.lastError}</div> : null}
-                        {artifacts.length ? (
-                          <div className="rounded-3xl border border-white/8 bg-white/5 p-4">
-                            <div className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/38">Artifacts</div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          icon={<MessageSquareMore size={14} />}
+                          onClick={() =>
+                            onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'prism')
+                          }
+                        >
+                          Open Chat
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setExpandedWorkId((current) => (current === item.id ? null : item.id))}
+                        >
+                          {expanded ? 'Close' : 'Open'}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          icon={<Send size={14} />}
+                          disabled={!item.summary}
+                          onClick={() => onSendToChat(item)}
+                        >
+                          Send to Chat
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          icon={<Copy size={14} />}
+                          disabled={!item.sourceTaskId || busy}
+                          onClick={() => (item.sourceTaskId ? onDuplicateTask(item.sourceTaskId) : Promise.resolve())}
+                        >
+                          Duplicate
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          icon={<Play size={14} />}
+                          disabled={!item.sourceTaskId || busy}
+                          onClick={() => (item.sourceTaskId ? onRerunTask(item.sourceTaskId) : Promise.resolve())}
+                        >
+                          Rerun
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="danger"
+                          icon={<Trash2 size={14} />}
+                          disabled={busy}
+                          onClick={() => onDeleteWorkItem(item.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+
+                      {expanded ? (
+                        <div className="mt-5 space-y-4">
+                          {item.summary ? (
+                            <div className="whitespace-pre-wrap rounded-2xl border border-white/[0.08] bg-surface-1 px-4 py-4 text-sm leading-7 text-white/74">
+                              {item.summary}
+                            </div>
+                          ) : null}
+
+                          {item.lastError ? (
+                            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                              {item.lastError}
+                            </div>
+                          ) : null}
+
+                          {artifacts.length ? (
                             <div className="space-y-3">
+                              <SectionLabel count={artifacts.length}>Artifacts</SectionLabel>
                               {artifacts.map((artifact) => (
-                                <div key={artifact.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-                                  <div>
-                                    <div className="text-sm font-semibold text-white">{artifact.title}</div>
-                                    <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/38">{artifact.kind} · {artifact.relativePath}</div>
+                                <Card
+                                  key={artifact.id}
+                                  variant="default"
+                                  padding="md"
+                                  animate={false}
+                                  className="bg-surface-1"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-semibold text-white">{artifact.title}</div>
+                                      <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                                        {artifact.kind} / {artifact.relativePath}
+                                      </div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => onOpenArtifact(artifact.id)}
+                                    >
+                                      Open File
+                                    </Button>
                                   </div>
-                                  <button type="button" onClick={() => onOpenArtifact(artifact.id)} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white">
-                                    Open File
-                                  </button>
-                                </div>
+                                </Card>
                               ))}
                             </div>
+                          ) : null}
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <InfoTile label="Updated" value={new Date(item.updatedAt).toLocaleString()} />
+                            <InfoTile label="Artifacts" value={`${item.artifactIds.length}`} />
                           </div>
-                        ) : null}
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <InfoRow label="Updated" value={new Date(item.updatedAt).toLocaleString()} />
-                          <InfoRow label="Artifacts" value={`${item.artifactIds.length}`} />
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
+                      ) : null}
+                    </Card>
+                  </motion.div>
                 );
               })}
-            </div>
+            </motion.div>
           )}
-        </div>
+        </Card>
       </section>
     </div>
   );
@@ -304,23 +506,32 @@ function describeTaskTarget(task: TaskSpec, agentLookup: Map<string, AgentSpec>)
   return agentLookup.get(task.target.agentId)?.name ?? `Chatbot ${task.target.agentId}`;
 }
 
-function StatusPill({ status }: { status: TaskSpec['status'] | WorkItem['status'] }) {
-  const tone = status === 'done'
-    ? 'bg-emerald-400/10 text-emerald-200 border-emerald-400/20'
-    : status === 'failed'
-      ? 'bg-red-400/10 text-red-200 border-red-400/20'
-      : status === 'running'
-        ? 'bg-sky-400/10 text-sky-200 border-sky-400/20'
-        : 'bg-white/5 text-white/60 border-white/10';
+function StatusBadge({ status }: { status: TaskSpec['status'] | WorkItem['status'] }) {
+  const variant: React.ComponentProps<typeof Badge>['variant'] =
+    status === 'done'
+      ? 'success'
+      : status === 'failed'
+        ? 'error'
+        : status === 'running'
+          ? 'warning'
+          : status === 'scheduled'
+            ? 'info'
+            : status === 'queued'
+              ? 'info'
+              : status === 'cancelled'
+                ? 'outline'
+                : 'default';
 
-  return <div className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] ${tone}`}>{status}</div>;
+  return <Badge variant={variant}>{status}</Badge>;
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{label}</div>
-      <div className="mt-2 text-sm leading-6 text-white/70">{value}</div>
+    <div className="rounded-2xl border border-white/[0.08] bg-surface-1 px-4 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+        {label}
+      </div>
+      <div className="mt-2 text-sm leading-6 text-white/72">{value}</div>
     </div>
   );
 }

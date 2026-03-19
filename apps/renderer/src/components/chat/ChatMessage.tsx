@@ -5,10 +5,10 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 export interface ChatMessageProps {
   role: 'user' | 'assistant' | 'system';
   text: string;
-  mode?: string;
-  timestamp?: string;
-  agentName?: string;
-  isStreaming?: boolean;
+  mode?: string | undefined;
+  timestamp?: string | undefined;
+  agentName?: string | undefined;
+  isStreaming?: boolean | undefined;
 }
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({

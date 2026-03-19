@@ -1,12 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, FlaskConical, KeyRound, LoaderCircle, Sparkles, Trash2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Download, FlaskConical, KeyRound, Sparkles, Trash2 } from 'lucide-react';
 import type {
   OllamaRuntimeStatus,
   PrismProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderId,
-  ProviderModelPreset
+  ProviderModelPreset,
 } from '@supreme/shared';
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  CardSection,
+  Divider,
+  Input,
+  SectionLabel,
+  Select,
+  StatusDot,
+} from './ui';
 
 type SettingsSection = 'runtime' | 'providers' | 'prism';
 type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
@@ -42,8 +55,22 @@ interface SettingsViewProps {
 const sections: Array<{ id: SettingsSection; label: string }> = [
   { id: 'runtime', label: 'Local' },
   { id: 'providers', label: 'Accounts' },
-  { id: 'prism', label: 'Prism' }
+  { id: 'prism', label: 'Prism' },
 ];
+
+const listVariants = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.05,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0 },
+};
 
 export function SettingsView({
   activeSection,
@@ -62,7 +89,7 @@ export function SettingsView({
   onDeleteProfile,
   onTestProfile,
   onSetProviderSelection,
-  onSavePrismOverride
+  onSavePrismOverride,
 }: SettingsViewProps) {
   const providerRef = useRef<HTMLSelectElement | null>(null);
   const labelRef = useRef<HTMLInputElement | null>(null);
@@ -76,12 +103,41 @@ export function SettingsView({
 
   const installedModelCount = useMemo(
     () => models.filter((model) => model.installed).length,
-    [models]
+    [models],
   );
 
   const installedModels = useMemo(
     () => models.filter((model) => model.installed),
-    [models]
+    [models],
+  );
+
+  const providerOptions = useMemo(
+    () => REMOTE_PROVIDER_LABELS.map((provider) => ({ value: provider.id, label: provider.label })),
+    [],
+  );
+
+  const overrideProviderOptions = useMemo(
+    () => [{ value: 'ollama', label: 'Ollama' }, ...providerOptions],
+    [providerOptions],
+  );
+
+  const localModelOptions = useMemo(
+    () =>
+      installedModels.length === 0
+        ? [{ value: '', label: 'No installed local models', disabled: true }]
+        : installedModels.map((model) => ({
+            value: model.id,
+            label: `${model.label} / ${model.id}`,
+          })),
+    [installedModels],
+  );
+
+  const activeProviderSummary = useMemo(
+    () =>
+      REMOTE_PROVIDER_LABELS.map(
+        (provider) => `${provider.label}: ${providerSelections[provider.id] ?? 'none'}`,
+      ).join(' | '),
+    [providerSelections],
   );
 
   useEffect(() => {
@@ -124,7 +180,7 @@ export function SettingsView({
       ...(description ? { description } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(token ? { token } : {}),
-      ...(isDefault ? { isDefault: true } : {})
+      ...(isDefault ? { isDefault: true } : {}),
     });
 
     if (apiKeyRef.current) apiKeyRef.current.value = '';
@@ -142,364 +198,488 @@ export function SettingsView({
     setFormError(null);
     await onSavePrismOverride({
       provider: overrideProvider,
-      modelId
+      modelId,
     });
   };
 
   return (
-    <div className="space-y-4">
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-[#0d1012] px-5 py-4">
-        <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Settings</div>
-          <h1 className="mt-1.5 text-lg font-semibold text-white">Local app</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <InfoChip label="Local" value={runtimeReady ? 'Ready' : 'Check'} />
-          <InfoChip label="Models" value={`${installedModelCount}`} />
-          <InfoChip label="Accounts" value={`${providerProfiles.length}`} />
-        </div>
-      </section>
+    <div className="space-y-5">
+      <Card variant="elevated" padding="lg" animate={false} className="bg-surface-2">
+        <CardHeader
+          title="Local App"
+          subtitle="Manage local runtime models, connected provider accounts, and Prism overrides."
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="brand">Local {runtimeReady ? 'Ready' : 'Check'}</Badge>
+              <Badge variant="brand">Models {installedModelCount}</Badge>
+              <Badge variant="brand">Accounts {providerProfiles.length}</Badge>
+            </div>
+          }
+        />
+      </Card>
 
       <section className="flex flex-wrap gap-2">
         {sections.map((section) => {
           const active = section.id === activeSection;
           return (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => onSelectSection(section.id)}
-              className={`rounded-full border px-4 py-2 text-[9px] font-black uppercase tracking-[0.16em] transition ${active ? 'border-white/18 bg-white text-black' : 'border-white/10 bg-white/5 text-white/70 hover:border-white/18 hover:text-white'}`}
-            >
-              {section.label}
-            </button>
+            <div key={section.id} className="relative">
+              {active ? <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-brand" /> : null}
+              <Button
+                type="button"
+                variant={active ? 'secondary' : 'ghost'}
+                size="md"
+                className={active ? 'pl-5' : ''}
+                onClick={() => onSelectSection(section.id)}
+              >
+                {section.label}
+              </Button>
+            </div>
           );
         })}
       </section>
 
       {activeSection === 'runtime' ? (
-        <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Local models</div>
-                <div className="mt-2 text-xl font-semibold text-white">Available now</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => void onRefresh()}
-                disabled={busy || loading}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
-              >
-                {loading ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <InfoCard label="App" value={ollamaStatus?.running ? 'Running' : 'Not running'} />
-              <InfoCard label="Installed" value={`${installedModelCount}`} />
-              <InfoCard label="Shown" value={`${ollamaStatus?.models.length ?? 0}`} />
-            </div>
-            <div className="mt-5 space-y-3">
-              {ollamaStatus?.models.length ? (
-                ollamaStatus.models.map((model) => (
-                  <div key={model.id} className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{model.label}</div>
-                        <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/38">{model.id}</div>
-                      </div>
-                      <div className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${resolveModelTone(model)}`}>
-                        {model.status.replaceAll('_', ' ')}
-                      </div>
-                    </div>
-                    {model.phase || model.progress !== undefined || model.lastError ? (
-                      <div className="mt-3 space-y-2">
-                        {model.phase ? <div className="text-xs text-white/55">{model.phase}</div> : null}
-                        {model.progress !== undefined ? (
-                          <div className="h-2 overflow-hidden rounded-full bg-white/8">
-                            <div
-                              className="h-full rounded-full bg-sky-300 transition-all"
-                              style={{ width: `${Math.max(0, Math.min(100, model.progress))}%` }}
-                            />
-                          </div>
-                        ) : null}
-                        {model.lastError ? (
-                          <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">
-                            {model.lastError}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                ))
-              ) : (
-                models.map((model) => (
-                  <div key={model.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{model.label}</div>
-                      <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/38">{model.id}</div>
-                    </div>
-                    <div className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${resolveModelTone(model)}`}>
-                      {model.installed ? 'installed' : 'preset'}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <div className="mb-4 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Starter models</div>
-            <div className="rounded-3xl border border-white/8 bg-black/20 p-5 text-sm leading-7 text-white/62">
-              Install the three local models this app expects first.
-            </div>
-            <div className="mt-4 space-y-3">
-              {models.map((model) => (
-                <div key={model.id} className="rounded-2xl border border-white/8 bg-white/5 px-4 py-3">
-                  <div className="text-sm font-semibold text-white">{model.label}</div>
-                  <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/38">{model.id}</div>
+        <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <CardHeader
+              title="Local Models"
+              subtitle="Current Ollama runtime state and the models available to the app."
+              action={
+                <div className="flex flex-wrap items-center gap-3">
+                  <StatusDot
+                    status={resolveRuntimeDotStatus(runtimeReady, ollamaStatus, loading)}
+                    label={resolveRuntimeStatusLabel(runtimeReady, ollamaStatus, loading)}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    loading={loading}
+                    onClick={() => void onRefresh()}
+                    disabled={busy}
+                  >
+                    Refresh
+                  </Button>
                 </div>
-              ))}
-            </div>
-            <button
+              }
+            />
+
+            <CardSection label="Overview" className="mt-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                <InfoCard label="App" value={ollamaStatus?.running ? 'Running' : 'Not running'} />
+                <InfoCard label="Installed" value={`${installedModelCount}`} />
+                <InfoCard label="Shown" value={`${ollamaStatus?.models.length ?? 0}`} />
+              </div>
+            </CardSection>
+
+            <Divider className="my-5" />
+
+            <CardSection label="Model Status">
+              <motion.div
+                className="space-y-3"
+                variants={listVariants}
+                initial="hidden"
+                animate="show"
+              >
+                {ollamaStatus?.models.length
+                  ? ollamaStatus.models.map((model) => (
+                      <motion.div key={model.id} variants={itemVariants}>
+                        <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-white">{model.label}</div>
+                              <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                                {model.id}
+                              </div>
+                            </div>
+                            <Badge variant={resolveModelVariant(model)}>
+                              {model.status.replaceAll('_', ' ')}
+                            </Badge>
+                          </div>
+
+                          {model.phase || model.progress !== undefined || model.lastError ? (
+                            <div className="mt-4 space-y-2">
+                              {model.phase ? (
+                                <div className="text-xs text-white/55">{model.phase}</div>
+                              ) : null}
+                              {model.progress !== undefined ? (
+                                <div className="h-2 overflow-hidden rounded-full bg-surface-1">
+                                  <div
+                                    className="h-full rounded-full bg-brand transition-all"
+                                    style={{
+                                      width: `${Math.max(0, Math.min(100, model.progress))}%`,
+                                    }}
+                                  />
+                                </div>
+                              ) : null}
+                              {model.lastError ? (
+                                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">
+                                  {model.lastError}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </Card>
+                      </motion.div>
+                    ))
+                  : models.map((model) => (
+                      <motion.div key={model.id} variants={itemVariants}>
+                        <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-white">{model.label}</div>
+                              <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                                {model.id}
+                              </div>
+                            </div>
+                            <Badge variant={model.installed ? 'success' : 'default'}>
+                              {model.installed ? 'installed' : 'preset'}
+                            </Badge>
+                          </div>
+                        </Card>
+                      </motion.div>
+                    ))}
+              </motion.div>
+            </CardSection>
+          </Card>
+
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <CardHeader
+              title="Starter Models"
+              subtitle="Install the default local stack Supreme Raman AI expects."
+              icon={<Download size={16} className="text-brand-light" />}
+            />
+
+            <CardSection label="Recommended" className="mt-5">
+              <div className="rounded-2xl border border-white/[0.08] bg-surface-3 p-4 text-sm leading-7 text-white/62">
+                Install the three local models this app expects first.
+              </div>
+            </CardSection>
+
+            <CardSection label="Presets" className="mt-5">
+              <motion.div
+                className="space-y-3"
+                variants={listVariants}
+                initial="hidden"
+                animate="show"
+              >
+                {models.map((model) => (
+                  <motion.div key={model.id} variants={itemVariants}>
+                    <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-white">{model.label}</div>
+                          <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                            {model.id}
+                          </div>
+                        </div>
+                        <Badge variant={model.installed ? 'success' : 'default'}>
+                          {model.installed ? 'installed' : 'preset'}
+                        </Badge>
+                      </div>
+                    </Card>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </CardSection>
+
+            <Button
               type="button"
-              disabled={busy}
+              variant="brand"
+              size="lg"
+              fullWidth
+              loading={busy}
+              icon={<Download size={15} />}
+              className="mt-5"
               onClick={() => void onInstallDefaults()}
-              className="mt-5 inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
-              {busy ? 'Installing…' : 'Install Starter Models'}
-            </button>
-          </div>
+              {busy ? 'Installing...' : 'Install Starter Models'}
+            </Button>
+          </Card>
         </section>
       ) : null}
 
       {activeSection === 'providers' ? (
-        <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Connected accounts</div>
+        <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <CardHeader
+              title="Connected Accounts"
+              subtitle="Review saved remote credentials and choose which profile is active."
+            />
+            <Divider className="my-5" />
+
             {providerProfiles.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-white/12 bg-black/20 px-6 py-10 text-center text-sm leading-7 text-white/45">
-                No accounts yet.
-              </div>
+              <Card variant="default" padding="lg" animate={false} className="bg-surface-3">
+                <div className="text-center text-sm leading-7 text-white/48">No accounts yet.</div>
+              </Card>
             ) : (
-              <div className="space-y-3">
+              <motion.div
+                className="space-y-4"
+                variants={listVariants}
+                initial="hidden"
+                animate="show"
+              >
                 {providerProfiles.map((profile) => (
-                  <div key={profile.id} className="rounded-[24px] border border-white/8 bg-black/20 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{profile.provider}</div>
-                        <div className="mt-2 text-base font-semibold text-white">{profile.label}</div>
-                        <div className="mt-1.5 text-sm leading-6 text-white/58">{profile.description || 'No notes.'}</div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {providerSelections[profile.provider as RemoteProviderId] === profile.id ? (
-                          <div className="rounded-full bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200">
-                            Active
+                  <motion.div key={profile.id} variants={itemVariants}>
+                    <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                      <CardHeader
+                        title={profile.label}
+                        subtitle={profile.provider}
+                        action={
+                          <div className="flex flex-wrap items-center gap-2">
+                            {providerSelections[profile.provider as RemoteProviderId] === profile.id ? (
+                              <Badge variant="success">Active</Badge>
+                            ) : null}
+                            {profile.isDefault ? <Badge variant="default">Default</Badge> : null}
                           </div>
-                        ) : null}
-                        {profile.isDefault ? (
-                          <div className="rounded-full bg-white/8 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">
-                            Default
-                          </div>
-                        ) : null}
+                        }
+                      />
+
+                      <div className="mt-3 text-sm leading-6 text-white/60">
+                        {profile.description || 'No notes.'}
                       </div>
-                    </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <InfoCard label="Key" value={profile.keyRef ? 'Saved' : 'Not added'} />
-                      <InfoCard label="Token" value={profile.tokenRef ? 'Saved' : 'Not added'} />
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void onSetProviderSelection(profile.provider as RemoteProviderId, profile.id)}
-                        className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
-                      >
-                        Make Active
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void onTestProfile(profile, false)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
-                      >
-                        <FlaskConical size={12} />
-                        Check Keys
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void onTestProfile(profile, true)}
-                        className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
-                      >
-                        Test Connection
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void onDeleteProfile(profile)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-red-100 transition hover:border-red-300/35 disabled:opacity-50"
-                      >
-                        <Trash2 size={12} />
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        <InfoCard label="Key" value={profile.keyRef ? 'Saved' : 'Not added'} />
+                        <InfoCard label="Token" value={profile.tokenRef ? 'Saved' : 'Not added'} />
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void onSetProviderSelection(profile.provider as RemoteProviderId, profile.id)
+                          }
+                        >
+                          Make Active
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          icon={<FlaskConical size={12} />}
+                          disabled={busy}
+                          onClick={() => void onTestProfile(profile, false)}
+                        >
+                          Check Keys
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => void onTestProfile(profile, true)}
+                        >
+                          Test Connection
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="danger"
+                          icon={<Trash2 size={12} />}
+                          disabled={busy}
+                          onClick={() => void onDeleteProfile(profile)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </Card>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             )}
-          </div>
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <div className="mb-5 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">
-              <KeyRound size={14} />
-              Add account
-            </div>
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Provider</span>
-                <select ref={providerRef} defaultValue="openai" className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none">
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="google">Google</option>
-                </select>
-              </label>
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Name</span>
-                <input
-                  ref={labelRef}
-                  className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                  placeholder="Founder OpenAI"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Notes</span>
+          </Card>
+
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <CardHeader
+              title="Add Account"
+              subtitle="Save a remote provider profile for OpenAI, Anthropic, or Google."
+              icon={<KeyRound size={16} className="text-brand-light" />}
+            />
+
+            <form onSubmit={handleSaveProfile} className="mt-5 space-y-4">
+              <Select
+                ref={providerRef}
+                label="Provider"
+                defaultValue="openai"
+                options={providerOptions}
+                className="bg-surface-1"
+              />
+
+              <Input
+                ref={labelRef}
+                label="Name"
+                placeholder="Founder OpenAI"
+                className="bg-surface-1"
+              />
+
+              <label className="block space-y-1.5">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                  Notes
+                </span>
                 <textarea
                   ref={descriptionRef}
-                  className="min-h-[112px] w-full rounded-3xl border border-white/10 bg-black/25 px-4 py-4 text-sm leading-7 text-white outline-none"
+                  className="min-h-[112px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20"
                   placeholder="Optional"
                 />
               </label>
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">API Key</span>
+
+              <Input
+                ref={apiKeyRef}
+                type="password"
+                autoComplete="off"
+                label="API Key"
+                placeholder="API key"
+                className="bg-surface-1"
+              />
+
+              <Input
+                ref={tokenRef}
+                type="password"
+                autoComplete="off"
+                label="Access Token"
+                placeholder="Token"
+                className="bg-surface-1"
+              />
+
+              <label className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-surface-3 px-4 py-4 text-sm text-white/70">
                 <input
-                  ref={apiKeyRef}
-                  type="password"
-                  autoComplete="off"
-                  className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                  placeholder="API key"
+                  ref={defaultRef}
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-white/20 bg-transparent"
                 />
-              </label>
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Access token</span>
-                <input
-                  ref={tokenRef}
-                  type="password"
-                  autoComplete="off"
-                  className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                  placeholder="Token"
-                />
-              </label>
-              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/70">
-                <input ref={defaultRef} type="checkbox" className="h-4 w-4 rounded border-white/20 bg-transparent" />
                 Make this the default for this service
               </label>
-              {formError ? <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{formError}</div> : null}
-              <button
+
+              {formError ? (
+                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                  {formError}
+                </div>
+              ) : null}
+
+              <Button
                 type="submit"
-                disabled={busy}
-                className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                variant="brand"
+                size="lg"
+                fullWidth
+                loading={busy}
+                icon={<KeyRound size={15} />}
               >
-                {busy ? <LoaderCircle size={15} className="animate-spin" /> : <KeyRound size={15} />}
-                {busy ? 'Saving…' : 'Save Account'}
-              </button>
+                {busy ? 'Saving...' : 'Save Account'}
+              </Button>
             </form>
-          </div>
+          </Card>
         </section>
       ) : null}
 
       {activeSection === 'prism' ? (
-        <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <div className="mb-5 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Prism</div>
-            <div className="space-y-3">
-              <InfoCard label="Current" value={prismOverride ? `${prismOverride.provider} · ${prismOverride.modelId}` : 'Automatic'} />
-              <InfoCard label="Accounts" value={providerProfiles.length ? 'Available' : 'None'} />
-              <InfoCard label="Active" value={REMOTE_PROVIDER_LABELS.map((provider) => `${provider.label}: ${providerSelections[provider.id] ?? 'none'}`).join(' • ')} />
-            </div>
-          </div>
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <div className="mb-4 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/38">
-              <Sparkles size={14} />
-              Prism model
-            </div>
-            <form onSubmit={handleSavePrismOverride} className="space-y-4">
-              <div className="rounded-3xl border border-white/8 bg-black/20 p-5 text-sm leading-7 text-white/62">
-                Leave this on automatic unless you want Prism to stay on one model.
+        <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <CardHeader
+              title="Prism Routing"
+              subtitle="See the current override and which provider profiles are selected."
+              icon={<Sparkles size={16} className="text-brand-light" />}
+            />
+
+            <CardSection label="Overview" className="mt-5">
+              <div className="space-y-3">
+                <InfoCard
+                  label="Current"
+                  value={prismOverride ? `${prismOverride.provider} / ${prismOverride.modelId}` : 'Automatic'}
+                />
+                <InfoCard
+                  label="Accounts"
+                  value={providerProfiles.length ? 'Available' : 'None'}
+                />
+                <InfoCard label="Active" value={activeProviderSummary} />
               </div>
-              <label className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Provider</span>
-                <select
-                  value={overrideProvider}
-                  onChange={(event) => {
-                    const provider = event.target.value as ProviderId;
-                    const firstInstalledModel = installedModels[0];
-                    setOverrideProvider(provider);
-                    if (provider === 'ollama' && firstInstalledModel) {
-                      setOverrideModelId((current) => current || firstInstalledModel.id);
-                    }
-                  }}
-                  className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                >
-                  <option value="ollama">Ollama</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="google">Google</option>
-                </select>
-              </label>
+            </CardSection>
+          </Card>
+
+          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+            <CardHeader
+              title="Prism Model"
+              subtitle="Pin Prism to one provider and model, or keep it on automatic routing."
+              icon={<Sparkles size={16} className="text-brand-light" />}
+            />
+
+            <form onSubmit={handleSavePrismOverride} className="mt-5 space-y-4">
+              <CardSection label="Guidance">
+                <div className="rounded-2xl border border-white/[0.08] bg-surface-3 p-4 text-sm leading-7 text-white/62">
+                  Leave this on automatic unless you want Prism to stay on one model.
+                </div>
+              </CardSection>
+
+              <Select
+                label="Provider"
+                value={overrideProvider}
+                onChange={(event) => {
+                  const provider = event.target.value as ProviderId;
+                  const firstInstalledModel = installedModels[0];
+                  setOverrideProvider(provider);
+                  if (provider === 'ollama' && firstInstalledModel) {
+                    setOverrideModelId((current) => current || firstInstalledModel.id);
+                  }
+                }}
+                options={overrideProviderOptions}
+                className="bg-surface-1"
+              />
+
               {overrideProvider === 'ollama' ? (
-                <label className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Local Model</span>
-                  <select
-                    value={overrideModelId}
-                    onChange={(event) => setOverrideModelId(event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                  >
-                    {installedModels.length === 0 ? <option value="">No installed local models</option> : null}
-                    {installedModels.map((model) => (
-                      <option key={model.id} value={model.id}>{model.label} · {model.id}</option>
-                    ))}
-                  </select>
-                </label>
+                <Select
+                  label="Local Model"
+                  value={overrideModelId}
+                  onChange={(event) => setOverrideModelId(event.target.value)}
+                  options={localModelOptions}
+                  className="bg-surface-1"
+                />
               ) : (
-                <label className="space-y-2">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">Model ID</span>
-                  <input
-                    value={overrideModelId}
-                    onChange={(event) => setOverrideModelId(event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white outline-none"
-                    placeholder={overrideProvider === 'openai' ? 'gpt-5.4-mini' : overrideProvider === 'anthropic' ? 'claude-sonnet-4-5' : 'gemini-2.5-pro'}
-                  />
-                </label>
+                <Input
+                  label="Model ID"
+                  value={overrideModelId}
+                  onChange={(event) => setOverrideModelId(event.target.value)}
+                  placeholder={
+                    overrideProvider === 'openai'
+                      ? 'gpt-5.4-mini'
+                      : overrideProvider === 'anthropic'
+                        ? 'claude-sonnet-4-5'
+                        : 'gemini-2.5-pro'
+                  }
+                  className="bg-surface-1"
+                />
               )}
+
+              {formError ? (
+                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                  {formError}
+                </div>
+              ) : null}
+
               <div className="grid gap-3 md:grid-cols-2">
-                <button
+                <Button
                   type="submit"
-                  disabled={busy}
-                  className="inline-flex items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  variant="brand"
+                  size="lg"
+                  loading={busy}
+                  icon={<Sparkles size={15} />}
                 >
-                  {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />}
                   Save
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="lg"
                   disabled={busy}
                   onClick={() => void onSavePrismOverride(null)}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-[11px] font-black uppercase tracking-[0.22em] text-white/72 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                 >
                   Use Automatic
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
+          </Card>
         </section>
       ) : null}
     </div>
@@ -509,39 +689,54 @@ export function SettingsView({
 const REMOTE_PROVIDER_LABELS: Array<{ id: RemoteProviderId; label: string }> = [
   { id: 'openai', label: 'OpenAI' },
   { id: 'anthropic', label: 'Anthropic' },
-  { id: 'google', label: 'Google' }
+  { id: 'google', label: 'Google' },
 ];
 
-function InfoChip({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">
-      {label} · {value}
-    </div>
-  );
+function resolveRuntimeDotStatus(
+  runtimeReady: boolean,
+  ollamaStatus: OllamaRuntimeStatus | null,
+  loading: boolean,
+): React.ComponentProps<typeof StatusDot>['status'] {
+  if (loading) return 'busy';
+  if (!runtimeReady) return 'error';
+  if (ollamaStatus?.running) return 'online';
+  return 'offline';
 }
 
-function resolveModelTone(model: { status?: string; installed?: boolean }) {
+function resolveRuntimeStatusLabel(
+  runtimeReady: boolean,
+  ollamaStatus: OllamaRuntimeStatus | null,
+  loading: boolean,
+) {
+  if (loading) return 'Checking runtime';
+  if (!runtimeReady) return 'Runtime unavailable';
+  if (ollamaStatus?.running) return 'Ollama running';
+  return 'Ollama stopped';
+}
+
+function resolveModelVariant(
+  model: { status?: string; installed?: boolean },
+): NonNullable<React.ComponentProps<typeof Badge>['variant']> {
   if ('status' in model) {
-    if (model.status === 'installed') return 'bg-emerald-400/10 text-emerald-200';
-    if (model.status === 'installing') return 'bg-sky-400/10 text-sky-200';
-    if (model.status === 'error') return 'bg-red-400/10 text-red-200';
+    if (model.status === 'installed') return 'success';
+    if (model.status === 'installing') return 'warning';
+    if (model.status === 'error') return 'error';
   }
-  return model.installed ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/8 text-white/45';
+
+  return model.installed ? 'success' : 'default';
 }
 
 function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 }
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/5 px-4 py-4">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{label}</div>
+    <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+        {label}
+      </div>
       <div className="mt-2 text-sm leading-6 text-white/72">{value}</div>
-    </div>
+    </Card>
   );
 }

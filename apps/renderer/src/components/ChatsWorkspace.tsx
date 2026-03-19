@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bot, BrainCircuit } from 'lucide-react';
+import { Bot, BrainCircuit, MessageSquare } from 'lucide-react';
 import type { AgentSpec, ChatThread, GroupSpec } from '@supreme/shared';
 import type { AgentChatInput, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
 import { GroupChatView, PersistentChatbotChatView } from './chat';
+import { SectionLabel, EmptyState } from './ui';
+import { motion } from 'framer-motion';
 
 export interface ChatTarget {
   type: 'agent' | 'group';
@@ -127,14 +129,14 @@ export function ChatsWorkspace({
       : { label: 'Empty', tone: 'warning' as const };
 
   return (
-    <div className="grid min-h-full gap-3 xl:grid-cols-[248px_minmax(0,1fr)]">
-      <aside className="overflow-hidden rounded-[28px] border border-white/10 bg-[#0d1012]">
-        <div className="h-14 border-b border-white/8 px-4">
+    <div className="flex min-h-full gap-3">
+      <aside className="w-64 shrink-0 overflow-hidden rounded-2xl border-r border-white/[0.06] bg-surface-1 flex flex-col">
+        <div className="h-14 border-b border-white/[0.06] px-4 shrink-0">
           <div className="flex h-full items-center">
-            <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">Chats</div>
           </div>
         </div>
-        <div className="space-y-4 p-3">
+        <div className="space-y-6 p-3 overflow-y-auto custom-scrollbar flex-1">
           <EntityListSection<AgentSpec>
             title="Chatbots"
             items={snapshot.agents}
@@ -164,18 +166,14 @@ export function ChatsWorkspace({
         </div>
       </aside>
 
-      <div className="min-w-0 space-y-4">
+      <div className="min-w-0 flex-1 space-y-4">
         {!selectedTarget ? (
-          <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center rounded-[28px] border border-white/10 bg-[#0d1012] px-8 text-center">
-            <div className="max-w-md">
-              <div className="text-[9px] font-black uppercase tracking-[0.22em] text-white/38">Chats</div>
-              <div className="mt-3 text-lg font-semibold text-white">Open a chat.</div>
-              <div className="mt-3 text-sm leading-6 text-white/45">
-                {snapshot.agents.length === 0 && snapshot.groups.length === 0
-                  ? 'Nothing here yet.'
-                  : 'Pick one from the left.'}
-              </div>
-            </div>
+          <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center rounded-2xl border border-white/[0.08] bg-surface-2 px-8 text-center">
+            <EmptyState
+              icon={<MessageSquare className="text-white/40" size={24} />}
+              title="Open a chat."
+              description={snapshot.agents.length === 0 && snapshot.groups.length === 0 ? 'Nothing here yet.' : 'Pick one from the left.'}
+            />
           </div>
         ) : selectedAgent ? (
           <>
@@ -278,32 +276,39 @@ function EntityListSection<T extends { id: string }>({
 }) {
   return (
     <div>
-      <div className="mb-2 px-1.5 text-[8px] font-black uppercase tracking-[0.26em] text-white/24">{title}</div>
+      <SectionLabel className="mb-3 px-1.5">{title}</SectionLabel>
       {items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/12 bg-black/20 px-3 py-4 text-xs leading-5 text-white/45">
+        <div className="rounded-xl border border-dashed border-white/[0.08] bg-surface-3 px-3 py-4 text-xs leading-5 text-white/45">
           {emptyText}
         </div>
       ) : (
-        <div className="space-y-0.5">
-          {items.map((item) => {
+        <div className="space-y-1">
+          {items.map((item, index) => {
             const active = item.id === selectedId;
             return (
-              <button
+              <motion.button
                 key={item.id}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05, duration: 0.2 }}
                 type="button"
                 onClick={() => onSelect(item)}
-                className={`w-full rounded-xl border px-3 py-2 text-left transition ${active ? 'border-white/12 bg-white text-black' : 'border-transparent bg-transparent text-white hover:border-white/10 hover:bg-white/5'}`}
+                className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  active 
+                    ? 'border-white/[0.12] bg-white/[0.04] text-white' 
+                    : 'border-transparent bg-surface-3 text-white hover:border-white/[0.08] hover:bg-surface-4'
+                }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`rounded-lg border px-2 py-2 ${active ? 'border-black/10 bg-black/5 text-black' : 'border-white/10 bg-white/5 text-white/50'}`}>
+                  <div className={`rounded-lg border px-2 py-2 shrink-0 ${active ? 'border-brand/30 bg-brand/10 text-brand-light' : 'border-white/[0.08] bg-white/[0.04] text-white/50'}`}>
                     {icon}
                   </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-[10px] font-black uppercase tracking-[0.08em]">{getLabel(item)}</div>
-                    <div className={`mt-0.5 line-clamp-2 text-[10px] leading-4 ${active ? 'text-black/65' : 'text-white/42'}`}>{getBody(item)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/90">{getLabel(item)}</div>
+                    <div className={`mt-0.5 line-clamp-2 text-[11px] leading-4 ${active ? 'text-white/70' : 'text-white/40'}`}>{getBody(item)}</div>
                   </div>
                 </div>
-              </button>
+              </motion.button>
             );
           })}
         </div>

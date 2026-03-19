@@ -1,6 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AtSign, Send, Trash2 } from 'lucide-react';
 import type { ChatTranscriptMessage, GroupChatIdentity, MentionableParticipant } from './types';
+import { ChatMessage } from './ChatMessage';
+import { TypingIndicator } from './TypingIndicator';
+import { EmptyChat } from './EmptyChat';
+import { Button, Badge } from '../ui';
+import { motion } from 'framer-motion';
 
 export interface GroupChatViewProps {
   group: GroupChatIdentity;
@@ -34,6 +39,13 @@ export function GroupChatView({
   const [draft, setDraft] = useState('');
   const [mentionRange, setMentionRange] = useState<MentionRange | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [transcript.length, busy]);
 
   const lastManualRoute = useMemo(
     () => [...transcript].reverse().find((message) => message.role === 'user' && message.mentions?.length)?.mentions ?? [],
@@ -115,109 +127,102 @@ export function GroupChatView({
   };
 
   return (
-    <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0d1012]">
-      <header className="border-b border-white/8 px-4 py-3.5">
+    <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-surface-2">
+      <header className="border-b border-white/[0.06] bg-surface-1 px-4 py-3.5 shrink-0">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-sm">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-surface-3 text-sm">
               👥
             </div>
             <div className="min-w-0">
-              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-white/38">Group</div>
-              <h1 className="mt-1 truncate text-sm font-black uppercase tracking-[0.14em] text-white">{group.name}</h1>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/40">Group</div>
+              <h1 className="mt-0.5 truncate text-sm font-semibold text-white/90">{group.name}</h1>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {group.runtimeStatus ? <StatusBadge {...group.runtimeStatus} /> : null}
             {group.threadStatus ? <StatusBadge {...group.threadStatus} /> : null}
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="xs"
               onClick={() => onResetThread?.()}
               disabled={!onResetThread || busy}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+              icon={<Trash2 size={12} />}
             >
-              <Trash2 size={14} />
               Reset
-            </button>
+            </Button>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <RouteBadge label="Manual" active={group.routingMode !== 'auto'} />
           <RouteBadge label="Auto" active={group.routingMode === 'auto'} />
-          <span className="text-[10px] text-white/38">
+          <span className="text-[11px] text-white/40 ml-1">
             {group.routingMode === 'auto' ? 'Auto picks the best fit. Use @name to direct.' : 'Use @name to route replies.'}
           </span>
           {lastManualRoute.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[8px] font-black uppercase tracking-[0.18em] text-white/30">Last</span>
+            <div className="flex flex-wrap items-center gap-2 ml-4 border-l border-white/[0.08] pl-4">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/30">Last</span>
               {lastManualRoute.slice(0, 4).map((mention) => (
-                <span
-                  key={mention}
-                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/62"
-                >
+                <Badge key={mention} variant="default" size="xs">
                   @{mention}
-                </span>
+                </Badge>
               ))}
             </div>
           ) : null}
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar scroll-smooth">
         {transcript.length === 0 ? (
-          <div className="flex h-full min-h-[240px] items-center justify-center rounded-[24px] border border-dashed border-white/12 bg-black/20 px-6 text-center text-sm leading-6 text-white/45">
-            {busy ? 'Sending…' : emptyState}
-          </div>
+          <EmptyChat 
+            agentName={group.name}
+            agentRole={`Group with ${group.memberCount} members`}
+            onSuggestionClick={(s) => setDraft(s)}
+          />
         ) : (
-          <div className="space-y-2.5">
+          <motion.div layout className="space-y-4">
             {transcript.map((message) => (
-              <article
-                key={message.id}
-                className={`rounded-[24px] border px-4 py-3 ${
-                  message.role === 'user'
-                    ? 'ml-auto max-w-[78%] border-white/10 bg-white text-black'
-                    : message.role === 'assistant'
-                      ? 'max-w-[84%] border-white/10 bg-black/30'
-                      : 'max-w-[84%] border-white/10 bg-white/5'
-                }`}
-              >
-                <div className={`mb-2 flex flex-wrap items-center gap-2 text-[9px] font-black uppercase tracking-[0.16em] ${message.role === 'user' ? 'text-black/45' : 'text-white/38'}`}>
-                  <span>{message.label || message.role}</span>
-                  {message.timestamp ? <span>{message.timestamp}</span> : null}
-                  {message.route ? (
-                    <span className={`rounded-full border px-2 py-0.5 text-[8px] ${message.role === 'user' ? 'border-black/10 bg-black/5 text-black/50' : 'border-white/10 bg-white/5 text-white/50'}`}>
-                      {message.route.mode}
-                    </span>
-                  ) : null}
-                </div>
-                <div className={`whitespace-pre-wrap text-sm leading-6 ${message.role === 'user' ? 'text-black/82' : 'text-white/78'}`}>{message.text}</div>
+              <div key={message.id} className="flex flex-col">
+                <ChatMessage
+                  role={message.role as any}
+                  text={message.text}
+                  agentName={message.label || (message.role !== 'user' ? group.name : undefined)}
+                  timestamp={message.timestamp}
+                  mode={message.route?.mode}
+                />
                 {message.route?.reason ? (
-                  <div className={`mt-2 text-[10px] uppercase tracking-[0.16em] ${message.role === 'user' ? 'text-black/45' : 'text-white/35'}`}>
-                    {message.route.reason}
+                  <div className={`mt-1 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} px-2`}>
+                    <Badge variant="info" size="xs">
+                      {message.route.reason}
+                    </Badge>
                   </div>
                 ) : null}
-              </article>
+              </div>
             ))}
-          </div>
+            {busy && (
+              <TypingIndicator agentName="Group" />
+            )}
+          </motion.div>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t border-white/8 px-4 pb-4 pt-3">
-        <div className="mx-auto flex max-w-[46rem] flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white/48">
+      <form onSubmit={handleSubmit} className="border-t border-white/[0.06] bg-surface-2 px-6 pb-6 pt-4 shrink-0">
+        <div className="mx-auto flex max-w-[46rem] flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-surface-3 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-white/50">
               <AtSign size={12} />
               Route
             </div>
             {members.length === 0 ? (
-              <span className="text-[11px] text-white/35">No members.</span>
+              <span className="text-[11px] text-white/40 ml-1">No members.</span>
             ) : (
               members.map((member) => (
                 <button
                   key={member.id}
                   type="button"
                   onClick={() => insertMention(member)}
-                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
+                  className="rounded-full border border-white/[0.08] bg-surface-3 px-2.5 py-1 text-[11px] font-medium text-white/70 transition-colors hover:border-brand/40 hover:bg-brand/10 hover:text-brand-light"
                 >
                   @{member.label}
                 </button>
@@ -225,28 +230,37 @@ export function GroupChatView({
             )}
           </div>
 
-          <div className="flex items-end gap-2.5 rounded-[26px] border border-white/10 bg-[#17191d] px-3 py-2.5">
+          <div className="flex items-end gap-3 rounded-2xl border border-white/[0.08] bg-surface-3 px-3 py-2.5 shadow-sm transition-colors focus-within:border-brand/50 focus-within:bg-surface-4 relative">
             <div className="flex-1 space-y-2.5">
               <textarea
                 ref={textareaRef}
                 value={draft}
                 onChange={handleChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (draft.trim() && !busy && onSendMessage) {
+                      const event = new Event('submit', { bubbles: true, cancelable: true });
+                      e.currentTarget.form?.dispatchEvent(event);
+                    }
+                  }
+                }}
                 rows={1}
-                className="max-h-[100px] min-h-[42px] w-full resize-none bg-transparent px-1 py-2 text-sm leading-6 text-white outline-none placeholder:text-white/28"
+                className="max-h-[160px] min-h-[40px] w-full resize-none bg-transparent px-2 py-2 text-sm leading-relaxed text-white/90 outline-none placeholder:text-white/30"
                 placeholder={placeholder}
               />
               {mentionRange && mentionMatches.length > 0 ? (
-                <div className="rounded-2xl border border-white/8 bg-black/30 p-3">
-                  <div className="flex flex-wrap gap-2">
+                <div className="absolute bottom-full left-0 mb-2 w-full max-w-sm rounded-xl border border-white/[0.10] bg-surface-4 p-2 shadow-xl z-10">
+                  <div className="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar">
                     {mentionMatches.slice(0, 6).map((member) => (
                       <button
                         key={member.id}
                         type="button"
                         onClick={() => insertMention(member)}
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm text-white/78 transition hover:border-white/20 hover:text-white"
+                        className="rounded-lg border border-transparent px-3 py-2 text-left transition-colors hover:bg-white/[0.06] hover:border-white/[0.08]"
                       >
-                        <div className="font-semibold">{member.label}</div>
-                        {member.subtitle ? <div className="text-[10px] uppercase tracking-[0.16em] text-white/38">{member.subtitle}</div> : null}
+                        <div className="text-sm font-medium text-white/90">{member.label}</div>
+                        {member.subtitle ? <div className="text-[10px] uppercase tracking-[0.04em] text-white/40 mt-0.5">{member.subtitle}</div> : null}
                       </button>
                     ))}
                   </div>
@@ -254,18 +268,15 @@ export function GroupChatView({
               ) : null}
             </div>
 
-            <button
+            <Button
               type="submit"
+              variant={draft.trim() ? "brand" : "secondary"}
+              size="sm"
               disabled={busy || !onSendMessage || !draft.trim()}
-              className={`mb-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
-                draft.trim()
-                  ? 'bg-white text-black hover:bg-white/90'
-                  : 'bg-white/5 text-white/25'
-              } disabled:cursor-not-allowed disabled:opacity-60`}
+              icon={<Send size={15} />}
+              className="mb-0.5 !px-2.5"
               title={sendLabel}
-            >
-              <Send size={15} />
-            </button>
+            />
           </div>
         </div>
       </form>
@@ -274,25 +285,19 @@ export function GroupChatView({
 }
 
 function StatusBadge({ label, tone }: NonNullable<GroupChatIdentity['runtimeStatus']>) {
-  const className = tone === 'ready'
-    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+  const variant = tone === 'ready'
+    ? 'success'
     : tone === 'active'
-      ? 'border-sky-400/20 bg-sky-400/10 text-sky-200'
-      : 'border-amber-400/20 bg-amber-400/10 text-amber-200';
+      ? 'info'
+      : 'warning';
 
-  return <div className={`rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${className}`}>{label}</div>;
+  return <Badge variant={variant} size="xs">{label}</Badge>;
 }
 
 function RouteBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
-    <div
-      className={`rounded-full border px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${
-        active
-          ? 'border-white/12 bg-white text-black'
-          : 'border-white/10 bg-white/5 text-white/40'
-      }`}
-    >
+    <Badge variant={active ? 'brand' : 'outline'} size="xs">
       {label}
-    </div>
+    </Badge>
   );
 }
