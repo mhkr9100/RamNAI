@@ -75,7 +75,7 @@ export function DashboardView({ snapshot, onNavigate }: DashboardViewProps) {
               <ArrowRight size={14} className="text-white/20 group-hover:text-white/50 transition-colors" />
             </div>
             <p className="text-2xl font-semibold text-white">{totalAgents}</p>
-            <p className="text-xs text-white/40 mt-0.5">Chatbots</p>
+            <p className="text-xs text-white/40 mt-0.5">Agents</p>
           </Card>
         </motion.button>
 
@@ -116,7 +116,7 @@ export function DashboardView({ snapshot, onNavigate }: DashboardViewProps) {
           <button type="button" onClick={() => onNavigate('prism')} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-3 text-left hover:border-white/[0.10] hover:bg-surface-4 transition-colors">
             <Bot size={16} className="text-[#38bdf8] shrink-0" />
             <div>
-              <p className="text-sm font-medium text-white/80">Create Chatbot</p>
+              <p className="text-sm font-medium text-white/80">Create Agent</p>
               <p className="text-[11px] text-white/30">Design from an objective</p>
             </div>
           </button>

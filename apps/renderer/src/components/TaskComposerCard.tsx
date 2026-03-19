@@ -351,7 +351,7 @@ export function TaskComposerCard({
                 Target
               </div>
               <div className="text-sm text-white/70">
-                {target.type === 'prism' ? 'Prism' : `Chatbot ${target.agentId}`}
+                {target.type === 'prism' ? 'Prism' : `Agent ${target.agentId}`}
               </div>
             </div>
             <Button

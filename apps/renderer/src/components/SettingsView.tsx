@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, FlaskConical, KeyRound, Sparkles, Trash2 } from 'lucide-react';
+import { Download, FlaskConical, KeyRound, Trash2 } from 'lucide-react';
 import type {
   OllamaRuntimeStatus,
   PrismProviderOverrideSettings,
@@ -55,7 +55,6 @@ interface SettingsViewProps {
 const sections: Array<{ id: SettingsSection; label: string }> = [
   { id: 'runtime', label: 'Local' },
   { id: 'providers', label: 'Accounts' },
-  { id: 'prism', label: 'Prism' },
 ];
 
 const listVariants = {
@@ -98,8 +97,6 @@ export function SettingsView({
   const tokenRef = useRef<HTMLInputElement | null>(null);
   const defaultRef = useRef<HTMLInputElement | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [overrideProvider, setOverrideProvider] = useState<ProviderId>('ollama');
-  const [overrideModelId, setOverrideModelId] = useState('');
 
   const installedModelCount = useMemo(
     () => models.filter((model) => model.installed).length,
@@ -116,40 +113,6 @@ export function SettingsView({
     [],
   );
 
-  const overrideProviderOptions = useMemo(
-    () => [{ value: 'ollama', label: 'Ollama' }, ...providerOptions],
-    [providerOptions],
-  );
-
-  const localModelOptions = useMemo(
-    () =>
-      installedModels.length === 0
-        ? [{ value: '', label: 'No installed local models', disabled: true }]
-        : installedModels.map((model) => ({
-            value: model.id,
-            label: `${model.label} / ${model.id}`,
-          })),
-    [installedModels],
-  );
-
-  const activeProviderSummary = useMemo(
-    () =>
-      REMOTE_PROVIDER_LABELS.map(
-        (provider) => `${provider.label}: ${providerSelections[provider.id] ?? 'none'}`,
-      ).join(' | '),
-    [providerSelections],
-  );
-
-  useEffect(() => {
-    if (prismOverride) {
-      setOverrideProvider(prismOverride.provider);
-      setOverrideModelId(prismOverride.modelId);
-      return;
-    }
-
-    setOverrideProvider('ollama');
-    setOverrideModelId(installedModels[0]?.id ?? '');
-  }, [installedModels, prismOverride]);
 
   const handleSaveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -185,21 +148,6 @@ export function SettingsView({
 
     if (apiKeyRef.current) apiKeyRef.current.value = '';
     if (tokenRef.current) tokenRef.current.value = '';
-  };
-
-  const handleSavePrismOverride = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const modelId = overrideModelId.trim();
-    if (!modelId) {
-      setFormError('Prism override needs a model id.');
-      return;
-    }
-
-    setFormError(null);
-    await onSavePrismOverride({
-      provider: overrideProvider,
-      modelId,
-    });
   };
 
   return (
@@ -346,7 +294,7 @@ export function SettingsView({
           <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
             <CardHeader
               title="Starter Models"
-              subtitle="Install the default local stack Supreme Raman AI expects."
+              subtitle="Install the default local stack RamN AI expects."
               icon={<Download size={16} className="text-brand-light" />}
             />
 
@@ -575,113 +523,7 @@ export function SettingsView({
         </section>
       ) : null}
 
-      {activeSection === 'prism' ? (
-        <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
-            <CardHeader
-              title="Prism Routing"
-              subtitle="See the current override and which provider profiles are selected."
-              icon={<Sparkles size={16} className="text-brand-light" />}
-            />
-
-            <CardSection label="Overview" className="mt-5">
-              <div className="space-y-3">
-                <InfoCard
-                  label="Current"
-                  value={prismOverride ? `${prismOverride.provider} / ${prismOverride.modelId}` : 'Automatic'}
-                />
-                <InfoCard
-                  label="Accounts"
-                  value={providerProfiles.length ? 'Available' : 'None'}
-                />
-                <InfoCard label="Active" value={activeProviderSummary} />
-              </div>
-            </CardSection>
-          </Card>
-
-          <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
-            <CardHeader
-              title="Prism Model"
-              subtitle="Pin Prism to one provider and model, or keep it on automatic routing."
-              icon={<Sparkles size={16} className="text-brand-light" />}
-            />
-
-            <form onSubmit={handleSavePrismOverride} className="mt-5 space-y-4">
-              <CardSection label="Guidance">
-                <div className="rounded-2xl border border-white/[0.08] bg-surface-3 p-4 text-sm leading-7 text-white/62">
-                  Leave this on automatic unless you want Prism to stay on one model.
-                </div>
-              </CardSection>
-
-              <Select
-                label="Provider"
-                value={overrideProvider}
-                onChange={(event) => {
-                  const provider = event.target.value as ProviderId;
-                  const firstInstalledModel = installedModels[0];
-                  setOverrideProvider(provider);
-                  if (provider === 'ollama' && firstInstalledModel) {
-                    setOverrideModelId((current) => current || firstInstalledModel.id);
-                  }
-                }}
-                options={overrideProviderOptions}
-                className="bg-surface-1"
-              />
-
-              {overrideProvider === 'ollama' ? (
-                <Select
-                  label="Local Model"
-                  value={overrideModelId}
-                  onChange={(event) => setOverrideModelId(event.target.value)}
-                  options={localModelOptions}
-                  className="bg-surface-1"
-                />
-              ) : (
-                <Input
-                  label="Model ID"
-                  value={overrideModelId}
-                  onChange={(event) => setOverrideModelId(event.target.value)}
-                  placeholder={
-                    overrideProvider === 'openai'
-                      ? 'gpt-5.4-mini'
-                      : overrideProvider === 'anthropic'
-                        ? 'claude-sonnet-4-5'
-                        : 'gemini-2.5-pro'
-                  }
-                  className="bg-surface-1"
-                />
-              )}
-
-              {formError ? (
-                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
-                  {formError}
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <Button
-                  type="submit"
-                  variant="brand"
-                  size="lg"
-                  loading={busy}
-                  icon={<Sparkles size={15} />}
-                >
-                  Save
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="lg"
-                  disabled={busy}
-                  onClick={() => void onSavePrismOverride(null)}
-                >
-                  Use Automatic
-                </Button>
-              </div>
-            </form>
-          </Card>
-        </section>
-      ) : null}
+      {/* Prism config has been moved to Prism's own profile panel */}
     </div>
   );
 }

@@ -10,11 +10,14 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  Users,
   Wand2,
 } from 'lucide-react';
 import type { PrismMode } from '@supreme/shared';
+import type { PrismProviderOverrideSettings, ProviderModelPreset } from '@supreme/shared';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
+import { PrismProfilePanel } from './PrismProfilePanel';
 import { ChatMessage } from './chat/ChatMessage';
 import { TypingIndicator } from './chat/TypingIndicator';
 import { Button, Badge, Card, Input, SectionLabel, Divider, EmptyState } from './ui';
@@ -33,6 +36,8 @@ interface PrismWorkspaceProps {
   onSend: (mode: PrismMode, message: string) => Promise<void>;
   onCreateTask: (input: TaskCreateInput) => Promise<void>;
   onClearTranscript: () => void;
+  prismOverride?: PrismProviderOverrideSettings | null;
+  onSavePrismOverride?: (override: PrismProviderOverrideSettings | null) => Promise<void>;
 }
 
 const modes: Array<{
@@ -42,9 +47,9 @@ const modes: Array<{
   description: string;
 }> = [
   { id: 'ask', label: 'ASK PRISM', icon: Sparkles, description: 'Strategy, prompts, architecture' },
-  { id: 'create', label: 'CREATE CHATBOTS', icon: Wand2, description: 'Design from an objective' },
-  { id: 'task', label: 'Task', icon: Bot, description: 'Schedule a job' },
-  { id: 'council', label: 'Council', icon: Bot, description: 'Multi-model council' },
+  { id: 'create', label: 'CREATE AGENTS', icon: Wand2, description: 'Design from an objective' },
+  { id: 'task', label: 'SCHEDULE', icon: Bot, description: 'Queue a background job' },
+  { id: 'council', label: 'COUNCIL', icon: Users, description: 'Multi-model debate & consensus' },
 ];
 
 export function PrismWorkspace({
@@ -54,6 +59,8 @@ export function PrismWorkspace({
   onSend,
   onCreateTask,
   onClearTranscript,
+  prismOverride,
+  onSavePrismOverride,
 }: PrismWorkspaceProps) {
   const [activeMode, setActiveMode] = useState<PrismMode | 'task' | 'council'>('ask');
   const [message, setMessage] = useState('');
@@ -65,6 +72,7 @@ export function PrismWorkspace({
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -188,6 +196,14 @@ export function PrismWorkspace({
             >
               Details
             </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={<Sparkles size={13} />}
+              onClick={() => setShowProfile(true)}
+            >
+              Profile
+            </Button>
           </div>
         </header>
 
@@ -263,7 +279,7 @@ export function PrismWorkspace({
                     <Card variant="ghost" padding="md" animate={false}>
                       <SectionLabel className="mb-3">Workspace</SectionLabel>
                       <div className="grid grid-cols-2 gap-2">
-                        <StatCard label="Chatbots" value={snapshot.agents.length} />
+                        <StatCard label="Agents" value={snapshot.agents.length} />
                         <StatCard label="Groups" value={snapshot.groups.length} />
                         <StatCard label="Tasks" value={snapshot.tasks.length} />
                         <StatCard label="UserMap" value={countNodes(snapshot.userMap)} />
@@ -309,9 +325,20 @@ export function PrismWorkspace({
         {/* Task/Council composer */}
         {activeMode === 'task' || activeMode === 'council' ? (
           <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+            {activeMode === 'council' && (
+              <div className="mb-4 rounded-2xl border border-[#a78bfa]/15 bg-[#a78bfa]/[0.04] px-5 py-4">
+                <div className="flex items-center gap-2.5 mb-2">
+                  <Users size={16} className="text-[#a78bfa]" />
+                  <span className="text-sm font-semibold text-[#a78bfa]">Multi-Model Council</span>
+                </div>
+                <p className="text-[12px] leading-relaxed text-white/45">
+                  Multiple models evaluate the same brief independently, critique each other, and synthesize the strongest recommendation. Use this for high-stakes decisions.
+                </p>
+              </div>
+            )}
             <TaskComposerCard
-              title={activeMode === 'task' ? 'New Task' : 'New Council'}
-              subtitle=""
+              title={activeMode === 'task' ? 'Schedule Task' : 'Council Session'}
+              subtitle={activeMode === 'task' ? 'Queue a background job for Prism or an agent.' : 'Configure models, objective, and schedule for the council.'}
               target={{ type: 'prism' }}
               defaultMode={activeMode}
               models={snapshot.models}
@@ -332,11 +359,11 @@ export function PrismWorkspace({
                       <Wand2 size={22} className="text-brand-light" />
                     )
                   }
-                  title={activeMode === 'ask' ? 'Ask Prism' : 'Create Chatbots'}
+                  title={activeMode === 'ask' ? 'Ask Prism' : 'Create Agents'}
                   description={
                     activeMode === 'ask'
                       ? 'Get help with objectives, workflows, prompts, and system design.'
-                      : 'Design a focused chatbot or group from one clear objective.'
+                      : 'Design a focused agent or group from one clear objective.'
                   }
                   suggestions={
                     activeMode === 'ask'
@@ -349,14 +376,14 @@ export function PrismWorkspace({
                             label: 'Analyze my UserMap context',
                             onClick: () =>
                               setMessage(
-                                'Analyze my UserMap and suggest what chatbots would be useful.',
+                                'Analyze my UserMap and suggest what agents would be useful.',
                               ),
                           },
                           {
                             label: 'How does Prism work?',
                             onClick: () =>
                               setMessage(
-                                'Explain how Prism creates and manages chatbot blueprints.',
+                                'Explain how Prism creates and manages agent blueprints.',
                               ),
                           },
                         ]
@@ -365,14 +392,14 @@ export function PrismWorkspace({
                             label: 'Research assistant for my field',
                             onClick: () =>
                               setMessage(
-                                'Create a research assistant that can search the web and analyze findings based on my profile.',
+                                'Create a research agent that can search the web and analyze findings based on my profile.',
                               ),
                           },
                           {
-                            label: 'Daily briefing bot',
+                            label: 'Daily briefing agent',
                             onClick: () =>
                               setMessage(
-                                'Create a chatbot that gives me a daily briefing on topics relevant to my work.',
+                                'Create an agent that gives me a daily briefing on topics relevant to my work.',
                               ),
                           },
                           {
@@ -416,7 +443,7 @@ export function PrismWorkspace({
                       placeholder={
                         activeMode === 'ask'
                           ? 'Ask Prism anything...'
-                          : 'Describe the chatbot you want to create...'
+                          : 'Describe the agent you want to create...'
                       }
                     />
                   </div>
@@ -443,6 +470,17 @@ export function PrismWorkspace({
           </>
         )}
       </section>
+      {/* Prism Profile Panel */}
+      {onSavePrismOverride && (
+        <PrismProfilePanel
+          open={showProfile}
+          onClose={() => setShowProfile(false)}
+          prismOverride={prismOverride ?? null}
+          models={snapshot.models}
+          onSavePrismOverride={onSavePrismOverride}
+          busy={busy}
+        />
+      )}
     </div>
   );
 }

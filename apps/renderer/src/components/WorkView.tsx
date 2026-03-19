@@ -367,7 +367,7 @@ export function WorkView({
                         <Badge variant="default">{item.type}</Badge>
                         <Badge variant="outline">
                           {item.sourceAgentId
-                            ? `Routes to ${agentLookup.get(item.sourceAgentId)?.name ?? 'chatbot'}`
+                            ? `Routes to ${agentLookup.get(item.sourceAgentId)?.name ?? 'agent'}`
                             : 'Routes to Prism'}
                         </Badge>
                       </div>
@@ -503,7 +503,7 @@ function describeTaskTarget(task: TaskSpec, agentLookup: Map<string, AgentSpec>)
     return 'Prism';
   }
 
-  return agentLookup.get(task.target.agentId)?.name ?? `Chatbot ${task.target.agentId}`;
+  return agentLookup.get(task.target.agentId)?.name ?? `Agent ${task.target.agentId}`;
 }
 
 function StatusBadge({ status }: { status: TaskSpec['status'] | WorkItem['status'] }) {

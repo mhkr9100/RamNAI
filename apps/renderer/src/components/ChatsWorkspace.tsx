@@ -138,10 +138,10 @@ export function ChatsWorkspace({
         </div>
         <div className="space-y-6 p-3 overflow-y-auto custom-scrollbar flex-1">
           <EntityListSection<AgentSpec>
-            title="Chatbots"
+            title="Agents"
             items={snapshot.agents}
             selectedId={selectedTarget?.type === 'agent' ? selectedTarget.id : null}
-            emptyText="No chatbots."
+            emptyText="No agents yet."
             getLabel={(agent) => agent.name}
             getBody={(agent) => agent.description}
             icon={<Bot size={16} />}
@@ -154,7 +154,7 @@ export function ChatsWorkspace({
             title="Groups"
             items={snapshot.groups}
             selectedId={selectedTarget?.type === 'group' ? selectedTarget.id : null}
-            emptyText="No groups."
+            emptyText="No groups yet."
             getLabel={(group) => group.name}
             getBody={(group) => group.description || `${group.memberAgentIds.length} members`}
             icon={<BrainCircuit size={16} />}

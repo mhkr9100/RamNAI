@@ -26,7 +26,7 @@ export function PersistentChatbotChatView({
   transcript,
   busy = false,
   emptyState = 'No messages yet.',
-  placeholder = 'Message this chatbot',
+  placeholder = 'Message this agent...',
   sendLabel = 'Send',
   taskLabel = 'Task',
   onSendMessage,

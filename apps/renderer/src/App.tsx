@@ -384,7 +384,7 @@ export default function App() {
               )}
               {activeView === 'prism' && (
                 <ErrorBoundary viewName="Prism">
-                  <PrismWorkspace snapshot={snapshot} messages={prismStore.messages} busy={prismStore.busy} onSend={handlePrismSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearPrismTranscript} />
+                  <PrismWorkspace snapshot={snapshot} messages={prismStore.messages} busy={prismStore.busy} onSend={handlePrismSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearPrismTranscript} prismOverride={settingsStore.prismOverride} onSavePrismOverride={settingsStore.savePrismOverride} />
                 </ErrorBoundary>
               )}
               {activeView === 'chats' && (
