@@ -120,46 +120,8 @@ export function OnboardingFlow({
                   transition={{ delay: 0.3 }}
                   className="text-white/60 mb-10 text-lg"
                 >
-                  Your private, local AI workspace
+                  Let&apos;s set up your workspace
                 </motion.p>
-
-                <motion.div 
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.4 }}
-                  className="flex flex-col gap-3 w-full mb-10 text-left"
-                >
-                  {/* Since we don't have exactly Card.tsx props, rendering simple HTML equivalent for ghost cards or assuming reasonable defaults */}
-                  <div className="p-4 flex items-center gap-4 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
-                    <div className="w-10 h-10 rounded-xl bg-[#7c5cfc]/10 flex items-center justify-center shrink-0">
-                      <Shield className="w-5 h-5 text-[#c4b5fd]" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-white/90 text-sm">Privacy-first</h3>
-                      <p className="text-white/50 text-xs mt-0.5">Your data stays strictly on your device.</p>
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 flex items-center gap-4 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
-                    <div className="w-10 h-10 rounded-xl bg-[#7c5cfc]/10 flex items-center justify-center shrink-0">
-                      <BrainCircuit className="w-5 h-5 text-[#c4b5fd]" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-white/90 text-sm">Prism AI Architect</h3>
-                      <p className="text-white/50 text-xs mt-0.5">Build and manage multi-agent workflows.</p>
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 flex items-center gap-4 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
-                    <div className="w-10 h-10 rounded-xl bg-[#7c5cfc]/10 flex items-center justify-center shrink-0">
-                      <Box className="w-5 h-5 text-[#c4b5fd]" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-white/90 text-sm">Bring Your Own Model</h3>
-                      <p className="text-white/50 text-xs mt-0.5">Use local models or favorite cloud providers.</p>
-                    </div>
-                  </div>
-                </motion.div>
 
                 <motion.div
                   initial={{ y: 20, opacity: 0 }}

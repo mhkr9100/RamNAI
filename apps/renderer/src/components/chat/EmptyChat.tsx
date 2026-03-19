@@ -10,8 +10,8 @@ export interface EmptyChatProps {
 }
 
 export const EmptyChat: React.FC<EmptyChatProps> = ({
-  agentName = 'Supreme Raman AI',
-  agentRole = 'Your intelligent coding assistant',
+  agentName = 'RamN AI',
+  agentRole = 'Start a conversation',
   suggestions = [
     "What can you help me with?",
     "Tell me about your capabilities",

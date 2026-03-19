@@ -1360,6 +1360,66 @@ async function openArtifact(artifactId: string) {
   return { ok: true as const };
 }
 
+function checkForAppUpdates() {
+  if (!app.isPackaged) {
+    return { ok: false as const, message: 'Auto-update disabled in development mode.' };
+  }
+
+  try {
+    autoUpdater.checkForUpdates();
+    return { ok: true as const, message: 'Checking for updates...' };
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  try {
+    const server = 'https://update.electronjs.org';
+    const feed = `${server}/mhkr9100/RamN-AI---Supreme/${process.platform}-${process.arch}/${app.getVersion()}`;
+    autoUpdater.setFeedURL({ url: feed });
+
+    autoUpdater.on('update-available', () => {
+      console.info('[auto-update] Update available.');
+    });
+
+    autoUpdater.on('update-not-available', () => {
+      console.info('[auto-update] No update available.');
+    });
+
+    autoUpdater.on('update-downloaded', (_event, releaseNotes, releaseName) => {
+      const notification = new Notification({
+        title: 'Update Ready',
+        body: `RamN AI ${releaseName ?? 'update'} is ready. Click to restart and install.`
+      });
+
+      notification.on('click', () => {
+        try {
+          autoUpdater.quitAndInstall();
+        } catch (error) {
+          console.warn('[auto-update] Could not restart for update:', error);
+        }
+      });
+
+      notification.show();
+      console.info('[auto-update] Update downloaded.', releaseNotes ?? '');
+    });
+
+    autoUpdater.on('error', (error) => {
+      console.warn('[auto-update] Error:', error.message);
+    });
+  } catch (error) {
+    console.warn('[auto-update] Setup failed:', error);
+  }
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1480,
@@ -1616,6 +1676,7 @@ app.whenReady().then(async () => {
     await ensureDefaultOllamaModelsInstalled();
     return getOllamaRuntimeStatus();
   });
+  ipcMain.handle(channels.checkForUpdates, async () => checkForAppUpdates());
   ipcMain.handle(channels.supportBundleCreate, async () => {
     syncStructuredExports();
     return createSupportBundle(await buildLocalBundleContext());
@@ -1626,45 +1687,8 @@ app.whenReady().then(async () => {
   }, 2000);
 
   await createWindow();
-
-  // Auto-update (only in packaged builds)
-  if (app.isPackaged) {
-    try {
-      const server = 'https://update.electronjs.org';
-      const feed = `${server}/mhkr9100/RamN-AI---Supreme/${process.platform}-${process.arch}/${app.getVersion()}`;
-      autoUpdater.setFeedURL({ url: feed });
-
-      autoUpdater.on('update-downloaded', (_event, releaseNotes, releaseName) => {
-        new Notification({
-          title: 'Update Ready',
-          body: `RamN AI ${releaseName ?? 'update'} is ready. Restart to apply.`,
-        }).show();
-      });
-
-      autoUpdater.on('error', (err) => {
-        console.warn('[auto-update] Error:', err.message);
-      });
-
-      autoUpdater.checkForUpdates();
-      setInterval(() => { autoUpdater.checkForUpdates(); }, 4 * 60 * 60 * 1000);
-    } catch (err) {
-      console.warn('[auto-update] Setup failed:', err);
-    }
-  }
-
-  // IPC: OpenClaw version
-  ipcMain.handle('supreme:openclaw-version', async () => runtime.getOpenClawVersion());
-
-  // IPC: check for updates manually
-  ipcMain.handle('supreme:check-for-updates', async () => {
-    if (!app.isPackaged) return { available: false, message: 'Auto-update disabled in dev mode' };
-    try {
-      autoUpdater.checkForUpdates();
-      return { available: true, message: 'Checking for updates…' };
-    } catch (err) {
-      return { available: false, message: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  setupAutoUpdater();
+  void checkForAppUpdates();
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

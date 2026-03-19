@@ -41,10 +41,10 @@ const modes: Array<{
   icon: React.ComponentType<{ size?: number }>;
   description: string;
 }> = [
-  { id: 'ask', label: 'Ask', icon: Sparkles, description: 'Ask Prism anything' },
-  { id: 'create', label: 'Create', icon: Wand2, description: 'Build a chatbot' },
+  { id: 'ask', label: 'ASK PRISM', icon: Sparkles, description: 'Strategy, prompts, architecture' },
+  { id: 'create', label: 'CREATE CHATBOTS', icon: Wand2, description: 'Design from an objective' },
   { id: 'task', label: 'Task', icon: Bot, description: 'Schedule a job' },
-  { id: 'council', label: 'Council', icon: Bot, description: 'Multi-agent run' },
+  { id: 'council', label: 'Council', icon: Bot, description: 'Multi-model council' },
 ];
 
 export function PrismWorkspace({
@@ -332,11 +332,11 @@ export function PrismWorkspace({
                       <Wand2 size={22} className="text-brand-light" />
                     )
                   }
-                  title={activeMode === 'ask' ? 'Ask Prism anything' : 'Describe your chatbot'}
+                  title={activeMode === 'ask' ? 'Ask Prism' : 'Create Chatbots'}
                   description={
                     activeMode === 'ask'
-                      ? 'Prism can answer questions, analyze data, and help you think through problems.'
-                      : 'Tell Prism what kind of chatbot you need. It will generate the blueprint, tools, and persona automatically.'
+                      ? 'Get help with objectives, workflows, prompts, and system design.'
+                      : 'Design a focused chatbot or group from one clear objective.'
                   }
                   suggestions={
                     activeMode === 'ask'

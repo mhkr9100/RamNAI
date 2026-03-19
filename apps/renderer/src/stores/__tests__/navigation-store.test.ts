@@ -3,13 +3,12 @@ import { useNavigationStore } from '../navigation-store';
 
 describe('useNavigationStore', () => {
   beforeEach(() => {
-    // Reset the store before each test
-    useNavigationStore.setState({ activeView: 'prism' });
+    useNavigationStore.setState({ activeView: 'home' });
   });
 
-  it('has initial state activeView = "prism"', () => {
+  it('has initial state activeView = "home"', () => {
     const { activeView } = useNavigationStore.getState();
-    expect(activeView).toBe('prism');
+    expect(activeView).toBe('home');
   });
 
   it('changes activeView on navigate("chats")', () => {
@@ -28,7 +27,7 @@ describe('useNavigationStore', () => {
   });
 
   it('allows navigating to all valid ViewId values', () => {
-    const views = ['prism', 'chats', 'spectrum', 'work', 'usermap', 'settings'] as const;
+    const views = ['home', 'prism', 'chats', 'spectrum', 'work', 'usermap', 'settings'] as const;
     
     for (const view of views) {
       useNavigationStore.getState().navigate(view);

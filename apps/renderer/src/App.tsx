@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
 import { CommandPalette, buildDefaultCommands } from './components/CommandPalette';
+import { DashboardView } from './components/DashboardView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { Sidebar, ViewId } from './components/Sidebar';
@@ -56,11 +57,12 @@ export default function App() {
   useKeyboardShortcuts(
     useMemo(() => [
       { key: 'k', meta: true, handler: () => setCmdPaletteOpen(v => !v), description: 'Command palette', label: 'Command Palette' },
-      { key: '1', meta: true, handler: () => navigate('prism'), description: 'Go to Prism', label: 'Prism' },
-      { key: '2', meta: true, handler: () => navigate('chats'), description: 'Go to Chats', label: 'Chats' },
-      { key: '3', meta: true, handler: () => navigate('usermap'), description: 'Go to UserMap', label: 'UserMap' },
-      { key: '4', meta: true, handler: () => navigate('spectrum'), description: 'Go to Spectrum', label: 'Spectrum' },
-      { key: '5', meta: true, handler: () => navigate('work'), description: 'Go to Work', label: 'Work' },
+      { key: '0', meta: true, handler: () => navigate('home'), description: 'Dashboard', label: 'Dashboard' },
+      { key: '1', meta: true, handler: () => navigate('prism'), description: 'Prism', label: 'Prism' },
+      { key: '2', meta: true, handler: () => navigate('chats'), description: 'Chats', label: 'Chats' },
+      { key: '3', meta: true, handler: () => navigate('usermap'), description: 'Context Brain', label: 'Context Brain' },
+      { key: '4', meta: true, handler: () => navigate('spectrum'), description: 'Spectrum', label: 'Spectrum' },
+      { key: '5', meta: true, handler: () => navigate('work'), description: 'Work', label: 'Work' },
       { key: ',', meta: true, handler: () => navigate('settings'), description: 'Settings', label: 'Settings' },
     ], [navigate]),
   );
@@ -327,8 +329,8 @@ export default function App() {
     );
   }
 
-  const viewTitles: Record<ViewId, string> = { prism: 'Prism', chats: 'Chats', usermap: 'UserMap', spectrum: 'Spectrum', work: 'Work', settings: 'Settings' };
-  const viewDescriptions: Record<ViewId, string> = { prism: 'AI architect', chats: 'Conversations', usermap: 'Context memory', spectrum: 'Agent management', work: 'Tasks & results', settings: 'Configuration' };
+  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', prism: 'PRISM CORE', chats: 'LIVE CHATS', usermap: 'CONTEXT BRAIN', spectrum: 'SPECTRUM', work: 'Work', settings: 'Settings' };
+  const viewDescriptions: Record<ViewId, string> = { home: 'Overview', prism: 'META ARCHITECT', chats: 'Conversations', usermap: 'NEURAL MAP', spectrum: 'Management Layer', work: 'Tasks & results', settings: 'Configuration' };
 
   return (
     <div className="flex min-h-screen bg-surface-0 text-white">
@@ -375,6 +377,11 @@ export default function App() {
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <AnimatePresence mode="wait">
             <motion.section key={activeView} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] as const }} className="mx-auto min-w-0 w-full max-w-[1360px] px-5 py-4">
+              {activeView === 'home' && (
+                <ErrorBoundary viewName="Dashboard">
+                  <DashboardView snapshot={snapshot} onNavigate={navigate} />
+                </ErrorBoundary>
+              )}
               {activeView === 'prism' && (
                 <ErrorBoundary viewName="Prism">
                   <PrismWorkspace snapshot={snapshot} messages={prismStore.messages} busy={prismStore.busy} onSend={handlePrismSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearPrismTranscript} />

@@ -1,7 +1,7 @@
 // Supreme Raman AI — Zustand Store
 import { create } from 'zustand';
 
-export type ViewId = 'prism' | 'chats' | 'spectrum' | 'work' | 'usermap' | 'settings';
+export type ViewId = 'home' | 'prism' | 'chats' | 'spectrum' | 'work' | 'usermap' | 'settings';
 
 export interface NavigationStoreState {
   activeView: ViewId;
@@ -9,7 +9,7 @@ export interface NavigationStoreState {
 }
 
 export const useNavigationStore = create<NavigationStoreState>((set, get) => ({
-  activeView: 'prism',
+  activeView: 'home',
   navigate(activeView) {
     if (get().activeView === activeView) {
       return;
