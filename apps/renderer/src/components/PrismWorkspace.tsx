@@ -1,8 +1,23 @@
-import React, { useMemo, useState } from 'react';
-import { Bot, Copy, RotateCcw, Search, Sparkles, Wand2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowUp,
+  Bot,
+  ChevronDown,
+  Copy,
+  History,
+  Info,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Wand2,
+} from 'lucide-react';
 import type { PrismMode } from '@supreme/shared';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
+import { ChatMessage } from './chat/ChatMessage';
+import { TypingIndicator } from './chat/TypingIndicator';
+import { Button, Badge, Card, Input, SectionLabel, Divider, EmptyState } from './ui';
 
 interface PrismMessage {
   id: string;
@@ -20,22 +35,44 @@ interface PrismWorkspaceProps {
   onClearTranscript: () => void;
 }
 
-const modeCards: Array<{ id: PrismMode | 'task' | 'council'; label: string }> = [
-  { id: 'ask', label: 'Ask' },
-  { id: 'create', label: 'Create' },
-  { id: 'task', label: 'Task' },
-  { id: 'council', label: 'Council' }
+const modes: Array<{
+  id: PrismMode | 'task' | 'council';
+  label: string;
+  icon: React.ComponentType<{ size?: number }>;
+  description: string;
+}> = [
+  { id: 'ask', label: 'Ask', icon: Sparkles, description: 'Ask Prism anything' },
+  { id: 'create', label: 'Create', icon: Wand2, description: 'Build a chatbot' },
+  { id: 'task', label: 'Task', icon: Bot, description: 'Schedule a job' },
+  { id: 'council', label: 'Council', icon: Bot, description: 'Multi-agent run' },
 ];
 
-export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask, onClearTranscript }: PrismWorkspaceProps) {
+export function PrismWorkspace({
+  snapshot,
+  messages,
+  busy,
+  onSend,
+  onCreateTask,
+  onClearTranscript,
+}: PrismWorkspaceProps) {
   const [activeMode, setActiveMode] = useState<PrismMode | 'task' | 'council'>('ask');
   const [message, setMessage] = useState('');
   const [transcriptQuery, setTranscriptQuery] = useState('');
-  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | PrismMessage['role']>('all');
+  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | PrismMessage['role']>(
+    'all',
+  );
   const [newestFirst, setNewestFirst] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages.length]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -45,29 +82,34 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask,
     await onSend(activeMode, next);
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void handleSubmit(event);
+    }
+  };
+
   const visibleMessages = useMemo(() => {
     const query = transcriptQuery.trim().toLowerCase();
     const filtered = messages.filter((entry) => {
-      if (transcriptRoleFilter !== 'all' && entry.role !== transcriptRoleFilter) {
-        return false;
-      }
-      if (!query) {
-        return true;
-      }
-      return entry.text.toLowerCase().includes(query) || (entry.mode ?? '').toLowerCase().includes(query);
+      if (transcriptRoleFilter !== 'all' && entry.role !== transcriptRoleFilter) return false;
+      if (!query) return true;
+      return (
+        entry.text.toLowerCase().includes(query) ||
+        (entry.mode ?? '').toLowerCase().includes(query)
+      );
     });
-
     return newestFirst ? [...filtered].reverse() : filtered;
   }, [messages, newestFirst, transcriptQuery, transcriptRoleFilter]);
 
   const latestUserMessage = useMemo(
     () => [...messages].reverse().find((entry) => entry.role === 'user'),
-    [messages]
+    [messages],
   );
 
   const latestAssistantMessage = useMemo(
     () => [...messages].reverse().find((entry) => entry.role === 'assistant'),
-    [messages]
+    [messages],
   );
 
   const copyVisibleTranscript = async () => {
@@ -80,158 +122,193 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask,
     }
     await navigator.clipboard.writeText(text);
     setCopyNotice('Copied.');
+    setTimeout(() => setCopyNotice(null), 2000);
   };
 
-  const activeTitle = activeMode === 'ask' ? 'Ask' : activeMode === 'create' ? 'Create' : activeMode === 'task' ? 'Task' : 'Council';
+  const activeConfig = modes.find((m) => m.id === activeMode) ?? modes[0]!;
 
   return (
-    <div className="space-y-3">
-      <section className="flex min-h-[calc(100vh-7.5rem)] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0d1012]">
-        <header className="h-14 border-b border-white/8 px-4">
-          <div className="flex h-full flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5">
-                <Sparkles size={15} className="text-white/75" />
-              </div>
-              <div>
-                <div className="text-[9px] font-black uppercase tracking-[0.2em] text-white/38">Prism</div>
-                <h1 className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white">{activeTitle}</h1>
-              </div>
+    <div className="space-y-4">
+      <section className="flex min-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-surface-1">
+        {/* Header */}
+        <header className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-brand/20 bg-brand/[0.08]">
+              <Sparkles size={16} className="text-brand-light" />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {modeCards.map((card) => {
-                const active = card.id === activeMode;
+            <div>
+              <h2 className="text-[15px] font-semibold text-white">{activeConfig.label}</h2>
+              <p className="text-[11px] text-white/35">{activeConfig.description}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Mode pills */}
+            <div className="flex items-center rounded-xl border border-white/[0.06] bg-surface-0/50 p-0.5">
+              {modes.map((mode) => {
+                const active = mode.id === activeMode;
                 return (
                   <button
-                    key={card.id}
+                    key={mode.id}
                     type="button"
-                    onClick={() => setActiveMode(card.id)}
-                    className={`rounded-full border px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] transition ${active ? 'border-white/15 bg-white text-black' : 'border-white/10 bg-white/5 text-white/65 hover:border-white/20 hover:text-white'}`}
+                    onClick={() => setActiveMode(mode.id)}
+                    className={[
+                      'relative rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150',
+                      active ? 'text-white' : 'text-white/45 hover:text-white/70',
+                    ].join(' ')}
                   >
-                    {card.label}
+                    {active && (
+                      <motion.div
+                        layoutId="prism-mode"
+                        className="absolute inset-0 rounded-lg bg-brand/[0.15] border border-brand/20"
+                        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                      />
+                    )}
+                    <span className="relative z-10">{mode.label}</span>
                   </button>
                 );
               })}
-              <div className="hidden h-5 w-px bg-white/8 lg:block" />
-              <button
-                type="button"
-                onClick={() => setShowHistory((current) => !current)}
-                className={`rounded-full border px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] transition ${showHistory ? 'border-white/15 bg-white text-black' : 'border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white'}`}
-              >
-                History
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowDetails((current) => !current)}
-                className={`rounded-full border px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] transition ${showDetails ? 'border-white/15 bg-white text-black' : 'border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white'}`}
-              >
-                Details
-              </button>
             </div>
+
+            <Divider vertical className="h-6 mx-1" />
+
+            <Button
+              variant={showHistory ? 'secondary' : 'ghost'}
+              size="xs"
+              icon={<History size={13} />}
+              onClick={() => setShowHistory((v) => !v)}
+            >
+              History
+            </Button>
+            <Button
+              variant={showDetails ? 'secondary' : 'ghost'}
+              size="xs"
+              icon={<Info size={13} />}
+              onClick={() => setShowDetails((v) => !v)}
+            >
+              Details
+            </Button>
           </div>
         </header>
 
-        {showHistory || showDetails ? (
-          <div className="border-b border-white/8 px-4 py-3">
-            <div className={`grid gap-3 ${showHistory && showDetails ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : ''}`}>
-              {showHistory ? (
-                <section className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/38">History</div>
-                    <button
-                      type="button"
-                      onClick={onClearTranscript}
-                      disabled={messages.length === 0}
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-[0.14em] text-white/70 transition hover:border-white/20 hover:text-white disabled:opacity-50"
-                    >
-                      <RotateCcw size={12} />
-                      Clear
-                    </button>
-                  </div>
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_140px_120px_120px]">
-                    <label className="block space-y-2">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/38">Search</span>
-                      <div className="relative">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/28" size={14} />
-                        <input
+        {/* Expandable panels */}
+        <AnimatePresence>
+          {(showHistory || showDetails) && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden border-b border-white/[0.06]"
+            >
+              <div className="px-5 py-4">
+                <div
+                  className={`grid gap-4 ${showHistory && showDetails ? 'xl:grid-cols-[minmax(0,1fr)_300px]' : ''}`}
+                >
+                  {showHistory && (
+                    <Card variant="ghost" padding="md" animate={false}>
+                      <div className="mb-3 flex items-center justify-between">
+                        <SectionLabel>History</SectionLabel>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          icon={<RotateCcw size={12} />}
+                          onClick={onClearTranscript}
+                          disabled={messages.length === 0}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_140px_auto_auto]">
+                        <Input
+                          inputSize="sm"
+                          icon={<Search size={13} />}
                           value={transcriptQuery}
-                          onChange={(event) => setTranscriptQuery(event.target.value)}
-                          className="w-full rounded-xl border border-white/10 bg-black/25 py-2.5 pl-9 pr-3 text-sm text-white outline-none transition focus:border-white/25"
-                          placeholder="Search"
+                          onChange={(e) => setTranscriptQuery(e.target.value)}
+                          placeholder="Search messages"
+                        />
+                        <select
+                          value={transcriptRoleFilter}
+                          onChange={(e) =>
+                            setTranscriptRoleFilter(e.target.value as typeof transcriptRoleFilter)
+                          }
+                          className="h-8 rounded-lg border border-white/[0.10] bg-surface-1 px-2.5 text-xs text-white/80 outline-none"
+                        >
+                          <option value="all">All roles</option>
+                          <option value="user">User</option>
+                          <option value="assistant">Assistant</option>
+                          <option value="system">System</option>
+                        </select>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          icon={<ChevronDown size={12} />}
+                          onClick={() => setNewestFirst((v) => !v)}
+                        >
+                          {newestFirst ? 'Newest' : 'Oldest'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          icon={<Copy size={12} />}
+                          onClick={() => void copyVisibleTranscript()}
+                        >
+                          {copyNotice ?? 'Copy'}
+                        </Button>
+                      </div>
+                    </Card>
+                  )}
+
+                  {showDetails && (
+                    <Card variant="ghost" padding="md" animate={false}>
+                      <SectionLabel className="mb-3">Workspace</SectionLabel>
+                      <div className="grid grid-cols-2 gap-2">
+                        <StatCard label="Chatbots" value={snapshot.agents.length} />
+                        <StatCard label="Groups" value={snapshot.groups.length} />
+                        <StatCard label="Tasks" value={snapshot.tasks.length} />
+                        <StatCard label="UserMap" value={countNodes(snapshot.userMap)} />
+                        <StatCard
+                          label="Models"
+                          value={snapshot.models.filter((m) => m.installed).length}
                         />
                       </div>
-                    </label>
-                    <label className="block space-y-2">
-                      <span className="text-[9px] font-black uppercase tracking-[0.16em] text-white/38">Role</span>
-                      <select
-                        value={transcriptRoleFilter}
-                        onChange={(event) => setTranscriptRoleFilter(event.target.value as typeof transcriptRoleFilter)}
-                        className="w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="user">User</option>
-                        <option value="assistant">Assistant</option>
-                        <option value="system">System</option>
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setNewestFirst((current) => !current)}
-                      className="self-end rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                    >
-                      {newestFirst ? 'Newest' : 'Oldest'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void copyVisibleTranscript()}
-                      className="self-end inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                    >
-                      <Copy size={12} />
-                      Copy
-                    </button>
-                  </div>
-                  {copyNotice ? <div className="mt-2 text-xs text-white/45">{copyNotice}</div> : null}
-                </section>
-              ) : null}
+                      <div className="mt-3 flex gap-2">
+                        {latestUserMessage && (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={<Bot size={12} />}
+                            onClick={() => setMessage(latestUserMessage.text)}
+                            fullWidth
+                          >
+                            Reuse prompt
+                          </Button>
+                        )}
+                        {latestAssistantMessage && (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={<Copy size={12} />}
+                            onClick={() =>
+                              void navigator.clipboard.writeText(latestAssistantMessage.text)
+                            }
+                            fullWidth
+                          >
+                            Copy reply
+                          </Button>
+                        )}
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-              {showDetails ? (
-                <section className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                  <div className="mb-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/38">Details</div>
-                  <div className="grid gap-2.5">
-                    <InfoCard label="Chatbots" value={`${snapshot.agents.length}`} />
-                    <InfoCard label="Groups" value={`${snapshot.groups.length}`} />
-                    <InfoCard label="Tasks" value={`${snapshot.tasks.length}`} />
-                    <InfoCard label="UserMap" value={`${countNodes(snapshot.userMap)}`} />
-                    <InfoCard label="Models" value={`${snapshot.models.filter((model) => model.installed).length}`} />
-                  </div>
-                  {latestUserMessage ? (
-                    <button
-                      type="button"
-                      onClick={() => setMessage(latestUserMessage.text)}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                    >
-                      <Bot size={12} />
-                      Reuse Last Prompt
-                    </button>
-                  ) : null}
-                  {latestAssistantMessage ? (
-                    <button
-                      type="button"
-                      onClick={() => void navigator.clipboard.writeText(latestAssistantMessage.text)}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-white/20 hover:text-white"
-                    >
-                      <Copy size={12} />
-                      Copy Last Reply
-                    </button>
-                  ) : null}
-                </section>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
+        {/* Task/Council composer */}
         {activeMode === 'task' || activeMode === 'council' ? (
-          <div className="p-4">
+          <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
             <TaskComposerCard
               title={activeMode === 'task' ? 'New Task' : 'New Council'}
               subtitle=""
@@ -244,60 +321,123 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask,
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
+            {/* Chat area */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 custom-scrollbar">
               {visibleMessages.length === 0 ? (
-                <div className="mx-auto flex h-full min-h-[240px] max-w-[46rem] items-center justify-center rounded-[24px] border border-dashed border-white/12 bg-black/20 px-6 text-center text-sm leading-6 text-white/45">
-                  {activeMode === 'ask' ? 'Ask Prism anything.' : 'Describe the chatbot you want.'}
-                </div>
+                <EmptyState
+                  icon={
+                    activeMode === 'ask' ? (
+                      <Sparkles size={22} className="text-brand-light" />
+                    ) : (
+                      <Wand2 size={22} className="text-brand-light" />
+                    )
+                  }
+                  title={activeMode === 'ask' ? 'Ask Prism anything' : 'Describe your chatbot'}
+                  description={
+                    activeMode === 'ask'
+                      ? 'Prism can answer questions, analyze data, and help you think through problems.'
+                      : 'Tell Prism what kind of chatbot you need. It will generate the blueprint, tools, and persona automatically.'
+                  }
+                  suggestions={
+                    activeMode === 'ask'
+                      ? [
+                          {
+                            label: 'What can you help me with?',
+                            onClick: () => setMessage('What can you help me with?'),
+                          },
+                          {
+                            label: 'Analyze my UserMap context',
+                            onClick: () =>
+                              setMessage(
+                                'Analyze my UserMap and suggest what chatbots would be useful.',
+                              ),
+                          },
+                          {
+                            label: 'How does Prism work?',
+                            onClick: () =>
+                              setMessage(
+                                'Explain how Prism creates and manages chatbot blueprints.',
+                              ),
+                          },
+                        ]
+                      : [
+                          {
+                            label: 'Research assistant for my field',
+                            onClick: () =>
+                              setMessage(
+                                'Create a research assistant that can search the web and analyze findings based on my profile.',
+                              ),
+                          },
+                          {
+                            label: 'Daily briefing bot',
+                            onClick: () =>
+                              setMessage(
+                                'Create a chatbot that gives me a daily briefing on topics relevant to my work.',
+                              ),
+                          },
+                          {
+                            label: 'Writing editor',
+                            onClick: () =>
+                              setMessage(
+                                'Create a writing assistant that reviews and improves my drafts.',
+                              ),
+                          },
+                        ]
+                  }
+                />
               ) : (
-                <div className="mx-auto max-w-[46rem] space-y-2.5">
+                <div className="mx-auto max-w-[46rem] space-y-1">
                   {visibleMessages.map((entry) => (
-                    <article
+                    <ChatMessage
                       key={entry.id}
-                      className={`rounded-[24px] border px-4 py-3 ${
-                        entry.role === 'user'
-                          ? 'ml-auto max-w-[78%] border-white/10 bg-white text-black'
-                          : entry.role === 'assistant'
-                            ? 'max-w-[84%] border-white/10 bg-black/30'
-                            : 'max-w-[84%] border-white/10 bg-white/5'
-                      }`}
-                    >
-                      <div className={`mb-2 flex flex-wrap items-center gap-2 text-[9px] font-black uppercase tracking-[0.16em] ${entry.role === 'user' ? 'text-black/45' : 'text-white/38'}`}>
-                        <span>{entry.role}</span>
-                        {entry.mode ? <span>{entry.mode}</span> : null}
-                      </div>
-                      <div className={`whitespace-pre-wrap text-sm leading-6 ${entry.role === 'user' ? 'text-black/82' : 'text-white/78'}`}>{entry.text}</div>
-                    </article>
+                      role={entry.role}
+                      text={entry.text}
+                      {...(entry.mode != null ? { mode: entry.mode } : {})}
+                      agentName="Prism"
+                    />
                   ))}
+                  {busy && <TypingIndicator agentName="Prism" />}
                 </div>
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="border-t border-white/8 px-4 pb-4 pt-3">
+            {/* Composer */}
+            <form onSubmit={handleSubmit} className="border-t border-white/[0.06] px-5 pb-4 pt-3">
               <div className="mx-auto max-w-[46rem]">
-                <div className="flex items-end gap-2.5 rounded-[26px] border border-white/10 bg-[#17191d] px-3 py-2.5">
+                <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-surface-3 px-3 py-2 transition-colors focus-within:border-brand/30">
                   <div className="flex-1">
                     <textarea
+                      ref={textareaRef}
                       value={message}
-                      onChange={(event) => setMessage(event.target.value)}
+                      onChange={(e) => setMessage(e.target.value)}
+                      onKeyDown={handleKeyDown}
                       rows={1}
-                      className="max-h-[100px] min-h-[42px] w-full resize-none bg-transparent px-1 py-2 text-sm leading-6 text-white outline-none placeholder:text-white/28"
-                      placeholder={activeMode === 'ask' ? 'Ask Prism' : 'Create a chatbot'}
+                      className="max-h-[120px] min-h-[40px] w-full resize-none bg-transparent px-1 py-2 text-sm leading-relaxed text-white outline-none placeholder:text-white/25"
+                      placeholder={
+                        activeMode === 'ask'
+                          ? 'Ask Prism anything...'
+                          : 'Describe the chatbot you want to create...'
+                      }
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={busy || !message.trim()}
-                    className={`mb-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
+                    className={[
+                      'mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all duration-150',
                       message.trim()
-                        ? 'bg-white text-black hover:bg-white/90'
-                        : 'bg-white/5 text-white/25'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                    title={activeMode === 'ask' ? 'Ask Prism' : 'Create Chatbot'}
+                        ? 'bg-brand text-white hover:bg-brand-hover shadow-glow'
+                        : 'bg-white/[0.04] text-white/20',
+                      'disabled:cursor-not-allowed disabled:opacity-50',
+                    ].join(' ')}
+                    title={activeMode === 'ask' ? 'Send' : 'Create'}
                   >
-                    {activeMode === 'ask' ? <Sparkles size={15} /> : <Wand2 size={15} />}
+                    <ArrowUp size={15} />
                   </button>
                 </div>
+                <p className="mt-1.5 text-center text-[10px] text-white/20">
+                  Press Enter to send, Shift+Enter for new line
+                </p>
               </div>
             </form>
           </>
@@ -307,11 +447,11 @@ export function PrismWorkspace({ snapshot, messages, busy, onSend, onCreateTask,
   );
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
-      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{label}</div>
-      <div className="mt-1.5 text-sm font-semibold text-white">{value}</div>
+    <div className="rounded-xl border border-white/[0.06] bg-surface-1 px-3 py-2.5">
+      <div className="text-[10px] font-medium text-white/35">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-white">{value}</div>
     </div>
   );
 }
