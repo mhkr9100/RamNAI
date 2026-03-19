@@ -17,8 +17,8 @@ import { RamanIcon } from './RamanIcon';
 
 export interface OnboardingFlowProps {
   onComplete: (profile: { name: string; email: string }) => Promise<void>;
-  isCheckingRuntime?: boolean;
-  runtimeAvailable?: boolean;
+  isCheckingRuntime?: boolean | undefined;
+  runtimeAvailable?: boolean | undefined;
 }
 
 export function OnboardingFlow({ 
