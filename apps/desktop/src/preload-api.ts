@@ -27,5 +27,6 @@ export const channels = {
   prismOverrideSave: 'prismOverride:save',
   ollamaStatus: 'ollama:status',
   ollamaInstallDefaults: 'ollama:installDefaults',
+  checkForUpdates: 'supreme:check-for-updates',
   supportBundleCreate: 'support:createBundle'
 } as const;

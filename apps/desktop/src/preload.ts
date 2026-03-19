@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('supreme', {
     getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),
     installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults)
   },
+  app: {
+    checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates)
+  },
   support: {
     createBundle: () => ipcRenderer.invoke(channels.supportBundleCreate)
   }

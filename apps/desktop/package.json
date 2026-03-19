@@ -31,9 +31,11 @@
     "electron-builder": "^26.0.12",
     "wait-on": "^9.0.1"
   },
+  "productName": "RamN AI",
   "build": {
-    "appId": "ai.raman.supreme",
-    "productName": "Supreme Raman AI",
+    "appId": "ai.raman.app",
+    "productName": "RamN AI",
+    "copyright": "Copyright © 2025 RamN AI",
     "icon": "assets/icon.png",
     "files": [
       "dist/**/*"
@@ -41,16 +43,33 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "mhkr9100",
+      "repo": "RamN-AI---Supreme"
+    },
+    "afterSign": "scripts/notarize.mjs",
     "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "darkModeSupport": true,
       "target": [
-        "dir"
+        "dmg",
+        "zip"
       ]
     },
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis",
         "zip"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico"
     }
   }
 }

@@ -1,6 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   AgentSpec,
   DEFAULT_MODEL_PRESETS,
@@ -16,12 +14,9 @@ import {
   UserMapNode,
   UserMapState
 } from '@supreme/shared';
-import { EXTERNAL_RUNTIME_CLI } from './runtime-compat.js';
+import { OpenClawBridge, type OpenClawPromptResult } from './openclaw-bridge.js';
 
-const execFileAsync = promisify(execFile);
 const OLLAMA_API = 'http://127.0.0.1:11434/api';
-// External runtime bridge binary (kept vendor-neutral at call sites).
-const RUNTIME_BRIDGE_MODEL_ID = 'runtime-bridge';
 const ALLOWED_MEMORY_CATEGORIES: MemoryCategory[] = [
   'Identity',
   'Preferences',
@@ -64,21 +59,6 @@ export interface TaskExecutionContext {
   groups: GroupSpec[];
 }
 
-interface RuntimeBridgePrismReply {
-  id: string;
-  text: string;
-  provider?: ProviderId;
-  modelId?: string;
-  createdAgent?: AgentSpec;
-}
-
-interface RuntimeBridgeTaskResult {
-  text: string;
-  provider?: ProviderId;
-  modelId?: string;
-  councilTrace?: Array<{ modelId: string; stage: 'worker' | 'revision' | 'judge'; output: string }>;
-}
-
 export interface RuntimeBridgeHooks {
   beforeInvoke?: () => Promise<void>;
   afterInvoke?: () => Promise<void>;
@@ -86,9 +66,9 @@ export interface RuntimeBridgeHooks {
 
 export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
-  private runtimeBridgeAvailable: boolean | null = null;
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
   private prismOverride: PrismProviderOverrideSettings | null = null;
+  private readonly openClawBridge = new OpenClawBridge();
 
   setWorkspaceRoot(rootDir: string) {
     this.workspaceRoot = rootDir;
@@ -102,9 +82,15 @@ export class LocalRuntimeAdapter {
     this.prismOverride = override;
   }
 
+  async getOpenClawVersion(): Promise<string | null> {
+    return this.openClawBridge.getVersion();
+  }
+
   async getStatus(): Promise<RuntimeStatus> {
-    const ollamaReady = await this.isOllamaReachable();
-    const runtimeBridgeReady = await this.isRuntimeBridgeAvailable();
+    const [ollamaReady, runtimeBridgeReady] = await Promise.all([
+      this.isOllamaReachable(),
+      this.isOpenClawAvailable()
+    ]);
 
     return {
       available: ollamaReady || runtimeBridgeReady,
@@ -119,26 +105,14 @@ export class LocalRuntimeAdapter {
   }
 
   async listModels(): Promise<ProviderModelPreset[]> {
-    const configured = new Map<string, ProviderModelPreset>(
-      DEFAULT_MODEL_PRESETS.map((model) => [model.id, { ...model } satisfies ProviderModelPreset])
-    );
-    const tags = await this.fetchTags();
+    const configured = new Map<string, ProviderModelPreset>();
+    const [ollamaModels, openClawModels] = await Promise.all([
+      this.listOllamaModels(),
+      this.listOpenClawModels()
+    ]);
 
-    for (const tag of tags) {
-      const existing = configured.get(tag);
-      if (existing) {
-        existing.installed = true;
-        configured.set(tag, existing);
-        continue;
-      }
-
-      configured.set(tag, {
-        id: tag,
-        provider: 'ollama',
-        label: this.humanizeModelName(tag),
-        recommended: false,
-        installed: true
-      });
+    for (const model of [...ollamaModels, ...openClawModels]) {
+      configured.set(`${model.provider}:${model.id}`, model);
     }
 
     return [...configured.values()].sort((left, right) => {
@@ -149,12 +123,12 @@ export class LocalRuntimeAdapter {
   }
 
   async sendPrismRequest(input: PrismRequest): Promise<PrismReply> {
-    const runtimeBridgeReply = await this.tryRuntimeBridgePrism(input);
-    if (runtimeBridgeReply) {
-      return runtimeBridgeReply;
+    const openClawReply = await this.tryOpenClawPrism(input);
+    if (openClawReply) {
+      return openClawReply;
     }
 
-    const models = await this.listModels();
+    const models = await this.listOllamaModels();
     const overrideModelId = this.prismOverride?.provider === 'ollama' ? this.prismOverride.modelId : null;
     const modelId = overrideModelId && models.some((model) => model.installed && model.id === overrideModelId)
       ? overrideModelId
@@ -195,16 +169,16 @@ export class LocalRuntimeAdapter {
   }
 
   async executeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult> {
-    const runtimeBridgeResult = await this.tryRuntimeBridgeTask(task, context);
-    if (runtimeBridgeResult) {
-      return runtimeBridgeResult;
+    const openClawResult = await this.tryOpenClawTask(task, context);
+    if (openClawResult) {
+      return openClawResult;
     }
 
     if (task.mode === 'council') {
-      return this.executeCouncil(task, context);
+      return this.executeCouncil(task, context, 'ollama');
     }
 
-    const models = await this.listModels();
+    const models = await this.listOllamaModels();
     const modelId = this.pickTaskModel(task, models);
     let targetAgent: AgentSpec | null = null;
     const taskTarget = task.target;
@@ -234,98 +208,169 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private async tryRuntimeBridgePrism(input: PrismRequest): Promise<PrismReply | null> {
-    const payload = {
-      kind: 'prism',
-      request: input,
-      ...(this.prismOverride ? { prismOverride: this.prismOverride } : {})
-    };
+  private async listOllamaModels(): Promise<ProviderModelPreset[]> {
+    const configured = new Map<string, ProviderModelPreset>(
+      DEFAULT_MODEL_PRESETS.map((model) => [model.id, { ...model } satisfies ProviderModelPreset])
+    );
+    const tags = await this.fetchTags();
 
-    const response = await this.invokeRuntimeBridge<RuntimeBridgePrismReply>(payload);
-    if (!response) return null;
+    for (const tag of tags) {
+      const existing = configured.get(tag);
+      if (existing) {
+        existing.installed = true;
+        configured.set(tag, existing);
+        continue;
+      }
 
-    return {
-      id: response.id ?? randomUUID(),
-      text: response.text,
-      provider: response.provider ?? 'ollama',
-      modelId: response.modelId ?? RUNTIME_BRIDGE_MODEL_ID,
-      ...(response.createdAgent ? { createdAgent: response.createdAgent } : {})
-    };
-  }
-
-  private async tryRuntimeBridgeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
-    const payload = {
-      kind: 'task',
-      task,
-      context
-    };
-
-    const response = await this.invokeRuntimeBridge<RuntimeBridgeTaskResult>(payload);
-    if (!response) return null;
-
-    const result: TaskExecutionResult = {
-      text: response.text,
-      provider: response.provider ?? 'ollama',
-      modelId: response.modelId ?? RUNTIME_BRIDGE_MODEL_ID
-    };
-
-    if (response.councilTrace) {
-      result.councilTrace = response.councilTrace;
+      configured.set(tag, {
+        id: tag,
+        provider: 'ollama',
+        label: this.humanizeModelName(tag),
+        recommended: false,
+        installed: true
+      });
     }
 
-    return result;
+    return [...configured.values()];
   }
 
-  private async invokeRuntimeBridge<T>(payload: unknown): Promise<T | null> {
-    if (!this.workspaceRoot) {
-      return null;
-    }
+  private async listOpenClawModels(): Promise<ProviderModelPreset[]> {
+    try {
+      const available = await this.isOpenClawAvailable();
+      if (!available) {
+        return [];
+      }
 
-    const hasRuntimeBridge = await this.isRuntimeBridgeAvailable();
-    if (!hasRuntimeBridge) {
+      return await this.withRuntimeBridgeHooks(async () => {
+        const models = await this.openClawBridge.listModels();
+        return models.map((model) => {
+          const provider = this.normalizeProviderId(model.provider);
+          return {
+            id: this.toProviderModelId(provider, model.id),
+            provider,
+            label: this.humanizeModelName(model.id),
+            recommended: false,
+            installed: model.installed,
+          };
+        });
+      });
+    } catch (error) {
+      console.warn('[runtime] OpenClaw model listing failed, using Ollama-only catalog:', error);
+      return [];
+    }
+  }
+
+  private async tryOpenClawPrism(input: PrismRequest): Promise<PrismReply | null> {
+    const available = await this.isOpenClawAvailable();
+    if (!available) {
       return null;
     }
 
     try {
-      await this.runtimeBridgeHooks.beforeInvoke?.();
-      const { stdout, stderr } = await execFileAsync(EXTERNAL_RUNTIME_CLI, [
-        'run',
-        '--workspace',
-        this.workspaceRoot,
-        '--request',
-        JSON.stringify(payload)
-      ]);
-      const combined = `${stdout ?? ''}\n${stderr ?? ''}`.trim();
-      const trimmed = combined.trim();
-      if (!trimmed) {
-        return null;
+      const models = await this.listModels();
+      const selectedModel = this.pickPrismBridgeModel(models);
+
+      if (input.mode === 'create') {
+        const response = await this.sendWithOpenClaw({
+          modelRef: selectedModel,
+          system: this.buildPrismCreateSystemPrompt(),
+          prompt: this.buildPrismCreatePrompt(input)
+        });
+        const parsed = this.parseJsonObject<Record<string, unknown>>(response.text);
+        const createdAgent = this.normalizeAgentSpec(parsed, input.message, models);
+
+        return {
+          id: randomUUID(),
+          text: `Created ${createdAgent.name}. Prism designed this chatbot through the OpenClaw bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+          provider: this.normalizeProviderId(response.provider),
+          modelId: response.modelId,
+          createdAgent
+        };
       }
 
-      const parsed = this.parseJsonObject<T>(trimmed);
-      return parsed;
+      const response = await this.sendWithOpenClaw({
+        modelRef: selectedModel,
+        system: this.buildPrismAskSystemPrompt(),
+        prompt: this.buildPrismAskPrompt(input)
+      });
+
+      return {
+        id: randomUUID(),
+        text: response.text,
+        provider: this.normalizeProviderId(response.provider),
+        modelId: response.modelId
+      };
     } catch (error) {
-      // If the external runtime bridge fails for any reason, fall back to the current Ollama path.
-      // eslint-disable-next-line no-console
-      console.warn('[runtime] External runtime bridge failed, falling back to Ollama path:', error);
+      console.warn('[runtime] OpenClaw Prism execution failed, falling back to Ollama:', error);
       return null;
+    }
+  }
+
+  private async tryOpenClawTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
+    const available = await this.isOpenClawAvailable();
+    if (!available) {
+      return null;
+    }
+
+    try {
+      if (task.mode === 'council') {
+        return await this.executeCouncil(task, context, 'openclaw');
+      }
+
+      const models = await this.listModels();
+      const modelRef = this.pickTaskBridgeModel(task, models);
+      let targetAgent: AgentSpec | null = null;
+      const taskTarget = task.target;
+      if (taskTarget.type === 'agent') {
+        targetAgent = context.agents.find((agent) => agent.id === taskTarget.agentId) ?? null;
+      }
+
+      const prompt = [
+        task.target.type === 'prism'
+          ? 'You are Prism in Supreme Raman AI. Execute the following scheduled autonomous task.'
+          : `You are executing a scheduled task for the chatbot "${targetAgent?.name ?? 'Unknown Chatbot'}". Respect its role and instructions.`,
+        targetAgent
+          ? `Role: ${targetAgent.persona.role}\nMission: ${targetAgent.persona.mission}\nInstructions: ${targetAgent.persona.systemInstructions}`
+          : '',
+        this.formatUserMapSummary(context.userMap),
+        `Task Objective:\n${task.objective}`
+      ].filter(Boolean).join('\n\n');
+
+      const response = await this.sendWithOpenClaw({
+        modelRef,
+        system: 'Complete the scheduled task thoroughly. Return the finished output directly with no preamble.',
+        prompt,
+        ...(targetAgent?.tools?.length ? { tools: targetAgent.tools } : {}),
+      });
+
+      return {
+        text: response.text,
+        provider: this.normalizeProviderId(response.provider),
+        modelId: response.modelId
+      };
+    } catch (error) {
+      console.warn('[runtime] OpenClaw task execution failed, falling back to Ollama:', error);
+      return null;
+    }
+  }
+
+  private async isOpenClawAvailable(): Promise<boolean> {
+    return this.withRuntimeBridgeHooks(async () => this.openClawBridge.isAvailable());
+  }
+
+  private async withRuntimeBridgeHooks<T>(action: () => Promise<T>): Promise<T> {
+    await this.runtimeBridgeHooks.beforeInvoke?.();
+    try {
+      return await action();
     } finally {
       await this.runtimeBridgeHooks.afterInvoke?.();
     }
   }
 
-  private async isRuntimeBridgeAvailable(): Promise<boolean> {
-    if (this.runtimeBridgeAvailable !== null) {
-      return this.runtimeBridgeAvailable;
-    }
-    const available = await this.hasBinary(EXTERNAL_RUNTIME_CLI, ['--version']);
-    this.runtimeBridgeAvailable = available;
-    return available;
-  }
-
   async extractMemoryFacts(source: MemoryFact['source'], sourceRef: string, text: string, existingFacts: MemoryFact[]): Promise<MemoryFact[]> {
     if (!text.trim()) return [];
 
-    const models = await this.listModels();
+    const models = await this.listOllamaModels();
     const modelId = this.pickModelId(models);
     const responseText = await this.generateText({
       modelId,
@@ -371,15 +416,28 @@ export class LocalRuntimeAdapter {
     return [...merged.values()].sort((left, right) => left.category.localeCompare(right.category) || left.label.localeCompare(right.label));
   }
 
-  private async executeCouncil(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult> {
-    const models = await this.listModels();
-    const availableModelIds = models.filter((model) => model.installed).map((model) => model.id);
+  private async executeCouncil(
+    task: TaskSpec,
+    context: TaskExecutionContext,
+    runtime: 'ollama' | 'openclaw'
+  ): Promise<TaskExecutionResult> {
+    const models = runtime === 'openclaw' ? await this.listModels() : await this.listOllamaModels();
+    const installedModels = models.filter((model) => model.installed);
+    const installedModelIds = installedModels.map((model) => model.id);
     const workers = task.council?.workerModels.length
-      ? task.council.workerModels.map((worker) => this.resolveSupportedModel(worker.provider, worker.modelId, availableModelIds))
-      : [this.pickModelId(models)];
+      ? task.council.workerModels.map((worker) => (
+        runtime === 'openclaw'
+          ? this.resolveBridgeModel(worker.provider, worker.modelId, installedModels)
+          : this.resolveSupportedModel(worker.provider, worker.modelId, installedModelIds)
+      ))
+      : [runtime === 'openclaw' ? this.pickBridgeModel(models) : this.pickModelId(models)];
     const judge = task.council?.judgeModel
-      ? this.resolveSupportedModel(task.council.judgeModel.provider, task.council.judgeModel.modelId, availableModelIds)
-      : (workers[0] ?? this.pickModelId(models));
+      ? (
+        runtime === 'openclaw'
+          ? this.resolveBridgeModel(task.council.judgeModel.provider, task.council.judgeModel.modelId, installedModels)
+          : this.resolveSupportedModel(task.council.judgeModel.provider, task.council.judgeModel.modelId, installedModelIds)
+      )
+      : (workers[0] ?? (runtime === 'openclaw' ? this.pickBridgeModel(models) : this.pickModelId(models)));
 
     const sharedBrief = [
       'You are part of a council run in Supreme Raman AI.',
@@ -392,11 +450,17 @@ export class LocalRuntimeAdapter {
     const workerDrafts: Array<{ modelId: string; output: string }> = [];
 
     for (const workerModelId of workers) {
-      const output = await this.generateText({
-        modelId: workerModelId,
-        system: 'You are a council worker. Produce a concrete first-pass answer.',
-        prompt: sharedBrief
-      });
+      const output = runtime === 'openclaw'
+        ? (await this.sendWithOpenClaw({
+          modelRef: workerModelId,
+          system: 'You are a council worker. Produce a concrete first-pass answer.',
+          prompt: sharedBrief
+        })).text
+        : await this.generateText({
+          modelId: workerModelId,
+          system: 'You are a council worker. Produce a concrete first-pass answer.',
+          prompt: sharedBrief
+        });
       trace.push({ modelId: workerModelId, stage: 'worker', output });
       workerDrafts.push({ modelId: workerModelId, output });
     }
@@ -408,11 +472,17 @@ export class LocalRuntimeAdapter {
         .map((candidate) => `Peer (${candidate.modelId}):\n${candidate.output}`)
         .join('\n\n');
 
-      const output = await this.generateText({
-        modelId: draft.modelId,
-        system: 'Revise your answer after considering peer outputs. Keep the best parts and improve weaknesses.',
-        prompt: `${sharedBrief}\n\nYour original draft:\n${draft.output}\n\nPeer outputs:\n${peerOutputs}`
-      });
+      const output = runtime === 'openclaw'
+        ? (await this.sendWithOpenClaw({
+          modelRef: draft.modelId,
+          system: 'Revise your answer after considering peer outputs. Keep the best parts and improve weaknesses.',
+          prompt: `${sharedBrief}\n\nYour original draft:\n${draft.output}\n\nPeer outputs:\n${peerOutputs}`
+        })).text
+        : await this.generateText({
+          modelId: draft.modelId,
+          system: 'Revise your answer after considering peer outputs. Keep the best parts and improve weaknesses.',
+          prompt: `${sharedBrief}\n\nYour original draft:\n${draft.output}\n\nPeer outputs:\n${peerOutputs}`
+        });
       trace.push({ modelId: draft.modelId, stage: 'revision', output });
       revisedDrafts.push({ modelId: draft.modelId, output });
     }
@@ -421,18 +491,29 @@ export class LocalRuntimeAdapter {
       .map((draft) => `Revised worker output (${draft.modelId}):\n${draft.output}`)
       .join('\n\n');
 
-    const text = await this.generateText({
-      modelId: judge,
-      system: 'You are the council judge. Synthesize the strongest final answer from the revised worker outputs.',
-      prompt: `${sharedBrief}\n\n${judgePrompt}`
-    });
+    const judgeResult = runtime === 'openclaw'
+      ? await this.sendWithOpenClaw({
+        modelRef: judge,
+        system: 'You are the council judge. Synthesize the strongest final answer from the revised worker outputs.',
+        prompt: `${sharedBrief}\n\n${judgePrompt}`
+      })
+      : {
+        text: await this.generateText({
+          modelId: judge,
+          system: 'You are the council judge. Synthesize the strongest final answer from the revised worker outputs.',
+          prompt: `${sharedBrief}\n\n${judgePrompt}`
+        }),
+        provider: 'ollama',
+        modelId: judge
+      };
+    const text = judgeResult.text;
 
     trace.push({ modelId: judge, stage: 'judge', output: text });
 
     return {
       text,
-      provider: 'ollama',
-      modelId: judge,
+      provider: runtime === 'openclaw' ? this.normalizeProviderId(judgeResult.provider) : 'ollama',
+      modelId: runtime === 'openclaw' ? judgeResult.modelId : judge,
       councilTrace: trace
     };
   }
@@ -683,12 +764,41 @@ export class LocalRuntimeAdapter {
     throw new Error('No local Ollama models are installed yet. Install one to continue.');
   }
 
+  private pickBridgeModel(models: ProviderModelPreset[]): string {
+    const installed = models.filter((model) => model.installed);
+    const preferred = DEFAULT_MODEL_PRESETS.find((preset) => installed.some((model) => model.id === preset.id));
+    const selected = preferred
+      ? installed.find((model) => model.id === preferred.id)
+      : installed[0];
+    if (!selected) {
+      throw new Error('No OpenClaw-backed models are available yet.');
+    }
+
+    return this.toProviderModelId(selected.provider, selected.id);
+  }
+
   private pickTaskModel(task: TaskSpec, models: ProviderModelPreset[]): string {
     if (task.providerOverride) {
       return this.resolveSupportedModel(task.providerOverride.provider, task.providerOverride.modelId, models.filter((model) => model.installed).map((model) => model.id));
     }
 
     return this.pickModelId(models);
+  }
+
+  private pickTaskBridgeModel(task: TaskSpec, models: ProviderModelPreset[]): string {
+    if (task.providerOverride) {
+      return this.resolveBridgeModel(task.providerOverride.provider, task.providerOverride.modelId, models.filter((model) => model.installed));
+    }
+
+    return this.pickBridgeModel(models);
+  }
+
+  private pickPrismBridgeModel(models: ProviderModelPreset[]): string {
+    if (this.prismOverride) {
+      return this.resolveBridgeModel(this.prismOverride.provider, this.prismOverride.modelId, models.filter((model) => model.installed));
+    }
+
+    return this.pickBridgeModel(models);
   }
 
   private resolveSupportedModel(provider: ProviderId, modelId: string, installedModelIds: string[]): string {
@@ -701,13 +811,39 @@ export class LocalRuntimeAdapter {
     return modelId;
   }
 
-  private async hasBinary(command: string, args: string[]): Promise<boolean> {
-    try {
-      await execFileAsync(command, args);
-      return true;
-    } catch {
-      return false;
+  private resolveBridgeModel(provider: ProviderId, modelId: string, models: ProviderModelPreset[]): string {
+    const normalizedId = this.toProviderModelId(provider, modelId);
+    const installed = models.some((model) => model.installed && this.toProviderModelId(model.provider, model.id) === normalizedId);
+    if (!installed) {
+      throw new Error(`Model "${normalizedId}" is not available through the OpenClaw bridge.`);
     }
+
+    return normalizedId;
+  }
+
+  private async sendWithOpenClaw(input: { modelRef: string; system: string; prompt: string; tools?: string[] }): Promise<OpenClawPromptResult> {
+    return this.withRuntimeBridgeHooks(async () => this.openClawBridge.sendPrompt({
+      model: input.modelRef,
+      systemPrompt: input.system,
+      userPrompt: input.prompt,
+      ...(input.tools?.length ? { tools: input.tools } : {})
+    }));
+  }
+
+  private normalizeProviderId(provider: string): ProviderId {
+    if (provider === 'openai' || provider === 'anthropic' || provider === 'google' || provider === 'ollama') {
+      return provider;
+    }
+
+    return 'ollama';
+  }
+
+  private toProviderModelId(provider: ProviderId, modelId: string): string {
+    if (modelId.startsWith(`${provider}/`)) {
+      return modelId;
+    }
+
+    return provider === 'ollama' ? modelId : `${provider}/${modelId}`;
   }
 
   private humanizeModelName(modelId: string) {

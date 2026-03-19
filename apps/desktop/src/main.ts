@@ -1,4 +1,4 @@
-import { Notification, app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
+import { Notification, app, autoUpdater, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -459,9 +459,12 @@ async function refreshStoredModels() {
   return models;
 }
 
-async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus> {
-  const models = await runtime.listModels();
-  const status = await runtime.getStatus();
+async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus & { openclawVersion: string | null }> {
+  const [models, status, openclawVersion] = await Promise.all([
+    runtime.listModels(),
+    runtime.getStatus(),
+    runtime.getOpenClawVersion()
+  ]);
   const byId = new Map(models.map((model) => [model.id, model]));
 
   const entries = Array.from(byId.values()).map((model) => {
@@ -481,7 +484,8 @@ async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus> {
 
   return {
     running: status.ollamaReady,
-    models: entries
+    models: entries,
+    openclawVersion
   };
 }
 
@@ -1363,7 +1367,7 @@ async function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: '#08090a',
-    title: 'Supreme Raman AI',
+    title: 'RamN AI',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1622,6 +1626,45 @@ app.whenReady().then(async () => {
   }, 2000);
 
   await createWindow();
+
+  // Auto-update (only in packaged builds)
+  if (app.isPackaged) {
+    try {
+      const server = 'https://update.electronjs.org';
+      const feed = `${server}/mhkr9100/RamN-AI---Supreme/${process.platform}-${process.arch}/${app.getVersion()}`;
+      autoUpdater.setFeedURL({ url: feed });
+
+      autoUpdater.on('update-downloaded', (_event, releaseNotes, releaseName) => {
+        new Notification({
+          title: 'Update Ready',
+          body: `RamN AI ${releaseName ?? 'update'} is ready. Restart to apply.`,
+        }).show();
+      });
+
+      autoUpdater.on('error', (err) => {
+        console.warn('[auto-update] Error:', err.message);
+      });
+
+      autoUpdater.checkForUpdates();
+      setInterval(() => { autoUpdater.checkForUpdates(); }, 4 * 60 * 60 * 1000);
+    } catch (err) {
+      console.warn('[auto-update] Setup failed:', err);
+    }
+  }
+
+  // IPC: OpenClaw version
+  ipcMain.handle('supreme:openclaw-version', async () => runtime.getOpenClawVersion());
+
+  // IPC: check for updates manually
+  ipcMain.handle('supreme:check-for-updates', async () => {
+    if (!app.isPackaged) return { available: false, message: 'Auto-update disabled in dev mode' };
+    try {
+      autoUpdater.checkForUpdates();
+      return { available: true, message: 'Checking for updates…' };
+    } catch (err) {
+      return { available: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  });
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
