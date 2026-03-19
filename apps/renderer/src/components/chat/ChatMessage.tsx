@@ -1,0 +1,79 @@
+import React from 'react';
+import { motion } from 'framer-motion';
+import { MarkdownRenderer } from './MarkdownRenderer';
+
+export interface ChatMessageProps {
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  mode?: string;
+  timestamp?: string;
+  agentName?: string;
+  isStreaming?: boolean;
+}
+
+export const ChatMessage: React.FC<ChatMessageProps> = ({
+  role,
+  text,
+  mode,
+  timestamp,
+  agentName,
+  isStreaming
+}) => {
+  if (role === 'system') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col items-center justify-center my-4"
+      >
+        <span className="text-[10px] text-white/40 uppercase tracking-wider mb-1">System</span>
+        <div className="text-xs text-white/50 text-center max-w-[80%]">
+          {text}
+        </div>
+      </motion.div>
+    );
+  }
+
+  const isUser = role === 'user';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`flex flex-col my-4 w-full ${isUser ? 'items-end' : 'items-start'}`}
+    >
+      <div className={`flex items-baseline gap-2 mb-1.5 px-1 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <span className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">
+          {isUser ? 'You' : (agentName || 'Assistant')}
+        </span>
+        {timestamp && (
+          <span className="text-[10px] text-white/30">{timestamp}</span>
+        )}
+        {mode && !isUser && (
+          <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-[#c4b5fd]">
+            {mode}
+          </span>
+        )}
+      </div>
+
+      <div
+        className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+          isUser
+            ? 'bg-[#7c5cfc] text-white rounded-tr-sm'
+            : 'bg-[#141720] text-white rounded-tl-sm shadow-sm'
+        }`}
+      >
+        {isUser ? (
+          <div className="text-sm leading-relaxed whitespace-pre-wrap">{text}</div>
+        ) : (
+          <div className="relative">
+            <MarkdownRenderer content={text} />
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 bg-white/70 ml-1 align-middle animate-pulse" />
+            )}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};

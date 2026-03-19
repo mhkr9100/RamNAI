@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
 import { LocalProfileScreen } from './components/LocalProfileScreen';
@@ -8,6 +9,8 @@ import { SettingsView } from './components/SettingsView';
 import { SpectrumView } from './components/SpectrumView';
 import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
+import { RamanIcon } from './components/RamanIcon';
+import { useToast } from './components/ui';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from './lib/electron';
 import type {
   OllamaRuntimeStatus,
@@ -612,29 +615,46 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08090a] text-white">
-        <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/70">
-          <LoaderCircle className="animate-spin" size={18} />
-          Loading RamN AI…
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-surface-0 text-white">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="flex flex-col items-center gap-5"
+        >
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+            <RamanIcon size={28} />
+            <div className="absolute inset-0 rounded-2xl bg-brand/10 animate-pulse" />
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-white/50">
+            <LoaderCircle className="animate-spin text-brand" size={16} />
+            Loading RamN AI…
+          </div>
+        </motion.div>
       </div>
     );
   }
 
   if (!api) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-8 text-white">
-        <div className="max-w-2xl rounded-[32px] border border-white/10 bg-white/5 p-8 text-center">
-          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/40">RamN AI</div>
-          <div className="mt-4 text-3xl font-semibold">Desktop bridge not detected.</div>
-          <p className="mt-4 text-base leading-8 text-white/65">
-            This renderer is meant to run inside the Electron desktop shell. If you open the Vite URL directly in a browser, the local desktop APIs will not exist.
-          </p>
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 px-5 py-4 text-left text-sm leading-7 text-white/72">
-            Run:
-            <pre className="mt-3 overflow-x-auto text-white"><code>npm run desktop:dev</code></pre>
+      <div className="flex min-h-screen items-center justify-center bg-surface-0 px-8 text-white">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="max-w-lg rounded-2xl border border-white/[0.08] bg-surface-3 p-8 text-center shadow-elevated"
+        >
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+            <RamanIcon size={24} />
           </div>
-        </div>
+          <h1 className="text-xl font-semibold text-white">Desktop bridge not detected</h1>
+          <p className="mt-3 text-sm leading-6 text-white/50">
+            RamN AI runs inside the Electron desktop shell. Open it with the command below instead of navigating to the Vite URL directly.
+          </p>
+          <div className="mt-5 rounded-xl border border-white/[0.08] bg-surface-1 px-4 py-3 text-left">
+            <code className="font-mono text-sm text-brand-light">npm run desktop:dev</code>
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -643,129 +663,170 @@ export default function App() {
     return <LocalProfileScreen onSave={handleSaveProfile} isSaving={savingProfile} />;
   }
 
+  const viewTitles: Record<ViewId, string> = {
+    prism: 'Prism',
+    chats: 'Chats',
+    usermap: 'UserMap',
+    spectrum: 'Spectrum',
+    work: 'Work',
+    settings: 'Settings',
+  };
+
+  const viewDescriptions: Record<ViewId, string> = {
+    prism: 'AI architect',
+    chats: 'Conversations',
+    usermap: 'Context memory',
+    spectrum: 'Agent management',
+    work: 'Tasks & results',
+    settings: 'Configuration',
+  };
+
   return (
-    <div className="flex min-h-screen bg-[#08090a] text-white">
+    <div className="flex min-h-screen bg-surface-0 text-white">
       <Sidebar activeView={activeView} onSelect={setActiveView} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0e1012]">
-        <header className="border-b border-white/6 bg-[#0b0d0f]/95 px-4 backdrop-blur-xl">
-          <div className="flex h-full flex-wrap items-center justify-between gap-4">
-            <div className="py-3">
-              <div className="text-[8px] font-black uppercase tracking-[0.22em] text-white/30">RamN AI</div>
-              <div className="mt-1 text-sm font-semibold text-white">
-                {activeView === 'prism'
-                  ? 'Prism'
-                  : activeView === 'chats'
-                    ? 'Chats'
-                    : activeView === 'usermap'
-                      ? 'UserMap'
-                      : activeView === 'spectrum'
-                        ? 'Spectrum'
-                        : activeView === 'work'
-                          ? 'Work'
-                        : 'Settings'}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-black uppercase tracking-[0.16em] text-white/55">
-                {snapshot.profile.name}
-              </div>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-2">
+        {/* Header */}
+        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-white/[0.06] bg-surface-1/95 px-5 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-[15px] font-semibold text-white">{viewTitles[activeView]}</h1>
+              <p className="text-[10px] font-medium text-white/30">{viewDescriptions[activeView]}</p>
             </div>
           </div>
-          {error || notice ? (
-            <div className="grid gap-2 border-t border-white/6 py-2 lg:grid-cols-[1fr_auto]">
-              {error ? (
-                <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2.5 text-sm text-red-100">
-                  <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-red-200"><AlertTriangle size={13} />Error</div>
-                  {error}
-                </div>
-              ) : <div className="hidden lg:block" />}
-              {notice ? (
-                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/72">
-                  {notice}
-                </div>
-              ) : null}
+          <div className="flex items-center gap-3">
+            {snapshot.runtime.available && (
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#34d399] opacity-50" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#34d399]" />
+                </span>
+                <span className="text-[10px] font-medium text-white/35">Runtime</span>
+              </div>
+            )}
+            <div className="h-4 w-px bg-white/[0.06]" />
+            <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1">
+              <div className="h-5 w-5 rounded-md bg-brand/20 flex items-center justify-center text-[10px] font-bold text-brand-light">
+                {snapshot.profile.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-xs font-medium text-white/60">{snapshot.profile.name}</span>
             </div>
-          ) : null}
+          </div>
         </header>
+
+        {/* Error / Notice bar */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden border-b border-[#f87171]/10"
+            >
+              <div className="flex items-center gap-2.5 bg-[#f87171]/[0.06] px-5 py-2.5">
+                <AlertTriangle size={14} className="shrink-0 text-[#f87171]" />
+                <p className="flex-1 text-xs text-[#fca5a5]">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="text-[10px] font-medium text-white/40 hover:text-white/60 transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Content */}
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
-          <section className="mx-auto min-w-0 w-full max-w-[1360px] px-3 py-3">
-            {activeView === 'prism' ? (
-              <PrismWorkspace
-                snapshot={snapshot}
-                messages={prismMessages}
-                busy={busy}
-                onSend={handlePrismSend}
-                onCreateTask={handleTaskCreate}
-                onClearTranscript={handleClearPrismTranscript}
-              />
-            ) : null}
-            {activeView === 'chats' ? (
-              <ChatsWorkspace
-                snapshot={snapshot}
-                busy={busy}
-                selectedTarget={selectedChatTarget}
-                draftSeed={chatDraftSeed}
-                onSelectTarget={handleSelectChatTarget}
-                onSendAgentMessage={handleSendAgentMessage}
-                onSendGroupMessage={handleSendGroupMessage}
-                onCreateTask={handleTaskCreate}
-                onDeleteThread={handleDeleteThread}
-              />
-            ) : null}
-            {activeView === 'spectrum' ? (
-              <SpectrumView
-                snapshot={snapshot}
-                busy={busy}
-                onCreateAgentTask={handleTaskCreate}
-                onUpsertGroup={handleUpsertGroup}
-                onDeleteGroup={handleDeleteGroup}
-                onOpenChat={handleOpenChatTarget}
-              />
-            ) : null}
-            {activeView === 'work' ? (
-              <WorkView
-                snapshot={snapshot}
-                busy={busy}
-                onDeleteTask={handleDeleteTask}
-                onDuplicateTask={handleDuplicateTask}
-                onRerunTask={handleRerunTask}
-                onDeleteWorkItem={handleDeleteWorkItem}
-                onSendToChat={handleSendWorkToChat}
-                onOpenChat={handleOpenChatDestination}
-                onOpenArtifact={handleOpenArtifact}
-              />
-            ) : null}
-            {activeView === 'usermap' ? (
-              <UserMapPanel
-                tree={snapshot.userMap}
-                facts={snapshot.memoryFacts}
-                busy={busy}
-                onSave={handleSaveUserMap}
-                onSync={handleSyncUserMap}
-              />
-            ) : null}
-            {activeView === 'settings' ? (
-              <SettingsView
-                activeSection={selectedSettingsSection}
-                onSelectSection={setSelectedSettingsSection}
-                runtimeReady={snapshot.runtime.available}
-                providerProfiles={providerProfiles}
-                providerSelections={providerSelections}
-                prismOverride={prismOverride}
-                ollamaStatus={ollamaStatus}
-                models={snapshot.models}
-                busy={busy}
-                loading={settingsLoading}
-                onRefresh={refreshSettings}
-                onInstallDefaults={handleInstallDefaultModels}
-                onSaveProfile={handleSaveProviderProfile}
-                onDeleteProfile={handleDeleteProviderProfile}
-                onTestProfile={handleTestProviderProfile}
-                onSetProviderSelection={handleSetProviderSelection}
-                onSavePrismOverride={handleSavePrismOverride}
-              />
-            ) : null}
-          </section>
+          <AnimatePresence mode="wait">
+            <motion.section
+              key={activeView}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+              className="mx-auto min-w-0 w-full max-w-[1360px] px-5 py-4"
+            >
+              {activeView === 'prism' ? (
+                <PrismWorkspace
+                  snapshot={snapshot}
+                  messages={prismMessages}
+                  busy={busy}
+                  onSend={handlePrismSend}
+                  onCreateTask={handleTaskCreate}
+                  onClearTranscript={handleClearPrismTranscript}
+                />
+              ) : null}
+              {activeView === 'chats' ? (
+                <ChatsWorkspace
+                  snapshot={snapshot}
+                  busy={busy}
+                  selectedTarget={selectedChatTarget}
+                  draftSeed={chatDraftSeed}
+                  onSelectTarget={handleSelectChatTarget}
+                  onSendAgentMessage={handleSendAgentMessage}
+                  onSendGroupMessage={handleSendGroupMessage}
+                  onCreateTask={handleTaskCreate}
+                  onDeleteThread={handleDeleteThread}
+                />
+              ) : null}
+              {activeView === 'spectrum' ? (
+                <SpectrumView
+                  snapshot={snapshot}
+                  busy={busy}
+                  onCreateAgentTask={handleTaskCreate}
+                  onUpsertGroup={handleUpsertGroup}
+                  onDeleteGroup={handleDeleteGroup}
+                  onOpenChat={handleOpenChatTarget}
+                />
+              ) : null}
+              {activeView === 'work' ? (
+                <WorkView
+                  snapshot={snapshot}
+                  busy={busy}
+                  onDeleteTask={handleDeleteTask}
+                  onDuplicateTask={handleDuplicateTask}
+                  onRerunTask={handleRerunTask}
+                  onDeleteWorkItem={handleDeleteWorkItem}
+                  onSendToChat={handleSendWorkToChat}
+                  onOpenChat={handleOpenChatDestination}
+                  onOpenArtifact={handleOpenArtifact}
+                />
+              ) : null}
+              {activeView === 'usermap' ? (
+                <UserMapPanel
+                  tree={snapshot.userMap}
+                  facts={snapshot.memoryFacts}
+                  busy={busy}
+                  onSave={handleSaveUserMap}
+                  onSync={handleSyncUserMap}
+                />
+              ) : null}
+              {activeView === 'settings' ? (
+                <SettingsView
+                  activeSection={selectedSettingsSection}
+                  onSelectSection={setSelectedSettingsSection}
+                  runtimeReady={snapshot.runtime.available}
+                  providerProfiles={providerProfiles}
+                  providerSelections={providerSelections}
+                  prismOverride={prismOverride}
+                  ollamaStatus={ollamaStatus}
+                  models={snapshot.models}
+                  busy={busy}
+                  loading={settingsLoading}
+                  onRefresh={refreshSettings}
+                  onInstallDefaults={handleInstallDefaultModels}
+                  onSaveProfile={handleSaveProviderProfile}
+                  onDeleteProfile={handleDeleteProviderProfile}
+                  onTestProfile={handleTestProviderProfile}
+                  onSetProviderSelection={handleSetProviderSelection}
+                  onSavePrismOverride={handleSavePrismOverride}
+                />
+              ) : null}
+            </motion.section>
+          </AnimatePresence>
         </div>
       </main>
     </div>
