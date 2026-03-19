@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
+import { CommandPalette, buildDefaultCommands } from './components/CommandPalette';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LocalProfileScreen } from './components/LocalProfileScreen';
 import { Sidebar, ViewId } from './components/Sidebar';
 import { PrismWorkspace } from './components/PrismWorkspace';
@@ -11,6 +13,7 @@ import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
 import { RamanIcon } from './components/RamanIcon';
 import { useToast } from './components/ui';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from './lib/electron';
 import type {
   OllamaRuntimeStatus,
@@ -663,6 +666,29 @@ export default function App() {
     return <LocalProfileScreen onSave={handleSaveProfile} isSaving={savingProfile} />;
   }
 
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+
+  const commandItems = useMemo(
+    () => buildDefaultCommands(setActiveView),
+    [],
+  );
+
+  useKeyboardShortcuts(
+    useMemo(
+      () => [
+        { key: 'k', meta: true, handler: () => setCmdPaletteOpen((v) => !v), description: 'Command palette', label: 'Command Palette' },
+        { key: '1', meta: true, handler: () => setActiveView('prism'), description: 'Go to Prism', label: 'Prism' },
+        { key: '2', meta: true, handler: () => setActiveView('chats'), description: 'Go to Chats', label: 'Chats' },
+        { key: '3', meta: true, handler: () => setActiveView('usermap'), description: 'Go to UserMap', label: 'UserMap' },
+        { key: '4', meta: true, handler: () => setActiveView('spectrum'), description: 'Go to Spectrum', label: 'Spectrum' },
+        { key: '5', meta: true, handler: () => setActiveView('work'), description: 'Go to Work', label: 'Work' },
+        { key: ',', meta: true, handler: () => setActiveView('settings'), description: 'Go to Settings', label: 'Settings' },
+        { key: 'b', meta: true, handler: () => {}, description: 'Toggle sidebar', label: 'Toggle Sidebar' },
+      ],
+      [],
+    ),
+  );
+
   const viewTitles: Record<ViewId, string> = {
     prism: 'Prism',
     chats: 'Chats',
@@ -683,6 +709,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-surface-0 text-white">
+      <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} items={commandItems} />
       <Sidebar activeView={activeView} onSelect={setActiveView} />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-2">
         {/* Header */}
@@ -750,17 +777,17 @@ export default function App() {
               className="mx-auto min-w-0 w-full max-w-[1360px] px-5 py-4"
             >
               {activeView === 'prism' ? (
-                <PrismWorkspace
+                <ErrorBoundary viewName="Prism"><PrismWorkspace
                   snapshot={snapshot}
                   messages={prismMessages}
                   busy={busy}
                   onSend={handlePrismSend}
                   onCreateTask={handleTaskCreate}
                   onClearTranscript={handleClearPrismTranscript}
-                />
+                /></ErrorBoundary>
               ) : null}
               {activeView === 'chats' ? (
-                <ChatsWorkspace
+                <ErrorBoundary viewName="Chats"><ChatsWorkspace
                   snapshot={snapshot}
                   busy={busy}
                   selectedTarget={selectedChatTarget}
@@ -770,20 +797,20 @@ export default function App() {
                   onSendGroupMessage={handleSendGroupMessage}
                   onCreateTask={handleTaskCreate}
                   onDeleteThread={handleDeleteThread}
-                />
+                /></ErrorBoundary>
               ) : null}
               {activeView === 'spectrum' ? (
-                <SpectrumView
+                <ErrorBoundary viewName="Spectrum"><SpectrumView
                   snapshot={snapshot}
                   busy={busy}
                   onCreateAgentTask={handleTaskCreate}
                   onUpsertGroup={handleUpsertGroup}
                   onDeleteGroup={handleDeleteGroup}
                   onOpenChat={handleOpenChatTarget}
-                />
+                /></ErrorBoundary>
               ) : null}
               {activeView === 'work' ? (
-                <WorkView
+                <ErrorBoundary viewName="Work"><WorkView
                   snapshot={snapshot}
                   busy={busy}
                   onDeleteTask={handleDeleteTask}
@@ -793,19 +820,19 @@ export default function App() {
                   onSendToChat={handleSendWorkToChat}
                   onOpenChat={handleOpenChatDestination}
                   onOpenArtifact={handleOpenArtifact}
-                />
+                /></ErrorBoundary>
               ) : null}
               {activeView === 'usermap' ? (
-                <UserMapPanel
+                <ErrorBoundary viewName="UserMap"><UserMapPanel
                   tree={snapshot.userMap}
                   facts={snapshot.memoryFacts}
                   busy={busy}
                   onSave={handleSaveUserMap}
                   onSync={handleSyncUserMap}
-                />
+                /></ErrorBoundary>
               ) : null}
               {activeView === 'settings' ? (
-                <SettingsView
+                <ErrorBoundary viewName="Settings"><SettingsView
                   activeSection={selectedSettingsSection}
                   onSelectSection={setSelectedSettingsSection}
                   runtimeReady={snapshot.runtime.available}
@@ -823,7 +850,7 @@ export default function App() {
                   onTestProfile={handleTestProviderProfile}
                   onSetProviderSelection={handleSetProviderSelection}
                   onSavePrismOverride={handleSavePrismOverride}
-                />
+                /></ErrorBoundary>
               ) : null}
             </motion.section>
           </AnimatePresence>
