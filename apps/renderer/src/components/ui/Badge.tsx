@@ -50,6 +50,7 @@ export function Badge({
 }: BadgeProps) {
   return (
     <span
+      {...(dot ? { role: 'status' } : {})}
       className={[
         'inline-flex items-center border rounded-full font-semibold uppercase tracking-[0.03em] select-none whitespace-nowrap',
         variantClasses[variant],

@@ -118,6 +118,8 @@ function ToastContainer({
             className="pointer-events-auto"
           >
             <div
+              role={toast.type === 'error' ? 'alert' : 'status'}
+              aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
               className={`flex items-start gap-2.5 rounded-xl border bg-[#1a1e28]/95 backdrop-blur-xl px-3.5 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.5)] min-w-[280px] max-w-[380px] ${borderColors[toast.type]}`}
             >
               <span className="mt-0.5 shrink-0">{icons[toast.type]}</span>
@@ -129,6 +131,7 @@ function ToastContainer({
               </div>
               <button
                 onClick={() => onDismiss(toast.id)}
+                aria-label="Close notification"
                 className="shrink-0 rounded-md p-0.5 text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
               >
                 <X size={14} />

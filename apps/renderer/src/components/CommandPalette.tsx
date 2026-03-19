@@ -119,6 +119,7 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
             transition={{ duration: 0.15 }}
             className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm"
             onClick={onClose}
+            aria-label="Close"
           />
 
           {/* Palette */}
@@ -129,7 +130,7 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
             transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
             className="fixed inset-x-0 top-[15%] z-[80] mx-auto w-full max-w-lg"
           >
-            <div className="mx-4 overflow-hidden rounded-2xl border border-white/[0.10] bg-surface-3/95 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+            <div role="dialog" aria-modal="true" aria-label="Command palette" className="mx-4 overflow-hidden rounded-2xl border border-white/[0.10] bg-surface-3/95 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl">
               {/* Search */}
               <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
                 <Search size={16} className="shrink-0 text-white/30" />
@@ -138,6 +139,10 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  role="combobox"
+                  aria-expanded={true}
+                  aria-controls="command-palette-listbox"
+                  aria-activedescendant={flatItems[selectedIndex] ? `command-option-${flatItems[selectedIndex]!.id}` : undefined}
                   className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/25"
                   placeholder="Search commands..."
                 />
@@ -147,6 +152,8 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
               {/* Results */}
               <div
                 ref={listRef}
+                id="command-palette-listbox"
+                role="listbox"
                 className="max-h-[360px] overflow-y-auto custom-scrollbar py-2"
               >
                 {flatItems.length === 0 ? (
@@ -165,8 +172,11 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
                         return (
                           <button
                             key={item.id}
+                            id={`command-option-${item.id}`}
                             data-index={globalIndex}
                             type="button"
+                            role="option"
+                            aria-selected={isSelected}
                             onClick={() => execute(item)}
                             onMouseEnter={() => setSelectedIndex(globalIndex)}
                             className={[

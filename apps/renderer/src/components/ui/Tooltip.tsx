@@ -1,8 +1,9 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useId, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface TooltipProps {
   content: React.ReactNode;
+  id?: string;
   side?: 'top' | 'bottom' | 'left' | 'right';
   delay?: number;
   className?: string;
@@ -25,11 +26,14 @@ const origins = {
 
 export function Tooltip({
   content,
+  id,
   side = 'top',
   delay = 400,
   className = '',
   children,
 }: TooltipProps) {
+  const autoId = useId();
+  const tooltipId = id ?? `tooltip-${autoId}`;
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -49,6 +53,7 @@ export function Tooltip({
       onMouseLeave={hide}
       onFocus={show}
       onBlur={hide}
+      aria-describedby={visible ? tooltipId : undefined}
     >
       {children}
       <AnimatePresence>
@@ -60,7 +65,7 @@ export function Tooltip({
             transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] as const }}
             className={`absolute z-[70] pointer-events-none ${positionClasses[side]} ${className}`}
           >
-            <div className="rounded-lg border border-white/[0.12] bg-[#1a1e28] px-2.5 py-1.5 text-[11px] font-medium text-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
+            <div id={tooltipId} role="tooltip" className="rounded-lg border border-white/[0.12] bg-[#1a1e28] px-2.5 py-1.5 text-[11px] font-medium text-white/80 shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
               {content}
             </div>
           </motion.div>

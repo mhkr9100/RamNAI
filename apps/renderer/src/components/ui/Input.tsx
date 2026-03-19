@@ -26,6 +26,7 @@ const iconPadding: Record<InputSize, string> = {
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ inputSize = 'md', label, hint, error, icon, iconRight, className = '', id, ...rest }, ref) => {
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+    const descriptionId = inputId ? `${inputId}-description` : undefined;
     const hasError = Boolean(error);
 
     return (
@@ -47,6 +48,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <input
             ref={ref}
             id={inputId}
+            aria-invalid={hasError}
+            aria-describedby={(hint || error) ? descriptionId : undefined}
             className={[
               'w-full bg-[#0a0c10] text-white/90 placeholder:text-white/25 outline-none border transition-all duration-150',
               hasError
@@ -68,7 +71,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           )}
         </div>
         {(hint || error) && (
-          <p className={`text-[11px] ${hasError ? 'text-[#fca5a5]' : 'text-white/35'}`}>
+          <p
+            id={descriptionId}
+            className={`text-[11px] ${hasError ? 'text-[#fca5a5]' : 'text-white/35'}`}
+            {...(hasError ? { role: 'alert' } : {})}
+          >
             {error ?? hint}
           </p>
         )}
@@ -88,6 +95,7 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, hint, error, className = '', id, ...rest }, ref) => {
     const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+    const descriptionId = textareaId ? `${textareaId}-description` : undefined;
     const hasError = Boolean(error);
 
     return (
@@ -103,6 +111,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           ref={ref}
           id={textareaId}
+          aria-invalid={hasError}
+          aria-describedby={(hint || error) ? descriptionId : undefined}
           className={[
             'w-full bg-[#0a0c10] text-white/90 placeholder:text-white/25 outline-none border transition-all duration-150',
             'min-h-[80px] resize-none rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed',
@@ -116,7 +126,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...rest}
         />
         {(hint || error) && (
-          <p className={`text-[11px] ${hasError ? 'text-[#fca5a5]' : 'text-white/35'}`}>
+          <p
+            id={descriptionId}
+            className={`text-[11px] ${hasError ? 'text-[#fca5a5]' : 'text-white/35'}`}
+            {...(hasError ? { role: 'alert' } : {})}
+          >
             {error ?? hint}
           </p>
         )}
@@ -137,6 +151,7 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ inputSize = 'md', label, hint, options, className = '', id, ...rest }, ref) => {
     const selectId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+    const descriptionId = selectId ? `${selectId}-description` : undefined;
 
     return (
       <div className="space-y-1.5">
@@ -151,6 +166,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         <select
           ref={ref}
           id={selectId}
+          aria-describedby={hint ? descriptionId : undefined}
           className={[
             'w-full bg-[#0a0c10] text-white/90 outline-none border transition-all duration-150',
             'border-white/[0.10] hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20',
@@ -167,7 +183,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {hint && <p className="text-[11px] text-white/35">{hint}</p>}
+        {hint && <p id={descriptionId} className="text-[11px] text-white/35">{hint}</p>}
       </div>
     );
   },

@@ -36,6 +36,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
       initial={false}
       animate={{ width: expanded ? 200 : 68 }}
       transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+      aria-expanded={expanded}
       className="flex shrink-0 flex-col border-r border-white/[0.06] bg-surface-0 relative z-20 overflow-hidden"
     >
       {/* Brand */}
@@ -67,7 +68,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto custom-scrollbar">
+      <nav aria-label="Main navigation" className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto custom-scrollbar">
         {navItems.map((item) => {
           const active = item.id === activeView;
           const Icon = item.icon;
@@ -77,6 +78,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
               type="button"
               onClick={() => onSelect(item.id)}
               title={expanded ? undefined : item.label}
+              aria-current={active ? 'page' : undefined}
               className={[
                 'group relative flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium transition-all duration-150',
                 active
@@ -122,6 +124,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
           type="button"
           onClick={() => onSelect('settings')}
           title={expanded ? undefined : 'Settings'}
+          aria-current={activeView === 'settings' ? 'page' : undefined}
           className={[
             'group relative flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium transition-all duration-150',
             activeView === 'settings'
@@ -160,6 +163,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
           onClick={() => setExpanded((v) => !v)}
           className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-white/30 hover:text-white/55 hover:bg-white/[0.04] transition-all duration-150"
           title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label="Toggle sidebar"
         >
           <span className="flex h-7 w-7 shrink-0 items-center justify-center">
             {expanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
