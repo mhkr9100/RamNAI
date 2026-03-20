@@ -15,7 +15,7 @@ interface BadgeProps {
 
 const variantClasses: Record<BadgeVariant, string> = {
   default: 'bg-white/[0.06] text-white/65 border-white/[0.10]',
-  brand: 'bg-[#7c5cfc]/[0.12] text-[#c4b5fd] border-[#7c5cfc]/[0.20]',
+  brand: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/20',
   success: 'bg-[#34d399]/[0.12] text-[#6ee7b7] border-[#34d399]/[0.20]',
   warning: 'bg-[#fbbf24]/[0.12] text-[#fde68a] border-[#fbbf24]/[0.20]',
   error: 'bg-[#f87171]/[0.12] text-[#fca5a5] border-[#f87171]/[0.20]',
@@ -25,7 +25,7 @@ const variantClasses: Record<BadgeVariant, string> = {
 
 const dotColors: Record<BadgeVariant, string> = {
   default: 'bg-white/40',
-  brand: 'bg-[#7c5cfc]',
+  brand: 'bg-emerald-500',
   success: 'bg-[#34d399]',
   warning: 'bg-[#fbbf24]',
   error: 'bg-[#f87171]',

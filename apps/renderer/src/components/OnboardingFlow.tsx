@@ -16,21 +16,23 @@ import { Button, Card, Input, Badge, Divider } from './ui';
 import { RamanIcon } from './RamanIcon';
 
 export interface OnboardingFlowProps {
-  onComplete: (profile: { name: string; email: string }) => Promise<void>;
+  onComplete: (profile: { name: string }) => Promise<void>;
   isCheckingRuntime?: boolean | undefined;
   runtimeAvailable?: boolean | undefined;
+  onInstallDefaults?: () => Promise<unknown>;
 }
 
 export function OnboardingFlow({ 
   onComplete, 
   isCheckingRuntime = false, 
-  runtimeAvailable = false 
+  runtimeAvailable = false,
+  onInstallDefaults
 }: OnboardingFlowProps) {
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [profile, setProfile] = useState({ name: '', email: '' });
+  const [profile, setProfile] = useState({ name: '' });
   const [keys, setKeys] = useState({ openai: '', anthropic: '' });
 
   const paginate = (newDirection: number) => {
@@ -47,7 +49,7 @@ export function OnboardingFlow({
     }
   };
 
-  const isProfileValid = profile.name.trim().length > 0 && profile.email.includes('@');
+  const isProfileValid = profile.name.trim().length > 0;
 
   const variants = {
     enter: (direction: number) => ({
@@ -72,7 +74,7 @@ export function OnboardingFlow({
         <div
           key={i}
           className={`h-1.5 rounded-full transition-all duration-300 ${
-            i === step ? 'w-6 bg-[#7c5cfc]' : 'w-1.5 bg-white/20'
+            i === step ? 'w-6 bg-emerald-500' : 'w-1.5 bg-gray-400 dark:bg-white/20'
           }`}
         />
       ))}
@@ -80,8 +82,13 @@ export function OnboardingFlow({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-surface-0 overflow-hidden">
-      <div className="w-full max-w-lg px-6 flex flex-col justify-center min-h-[500px] relative">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#f3f5f4] dark:bg-[#0f1113] overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-12%] top-[-8%] h-[28rem] w-[28rem] rounded-full bg-emerald-400/12 blur-3xl dark:bg-emerald-400/10" />
+        <div className="absolute right-[-8%] top-[12%] h-[24rem] w-[24rem] rounded-full bg-black/6 blur-3xl dark:bg-white/6" />
+        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.12),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(110,231,183,0.08),transparent_50%)]" />
+      </div>
+      <div className="w-full max-w-lg px-6 flex flex-col justify-center min-h-[500px] relative text-gray-950 dark:text-white">
         <AnimatePresence mode="wait" custom={direction} initial={false}>
           <motion.div
             key={step}
@@ -99,29 +106,19 @@ export function OnboardingFlow({
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.1, duration: 0.5 }}
-                  className="mb-8 relative"
+                  className="mb-8 relative text-gray-900 dark:text-white/30"
                 >
-                  <div className="absolute inset-0 bg-[#7c5cfc] blur-[40px] opacity-20 rounded-full" />
-                  <RamanIcon className="w-24 h-24 text-[#7c5cfc] drop-shadow-[0_0_15px_rgba(124,92,252,0.5)] relative z-10" />
+                  <RamanIcon size={96} />
                 </motion.div>
                 
                 <motion.h1 
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.2 }}
-                  className="text-3xl font-bold text-white mb-3"
-                  style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+                  className="text-3xl font-black uppercase tracking-tighter text-gray-950 dark:text-white mb-3"
                 >
                   Welcome to RamN AI
                 </motion.h1>
-                <motion.p 
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-white/60 mb-10 text-lg"
-                >
-                  Let&apos;s set up your workspace
-                </motion.p>
 
                 <motion.div
                   initial={{ y: 20, opacity: 0 }}
@@ -138,36 +135,20 @@ export function OnboardingFlow({
 
             {step === 1 && (
               <div className="flex flex-col">
-                <Button variant="ghost" size="sm" className="self-start mb-6 -ml-3 text-white/50" onClick={() => paginate(-1)} icon={<ArrowLeft size={16} />}>
+                <Button variant="ghost" size="sm" className="self-start mb-6 -ml-3 text-gray-500 dark:text-white/50" onClick={() => paginate(-1)} icon={<ArrowLeft size={16} />}>
                   Back
                 </Button>
                 
-                <h2 className="text-2xl font-bold text-white mb-2">Set up your profile</h2>
-                <p className="text-white/50 text-sm mb-8">This is used to personalize your workspace. Stored locally.</p>
-                
-                <div className="flex justify-center mb-8">
-                  <div className="w-20 h-20 rounded-full bg-[#7c5cfc]/20 border-2 border-[#7c5cfc]/30 flex items-center justify-center text-2xl font-bold text-[#c4b5fd]">
-                    {profile.name.trim() ? profile.name.trim().charAt(0).toUpperCase() : '?'}
-                  </div>
-                </div>
+                <h2 className="text-2xl font-bold text-gray-950 dark:text-white mb-8">Username</h2>
 
                 <div className="space-y-4 mb-10">
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50 pl-1">Your Name</label>
+                    <label className="text-[11px] font-semibold uppercase tracking-[0.04em] text-gray-500 dark:text-white/50 pl-1">Name</label>
                     <Input 
                       placeholder="e.g. Raman" 
                       value={profile.name} 
                       onChange={(e: any) => setProfile({ ...profile, name: e.target.value })} 
                       autoFocus
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50 pl-1">Email Address</label>
-                    <Input 
-                      type="email"
-                      placeholder="you@example.com" 
-                      value={profile.email} 
-                      onChange={(e: any) => setProfile({ ...profile, email: e.target.value })} 
                     />
                   </div>
                 </div>
@@ -179,6 +160,7 @@ export function OnboardingFlow({
                   onClick={() => paginate(1)} 
                   disabled={!isProfileValid}
                   iconRight={<ArrowRight size={18} />}
+                  className="disabled:opacity-50"
                 >
                   Continue
                 </Button>
@@ -212,10 +194,19 @@ export function OnboardingFlow({
                   </div>
                   
                   {!isCheckingRuntime && !runtimeAvailable && (
-                    <div className="mt-3 text-sm text-white/60 bg-surface-4 rounded-xl p-3 border border-white/[0.04]">
-                      <p className="mb-2">We couldn't detect Ollama running. To use local models, please install it.</p>
-                      <a href="https://ollama.com" target="_blank" rel="noreferrer" className="text-brand-light hover:text-brand-subtle underline decoration-[#7c5cfc]/30 underline-offset-2">Download Ollama</a>
+                    <div className="mt-3">
+                      <a href="https://ollama.com" target="_blank" rel="noreferrer" className="text-emerald-600 dark:text-emerald-300 hover:text-emerald-700 dark:hover:text-emerald-200 underline underline-offset-2">Download Ollama</a>
                     </div>
+                  )}
+                  {!isCheckingRuntime && runtimeAvailable && onInstallDefaults && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => { void onInstallDefaults(); }}
+                    >
+                      Install default models
+                    </Button>
                   )}
                 </div>
 
@@ -224,7 +215,7 @@ export function OnboardingFlow({
                 <div className="space-y-4 mb-10">
                   <div className="flex items-center gap-2 mb-2">
                     <Key size={14} className="text-white/40" />
-                    <h3 className="text-sm font-semibold text-white/80">Cloud Providers (Optional)</h3>
+                    <h3 className="text-sm font-semibold text-white/80">Cloud Providers</h3>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/40 pl-1">OpenAI API Key</label>
@@ -263,14 +254,14 @@ export function OnboardingFlow({
                   initial={{ scale: 0 }}
                   animate={{ scale: [0, 1.2, 1] }}
                   transition={{ duration: 0.6, type: "spring" }}
-                  className="w-24 h-24 rounded-full bg-[#7c5cfc]/20 border-4 border-[#7c5cfc]/30 flex items-center justify-center mb-8 relative"
+                  className="w-24 h-24 rounded-full bg-emerald-500/20 border-4 border-emerald-500/30 flex items-center justify-center mb-8 relative"
                 >
                   <motion.div 
                     animate={{ rotate: 360 }}
                     transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                    className="absolute inset-0 rounded-full border-2 border-dashed border-[#7c5cfc]/40"
+                    className="absolute inset-0 rounded-full border-2 border-dashed border-emerald-500/40"
                   />
-                  <CheckCircle2 size={40} className="text-[#c4b5fd]" />
+                  <CheckCircle2 size={40} className="text-emerald-400" />
                 </motion.div>
                 
                 <motion.h2 
@@ -282,14 +273,6 @@ export function OnboardingFlow({
                   You're all set!
                 </motion.h2>
                 
-                <motion.p 
-                  initial={{ y: 10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-white/60 mb-10"
-                >
-                  Your workspace is ready. Here are a few things you can do next:
-                </motion.p>
                 
                 <motion.div 
                   initial={{ y: 10, opacity: 0 }}
@@ -299,24 +282,15 @@ export function OnboardingFlow({
                 >
                   <div className="flex items-start gap-3 bg-surface-3 border border-white/[0.08] p-4 rounded-xl">
                     <Sparkles className="text-[#a78bfa] mt-0.5" size={16} />
-                    <div>
-                      <h4 className="text-white/90 text-sm font-medium">Create your first Agent</h4>
-                      <p className="text-white/50 text-xs mt-1">Design an AI persona tailored to your needs.</p>
-                    </div>
+                    <h4 className="text-white/90 text-sm font-medium">Create Agent</h4>
                   </div>
                   <div className="flex items-start gap-3 bg-surface-3 border border-white/[0.08] p-4 rounded-xl">
                     <BrainCircuit className="text-[#a78bfa] mt-0.5" size={16} />
-                    <div>
-                      <h4 className="text-white/90 text-sm font-medium">Setup a Group Chat</h4>
-                      <p className="text-white/50 text-xs mt-1">Watch multiple agents collaborate on a task.</p>
-                    </div>
+                    <h4 className="text-white/90 text-sm font-medium">Group Chat</h4>
                   </div>
                   <div className="flex items-start gap-3 bg-surface-3 border border-white/[0.08] p-4 rounded-xl">
                     <Shield className="text-[#a78bfa] mt-0.5" size={16} />
-                    <div>
-                      <h4 className="text-white/90 text-sm font-medium">Explore Settings</h4>
-                      <p className="text-white/50 text-xs mt-1">Configure models, parameters, and system prompts.</p>
-                    </div>
+                    <h4 className="text-white/90 text-sm font-medium">Settings</h4>
                   </div>
                 </motion.div>
 

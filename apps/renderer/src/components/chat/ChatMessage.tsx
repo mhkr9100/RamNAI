@@ -59,7 +59,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-3 ${
           isUser
-            ? 'bg-[#7c5cfc] text-white rounded-tr-sm'
+            ? 'bg-gray-900 dark:bg-white text-white dark:text-black rounded-tr-sm'
             : 'bg-[#141720] text-white rounded-tl-sm shadow-sm'
         }`}
       >

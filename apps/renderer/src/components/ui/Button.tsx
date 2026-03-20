@@ -23,7 +23,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   danger:
     'bg-[#f87171]/[0.12] text-[#fca5a5] hover:bg-[#f87171]/[0.20] hover:text-[#fecaca] active:bg-[#f87171]/[0.28] border-[#f87171]/[0.20]',
   brand:
-    'bg-[#7c5cfc] text-white hover:bg-[#6d4de8] active:bg-[#5f3dd4] border-transparent shadow-[0_0_20px_rgba(124,92,252,0.15)]',
+    'bg-gray-900 dark:bg-white text-white dark:text-black hover:bg-black dark:hover:bg-white/90 active:bg-black/90 dark:active:bg-white/80 border-transparent shadow-sm',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -61,7 +61,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={loading}
         className={[
           'inline-flex items-center justify-center border font-medium transition-all duration-150',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c5cfc]/50 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0e1117]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0e1117]',
           'disabled:pointer-events-none disabled:opacity-45',
           'select-none whitespace-nowrap',
           variantClasses[variant],

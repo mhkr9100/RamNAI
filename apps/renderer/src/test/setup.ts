@@ -1,26 +1,39 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
-// Mock crypto.randomUUID
 Object.defineProperty(globalThis, 'crypto', {
   value: {
     randomUUID: () => '12345678-1234-1234-1234-123456789abc',
   },
 });
 
-// Mock clipboard
 Object.defineProperty(navigator, 'clipboard', {
   value: {
     writeText: vi.fn(),
   },
 });
 
-// Mock electron API
+const noopAsync = () => Promise.resolve(null);
+const noopAsyncArr = () => Promise.resolve([]);
+
 Object.defineProperty(window, 'supreme', {
   value: {
-    workspace: {
-      getSnapshot: vi.fn(),
+    workspace: { getSnapshot: vi.fn() },
+    bridge: {
+      listAgents: noopAsyncArr,
+      sendMessage: noopAsync,
+      getSessions: noopAsyncArr,
+      getStatus: noopAsync,
+      restartGateway: () => Promise.resolve(false),
+      listChannels: noopAsyncArr,
+      addChannel: () => Promise.resolve(false),
+      removeChannel: () => Promise.resolve(false),
+      getChannelStatus: noopAsyncArr,
     },
-    // Mock other potential methods if needed
+    voice: {
+      getConfig: () => Promise.resolve({ enabled: false, wakeWord: '', preferredVoice: '', autoListen: false, ttsProvider: 'system' }),
+      setConfig: noopAsync,
+      sendTranscript: () => Promise.resolve({ type: 'response', text: '', timestamp: 0 }),
+    },
   },
 });

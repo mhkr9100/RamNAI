@@ -26,6 +26,8 @@ interface WorkViewProps {
   onSendToChat: (item: WorkItem) => void;
   onOpenChat: (target: ChatTarget | 'prism') => void;
   onOpenArtifact: (artifactId: string) => Promise<void>;
+  onLoadMoreTasks?: () => Promise<void>;
+  onLoadMoreWorkItems?: () => Promise<void>;
 }
 
 const listVariants = {
@@ -52,8 +54,12 @@ export function WorkView({
   onSendToChat,
   onOpenChat,
   onOpenArtifact,
+  onLoadMoreTasks,
+  onLoadMoreWorkItems,
 }: WorkViewProps) {
   const [expandedWorkId, setExpandedWorkId] = useState<string | null>(null);
+  const [loadingMoreTasks, setLoadingMoreTasks] = useState(false);
+  const [loadingMoreWorkItems, setLoadingMoreWorkItems] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | TaskSpec['status']>('all');
   const [kindFilter, setKindFilter] = useState<'all' | 'task' | 'council' | 'artifact'>('all');
@@ -137,8 +143,8 @@ export function WorkView({
           subtitle="Track scheduled work, inspect results, and send useful outputs back into a chat."
           action={
             <div className="flex flex-wrap gap-2">
-              <Badge variant="brand">Tasks {snapshot.tasks.length}</Badge>
-              <Badge variant="brand">Runs {snapshot.workItems.length}</Badge>
+              <Badge variant="brand">Tasks {snapshot.counts?.tasks ?? snapshot.tasks.length}</Badge>
+              <Badge variant="brand">Runs {snapshot.counts?.workItems ?? snapshot.workItems.length}</Badge>
               <Badge variant="brand">Files {snapshot.artifacts.length}</Badge>
             </div>
           }
@@ -219,7 +225,6 @@ export function WorkView({
             <EmptyState
               icon={<Play size={18} className="text-white/45" />}
               title="No tasks yet"
-              description="Create a task from Prism or Spectrum to start scheduling work."
               compact
             />
           ) : filteredTasks.length === 0 ? (
@@ -230,6 +235,7 @@ export function WorkView({
               compact
             />
           ) : (
+            <>
             <motion.div
               className="space-y-4"
               variants={listVariants}
@@ -319,6 +325,27 @@ export function WorkView({
                 </motion.div>
               ))}
             </motion.div>
+            {snapshot.counts && snapshot.counts.tasks > snapshot.tasks.length && onLoadMoreTasks ? (
+              <div className="mt-4 flex justify-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={loadingMoreTasks || busy}
+                  onClick={async () => {
+                    setLoadingMoreTasks(true);
+                    try {
+                      await onLoadMoreTasks();
+                    } finally {
+                      setLoadingMoreTasks(false);
+                    }
+                  }}
+                >
+                  {loadingMoreTasks ? 'Loading…' : `Load more tasks (${snapshot.tasks.length} of ${snapshot.counts.tasks})`}
+                </Button>
+              </div>
+            ) : null}
+            </>
           )}
         </Card>
 
@@ -341,6 +368,7 @@ export function WorkView({
               compact
             />
           ) : (
+            <>
             <motion.div
               className="space-y-4"
               variants={listVariants}
@@ -491,6 +519,27 @@ export function WorkView({
                 );
               })}
             </motion.div>
+            {snapshot.counts && snapshot.counts.workItems > snapshot.workItems.length && onLoadMoreWorkItems ? (
+              <div className="mt-4 flex justify-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={loadingMoreWorkItems || busy}
+                  onClick={async () => {
+                    setLoadingMoreWorkItems(true);
+                    try {
+                      await onLoadMoreWorkItems();
+                    } finally {
+                      setLoadingMoreWorkItems(false);
+                    }
+                  }}
+                >
+                  {loadingMoreWorkItems ? 'Loading…' : `Load more results (${snapshot.workItems.length} of ${snapshot.counts.workItems})`}
+                </Button>
+              </div>
+            ) : null}
+            </>
           )}
         </Card>
       </section>

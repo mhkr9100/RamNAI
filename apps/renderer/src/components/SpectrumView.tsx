@@ -16,6 +16,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
+import { CAPABILITY_DEFINITIONS } from '@supreme/shared';
 import { TaskComposerCard } from './TaskComposerCard';
 import { AgentProfilePanel } from './AgentProfilePanel';
 import type { ChatTarget } from './ChatsWorkspace';
@@ -60,16 +61,21 @@ const itemVariants = {
   show: { opacity: 1, y: 0 },
 };
 
-const CAPABILITY_CATALOG = [
-  { id: 'web_search', label: 'Web Search', icon: Globe, description: 'Search the internet for real-time information', category: 'Skill' },
-  { id: 'thinking', label: 'Thinking', icon: Sparkles, description: 'Extended reasoning and analysis', category: 'Skill' },
-  { id: 'code_execution', label: 'Code Execution', icon: Terminal, description: 'Run code in sandboxed environments', category: 'Skill' },
-  { id: 'file_management', label: 'File Management', icon: Wrench, description: 'Read, write, and manage local files', category: 'Skill' },
-  { id: 'shell', label: 'Shell Commands', icon: Terminal, description: 'Execute system shell commands', category: 'Skill' },
-  { id: 'browser', label: 'Browser Automation', icon: Globe, description: 'Navigate web pages and interact with elements', category: 'Skill' },
-  { id: 'api_calls', label: 'API Integration', icon: Plug, description: 'Make HTTP requests to external APIs', category: 'Plugin' },
-  { id: 'mcp', label: 'MCP Protocol', icon: Zap, description: 'Model Context Protocol tool integration', category: 'MCP' },
-];
+const CAPABILITY_ICON_MAP: Record<string, React.ComponentType<{ size?: number }>> = {
+  web_search: Globe,
+  thinking: Sparkles,
+  code_execution: Terminal,
+  file_management: Wrench,
+  shell: Terminal,
+  browser: Globe,
+  api_calls: Plug,
+  mcp: Zap,
+};
+
+const CAPABILITY_CATALOG = CAPABILITY_DEFINITIONS.map((def) => ({
+  ...def,
+  icon: CAPABILITY_ICON_MAP[def.id] ?? Zap,
+}));
 
 export function SpectrumView({
   snapshot,
@@ -158,8 +164,7 @@ export function SpectrumView({
       {/* Header with tabs */}
       <Card variant="elevated" padding="lg" animate={false} className="bg-surface-2">
         <CardHeader
-          title="Spectrum"
-          subtitle="Agents, capabilities, and AI models in your workspace."
+          title="Agents"
           icon={<Cpu size={16} className="text-brand-light" />}
           action={
             <div className="flex flex-wrap gap-2">
@@ -223,7 +228,6 @@ export function SpectrumView({
                   <EmptyState
                     icon={<Bot size={18} className="text-white/45" />}
                     title="No agents yet"
-                    description="Create your first agent in Prism, then return here to manage them."
                     compact
                   />
                 ) : (
@@ -233,7 +237,6 @@ export function SpectrumView({
                         <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                           <CardHeader
                             title={agent.name}
-                            subtitle={agent.persona.role}
                             action={
                               <div className="flex flex-wrap gap-2">
                                 <Button
@@ -264,9 +267,6 @@ export function SpectrumView({
                               </div>
                             }
                           />
-                          {agent.description ? (
-                            <p className="mt-3 text-sm leading-6 text-white/65">{agent.description}</p>
-                          ) : null}
                           <div className="mt-3 flex flex-wrap gap-1.5">
                             {[...agent.tools, ...agent.skills].map((cap) => (
                               <Badge key={cap} variant="outline" size="xs">{cap}</Badge>
@@ -304,14 +304,14 @@ export function SpectrumView({
                       <textarea
                         value={groupDescription}
                         onChange={(e) => setGroupDescription(e.target.value)}
-                        className="min-h-[80px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20"
+                        className="min-h-[80px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
                         placeholder="Optional description"
                       />
                     </label>
                     <div className="space-y-2">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">Members</div>
                       {snapshot.agents.length === 0 ? (
-                        <EmptyState icon={<Bot size={16} className="text-white/45" />} title="No agents available" description="Create agents first." compact />
+                        <EmptyState icon={<Bot size={16} className="text-white/45" />} title="No agents" compact />
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {snapshot.agents.map((agent) => (
@@ -339,7 +339,7 @@ export function SpectrumView({
                 <Divider label="Saved Groups" className="my-5" />
 
                 {snapshot.groups.length === 0 ? (
-                  <EmptyState icon={<Users size={18} className="text-white/45" />} title="No groups yet" description="Create a group to route work across agents." compact />
+                  <EmptyState icon={<Users size={18} className="text-white/45" />} title="No groups" compact />
                 ) : (
                   <motion.div className="space-y-4" variants={listVariants} initial="hidden" animate="show">
                     {snapshot.groups.map((group) => (
@@ -347,7 +347,6 @@ export function SpectrumView({
                         <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                           <CardHeader
                             title={group.name}
-                            subtitle={`${group.memberAgentIds.length} member${group.memberAgentIds.length === 1 ? '' : 's'}`}
                             action={
                               <div className="flex flex-wrap items-center gap-2">
                                 <Badge variant="info">{group.routingMode === 'auto' ? `Auto ${Math.round(group.autoRouteThreshold * 100)}%` : 'Manual'}</Badge>
@@ -356,7 +355,6 @@ export function SpectrumView({
                               </div>
                             }
                           />
-                          {group.description ? <p className="mt-3 text-sm leading-6 text-white/65">{group.description}</p> : null}
                         </Card>
                       </motion.div>
                     ))}
@@ -392,7 +390,6 @@ export function SpectrumView({
                             {cap.active ? 'Active' : 'Available'}
                           </Badge>
                         </div>
-                        <p className="mt-1 text-[12px] text-white/45 leading-relaxed">{cap.description}</p>
                         <div className="mt-3 flex items-center gap-3">
                           <Badge variant="default" size="xs">{cap.category}</Badge>
                           {cap.agentCount > 0 && (
@@ -413,12 +410,6 @@ export function SpectrumView({
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-white/50">More Skills</h3>
-                    <p className="mt-1 text-[12px] text-white/30 leading-relaxed">
-                      100+ AgentSkills available. Configure in agent profiles.
-                    </p>
-                    <div className="mt-3">
-                      <Badge variant="outline" size="xs">Extensible</Badge>
-                    </div>
                   </div>
                 </div>
               </Card>
@@ -457,12 +448,11 @@ export function SpectrumView({
 
               {snapshot.models.length === 0 && (
                 <div className="col-span-full">
-                  <EmptyState
-                    icon={<Cpu size={18} className="text-white/45" />}
-                    title="No models"
-                    description="Install models via Settings to get started."
-                    compact
-                  />
+                <EmptyState
+                  icon={<Cpu size={18} className="text-white/45" />}
+                  title="No models"
+                  compact
+                />
                 </div>
               )}
             </section>

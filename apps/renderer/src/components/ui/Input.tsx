@@ -54,7 +54,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               'w-full bg-[#0a0c10] text-white/90 placeholder:text-white/25 outline-none border transition-all duration-150',
               hasError
                 ? 'border-[#f87171]/40 focus:border-[#f87171]/60 focus:ring-2 focus:ring-[#f87171]/20'
-                : 'border-white/[0.10] hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20',
+                : 'border-white/[0.10] hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20',
               sizeClasses[inputSize],
               icon ? iconPadding[inputSize] : '',
               iconRight ? 'pr-9' : '',
@@ -118,7 +118,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             'min-h-[80px] resize-none rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed',
             hasError
               ? 'border-[#f87171]/40 focus:border-[#f87171]/60 focus:ring-2 focus:ring-[#f87171]/20'
-              : 'border-white/[0.10] hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20',
+              : 'border-white/[0.10] hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20',
             className,
           ]
             .filter(Boolean)
@@ -169,7 +169,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           aria-describedby={hint ? descriptionId : undefined}
           className={[
             'w-full bg-[#0a0c10] text-white/90 outline-none border transition-all duration-150',
-            'border-white/[0.10] hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20',
+            'border-white/[0.10] hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20',
             sizeClasses[inputSize],
             className,
           ]

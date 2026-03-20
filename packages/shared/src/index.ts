@@ -30,6 +30,32 @@ export interface PrismProviderOverrideSettings {
   modelId: string;
 }
 
+/** Runtime mode for Prism/task execution. */
+export type AgentMode = 'ollama' | 'bridge' | 'auto';
+
+/** Workspace role (backend-only; desktop defaults to owner). */
+export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
+
+/** Permission identifiers for RBAC. */
+export type Permission =
+  | 'create_agents'
+  | 'run_tasks'
+  | 'edit_usermap'
+  | 'manage_settings'
+  | 'delete_agents'
+  | 'delete_groups'
+  | 'delete_tasks'
+  | 'export_audit'
+  | 'create_support_bundle';
+
+/** Role → allowed permissions. Owner has all. */
+export const ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
+  owner: ['create_agents', 'run_tasks', 'edit_usermap', 'manage_settings', 'delete_agents', 'delete_groups', 'delete_tasks', 'export_audit', 'create_support_bundle'],
+  admin: ['create_agents', 'run_tasks', 'edit_usermap', 'manage_settings', 'delete_agents', 'delete_groups', 'delete_tasks', 'export_audit', 'create_support_bundle'],
+  member: ['create_agents', 'run_tasks', 'edit_usermap'],
+  viewer: []
+};
+
 export type ProviderStrategy =
   | { mode: 'local_first'; preferredLocalModelIds: string[]; fallbackProviders: ProviderId[] }
   | { mode: 'fixed'; provider: ProviderId; modelId: string }
@@ -283,6 +309,8 @@ export interface ChatThread {
 export interface LocalProfile {
   name: string;
   email: string;
+  /** Optional IANA timezone for task scheduling (e.g. "America/Los_Angeles"). Defaults to system. */
+  timezone?: string;
 }
 
 export interface ProviderModelPreset {
@@ -308,6 +336,62 @@ export interface OllamaRuntimeStatus {
   running: boolean;
   models: OllamaModelRuntimeStatus[];
 }
+
+/** Audit event types for compliance (no PII in payload). */
+export type AuditEventKind =
+  | 'agent_created'
+  | 'agent_updated'
+  | 'profile_updated'
+  | 'task_run_started'
+  | 'task_run_completed'
+  | 'task_run_failed'
+  | 'task_run_cancelled'
+  | 'provider_selection_changed'
+  | 'prism_override_changed';
+
+export interface AuditEvent {
+  id: string;
+  kind: AuditEventKind;
+  entityId?: string;
+  entityType?: string;
+  payload?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking';
+
+export interface VoiceConfig {
+  enabled: boolean;
+  wakeWord: string;
+  preferredVoice: string;
+  autoListen: boolean;
+  ttsProvider: 'system' | 'elevenlabs' | 'openai';
+}
+
+export interface VoiceEvent {
+  type: 'transcript' | 'response' | 'error';
+  text: string;
+  timestamp: number;
+  agentId?: string | undefined;
+}
+
+export interface CapabilityDefinition {
+  id: string;
+  label: string;
+  description: string;
+  category: 'Skill' | 'Plugin' | 'MCP';
+}
+
+export const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
+  { id: 'web_search', label: 'Web Search', description: 'Search the internet for real-time information', category: 'Skill' },
+  { id: 'thinking', label: 'Thinking', description: 'Extended reasoning and analysis', category: 'Skill' },
+  { id: 'code_execution', label: 'Code Execution', description: 'Run code in sandboxed environments', category: 'Skill' },
+  { id: 'file_management', label: 'File Management', description: 'Read, write, and manage local files', category: 'Skill' },
+  { id: 'shell', label: 'Shell Commands', description: 'Execute system shell commands', category: 'Skill' },
+  { id: 'browser', label: 'Browser Automation', description: 'Navigate web pages and interact with elements', category: 'Skill' },
+  { id: 'api_calls', label: 'API Integration', description: 'Make HTTP requests to external APIs', category: 'Plugin' },
+  { id: 'mcp', label: 'MCP Protocol', description: 'Model Context Protocol tool integration', category: 'MCP' },
+];
 
 export type PrismMode = 'ask' | 'create';
 

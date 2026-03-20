@@ -8,7 +8,13 @@ contextBridge.exposeInMainWorld('supreme', {
   },
   workspace: {
     getSnapshot: () => ipcRenderer.invoke(channels.workspaceSnapshot),
-    createBackupExport: () => ipcRenderer.invoke(channels.workspaceBackupExport)
+    createBackupExport: () => ipcRenderer.invoke(channels.workspaceBackupExport),
+    listTasksPaginated: (limit: number, offset: number) =>
+      ipcRenderer.invoke(channels.workspaceListTasksPaginated, limit, offset),
+    listWorkItemsPaginated: (limit: number, offset: number) =>
+      ipcRenderer.invoke(channels.workspaceListWorkItemsPaginated, limit, offset),
+    listChatThreadsPaginated: (limit: number, offset: number) =>
+      ipcRenderer.invoke(channels.workspaceListChatThreadsPaginated, limit, offset)
   },
   userMap: {
     save: (tree: unknown) => ipcRenderer.invoke(channels.userMapSave, tree),
@@ -45,13 +51,33 @@ contextBridge.exposeInMainWorld('supreme', {
     setProviderSelection: (selection: unknown) => ipcRenderer.invoke(channels.providerAuthSetSelection, selection),
     getPrismOverride: () => ipcRenderer.invoke(channels.prismOverrideGet),
     savePrismOverride: (override: unknown) => ipcRenderer.invoke(channels.prismOverrideSave, override),
+    getAgentMode: () => ipcRenderer.invoke(channels.agentModeGet),
+    saveAgentMode: (mode: string) => ipcRenderer.invoke(channels.agentModeSave, mode),
     getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),
-    installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults)
+    installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults),
+    getHealth: () => ipcRenderer.invoke(channels.healthGet)
   },
   app: {
     checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates)
   },
   support: {
-    createBundle: () => ipcRenderer.invoke(channels.supportBundleCreate)
+    createBundle: () => ipcRenderer.invoke(channels.supportBundleCreate),
+    exportAuditLog: (format: 'json' | 'csv') => ipcRenderer.invoke(channels.auditLogExport, format)
+  },
+  bridge: {
+    listAgents: () => ipcRenderer.invoke(channels.bridgeAgentsList),
+    sendMessage: (agentId: string, message: string) => ipcRenderer.invoke(channels.bridgeAgentSend, agentId, message),
+    getSessions: (agentId?: string) => ipcRenderer.invoke(channels.bridgeSessions, agentId),
+    getStatus: () => ipcRenderer.invoke(channels.bridgeStatus),
+    restartGateway: () => ipcRenderer.invoke(channels.bridgeGatewayRestart),
+    listChannels: () => ipcRenderer.invoke(channels.bridgeChannelsList),
+    addChannel: (channel: string, token: string) => ipcRenderer.invoke(channels.bridgeChannelAdd, channel, token),
+    removeChannel: (channel: string) => ipcRenderer.invoke(channels.bridgeChannelRemove, channel),
+    getChannelStatus: () => ipcRenderer.invoke(channels.bridgeChannelStatus)
+  },
+  voice: {
+    getConfig: () => ipcRenderer.invoke(channels.voiceGetConfig),
+    setConfig: (config: unknown) => ipcRenderer.invoke(channels.voiceSetConfig, config),
+    sendTranscript: (text: string, agentId?: string) => ipcRenderer.invoke(channels.voiceStart, text, agentId)
   }
 });

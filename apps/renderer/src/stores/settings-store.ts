@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { getDesktopApi } from '@/lib/electron';
 import type {
+  AgentMode,
   OllamaRuntimeStatus,
   PrismProviderOverrideSettings,
   ProviderAuthProfile,
@@ -14,10 +15,10 @@ function getErrorMessage(error: unknown): string {
 }
 
 export type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
-export type SettingsSection = 'runtime' | 'providers' | 'prism';
+export type SettingsSection = 'runtime' | 'providers' | 'agents' | 'prism';
 
 export interface SaveProviderProfileInput {
-  id: string;
+  id?: string;
   provider: RemoteProviderId;
   label: string;
   description?: string;
@@ -30,6 +31,7 @@ export interface SettingsStoreState {
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
   prismOverride: PrismProviderOverrideSettings | null;
+  agentMode: AgentMode;
   ollamaStatus: OllamaRuntimeStatus | null;
   loading: boolean;
   activeSection: SettingsSection;
@@ -40,6 +42,7 @@ export interface SettingsStoreState {
   testProviderProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   installDefaultModels: () => Promise<void>;
   savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  saveAgentMode: (mode: AgentMode) => Promise<void>;
   setProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
 }
 
@@ -53,6 +56,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   providerProfiles: [],
   providerSelections: { ...EMPTY_PROVIDER_SELECTIONS },
   prismOverride: null,
+  agentMode: 'auto',
   ollamaStatus: null,
   loading: false,
   activeSection: 'runtime',
@@ -64,14 +68,15 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
 
     try {
       const api = getDesktopApi();
-      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, prismOverride] =
+      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, prismOverride, agentMode] =
         await Promise.all([
           api.settings.listProviderProfiles(),
           api.settings.getOllamaStatus(),
           api.settings.getProviderSelection('openai'),
           api.settings.getProviderSelection('anthropic'),
           api.settings.getProviderSelection('google'),
-          api.settings.getPrismOverride()
+          api.settings.getPrismOverride(),
+          api.settings.getAgentMode()
         ]);
 
       set({
@@ -82,6 +87,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           google: googleSelection?.profileId ?? null
         },
         prismOverride,
+        agentMode: agentMode ?? 'auto',
         ollamaStatus,
         loading: false
       });
@@ -205,6 +211,24 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       await get().refreshSettings();
       if (useWorkspaceStore.getState().error === null) {
         workspaceStore.setNotice(prismOverride ? 'Saved Prism settings.' : 'Cleared Prism settings.');
+      }
+    } catch (error) {
+      workspaceStore.setError(getErrorMessage(error));
+      set({ loading: false });
+    }
+  },
+  async saveAgentMode(mode) {
+    const workspaceStore = useWorkspaceStore.getState();
+
+    set({ loading: true });
+    workspaceStore.clearError();
+
+    try {
+      await getDesktopApi().settings.saveAgentMode(mode);
+      set({ agentMode: mode, loading: false });
+      await workspaceStore.refreshSnapshot();
+      if (useWorkspaceStore.getState().error === null) {
+        workspaceStore.setNotice(`Runtime mode set to ${mode}.`);
       }
     } catch (error) {
       workspaceStore.setError(getErrorMessage(error));

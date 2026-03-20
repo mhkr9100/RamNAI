@@ -125,8 +125,8 @@ try {
 
     const appProfilesPath = path.join(tempHome, '.supreme-raman-ai', 'runtime-auth', 'auth-profiles.json');
     const encryptedSecretsPath = path.join(tempHome, '.supreme-raman-ai', 'runtime-auth', 'secrets.enc.json');
-    const compatProfilesPath = path.join(tempHome, '.openclaw', 'auth-profiles.json');
-    const compatSecretsPath = path.join(tempHome, '.openclaw', 'secrets.json');
+    const compatProfilesPath = path.join(tempHome, '.supreme-runtime', 'auth-profiles.json');
+    const compatSecretsPath = path.join(tempHome, '.supreme-runtime', 'secrets.json');
 
     const appProfilesText = await readFile(appProfilesPath, 'utf8');
     let encryptedSecretsText = null;
@@ -481,6 +481,18 @@ try {
     assert.equal(updatedWork.status, 'cancelled');
   });
 
+  await runCheck('RBAC role and permissions', async () => {
+    assert.equal(storage.getWorkspaceRole(), 'owner');
+    assert.equal(storage.hasPermission('create_agents'), true);
+    assert.equal(storage.hasPermission('run_tasks'), true);
+    storage.saveWorkspaceRole('viewer');
+    assert.equal(storage.getWorkspaceRole(), 'viewer');
+    assert.equal(storage.hasPermission('create_agents'), false);
+    assert.equal(storage.hasPermission('run_tasks'), false);
+    storage.saveWorkspaceRole('owner');
+    assert.equal(storage.hasPermission('create_agents'), true);
+  });
+
   await runCheck('prism override persistence', async () => {
     const override = { provider: 'ollama', modelId: 'qwen3:8b' };
     storage.savePrismProviderOverride(override);
@@ -747,7 +759,7 @@ try {
       path.join(workspacePaths.tasks, 'task-runs.json'),
       path.join(workspacePaths.work, 'artifacts.json'),
       path.join(syncedWorkspaceRoot, 'runtime.workspace.json'),
-      path.join(syncedWorkspaceRoot, 'openclaw.workspace.json'),
+      path.join(syncedWorkspaceRoot, 'supreme-runtime.workspace.json'),
       path.join(workspacePaths.root, artifactRelativePath)
     ];
 

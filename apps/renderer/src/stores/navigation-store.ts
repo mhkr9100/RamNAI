@@ -1,7 +1,7 @@
 // Supreme Raman AI — Zustand Store
 import { create } from 'zustand';
 
-export type ViewId = 'home' | 'prism' | 'chats' | 'spectrum' | 'work' | 'usermap' | 'settings';
+export type ViewId = 'home' | 'prism' | 'chats' | 'canvas' | 'work' | 'usermap' | 'settings';
 
 export interface NavigationStoreState {
   activeView: ViewId;

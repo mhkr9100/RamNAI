@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bot, BrainCircuit, MessageSquare } from 'lucide-react';
+import { Bot, BrainCircuit } from 'lucide-react';
+import { ChatIcon } from './icons/ChatIcon';
 import type { AgentSpec, ChatThread, GroupSpec } from '@supreme/shared';
 import type { AgentChatInput, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
@@ -42,18 +43,22 @@ export function ChatsWorkspace({
   onDeleteThread
 }: ChatsWorkspaceProps) {
   const [showTaskComposer, setShowTaskComposer] = useState(false);
+  const chatAgents = useMemo(
+    () => snapshot.agents.filter((a) => a.slug !== 'prism' && a.id !== 'prism'),
+    [snapshot.agents]
+  );
 
   useEffect(() => {
     if (selectedTarget) {
       const stillExists = selectedTarget.type === 'agent'
-        ? snapshot.agents.some((agent) => agent.id === selectedTarget.id)
+        ? chatAgents.some((agent) => agent.id === selectedTarget.id)
         : snapshot.groups.some((group) => group.id === selectedTarget.id);
       if (stillExists) {
         return;
       }
     }
 
-    const firstAgent = snapshot.agents[0];
+    const firstAgent = chatAgents[0];
     if (firstAgent) {
       onSelectTarget({ type: 'agent', id: firstAgent.id });
       return;
@@ -66,15 +71,15 @@ export function ChatsWorkspace({
     }
 
     onSelectTarget(null);
-  }, [onSelectTarget, selectedTarget, snapshot.agents, snapshot.groups]);
+  }, [onSelectTarget, selectedTarget, chatAgents, snapshot.groups]);
 
   useEffect(() => {
     setShowTaskComposer(false);
   }, [selectedTarget?.id, selectedTarget?.type]);
 
   const selectedAgent = useMemo(
-    () => selectedTarget?.type === 'agent' ? snapshot.agents.find((agent) => agent.id === selectedTarget.id) ?? null : null,
-    [selectedTarget, snapshot.agents]
+    () => selectedTarget?.type === 'agent' ? chatAgents.find((agent) => agent.id === selectedTarget.id) ?? null : null,
+    [selectedTarget, chatAgents]
   );
   const selectedGroup = useMemo(
     () => selectedTarget?.type === 'group' ? snapshot.groups.find((group) => group.id === selectedTarget.id) ?? null : null,
@@ -100,7 +105,7 @@ export function ChatsWorkspace({
 
   const mentionableMembers = useMemo(() => {
     if (!selectedGroup) return [];
-    return snapshot.agents
+    return chatAgents
       .filter((agent) => selectedGroup.memberAgentIds.includes(agent.id))
       .map((agent) => ({
         id: agent.id,
@@ -108,7 +113,7 @@ export function ChatsWorkspace({
         subtitle: agent.name,
         handle: `@${slugify(agent.name)}`
       }));
-  }, [selectedGroup, snapshot.agents]);
+  }, [selectedGroup, chatAgents]);
 
   const runtimeStatus = snapshot.runtime.runtimeBridgeReady
     ? { label: 'Ready', tone: 'ready' as const }
@@ -130,20 +135,20 @@ export function ChatsWorkspace({
 
   return (
     <div className="flex min-h-full gap-3">
-      <aside className="w-64 shrink-0 overflow-hidden rounded-2xl border-r border-white/[0.06] bg-surface-1 flex flex-col">
+        <aside className="w-64 shrink-0 overflow-hidden rounded-2xl border-r border-black/10 dark:border-white/5 bg-[#F8F9FA] dark:bg-[#111315] flex flex-col">
         <div className="h-14 border-b border-white/[0.06] px-4 shrink-0">
           <div className="flex h-full items-center">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">Chats</div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 dark:text-white/60">Chats</div>
           </div>
         </div>
         <div className="space-y-6 p-3 overflow-y-auto custom-scrollbar flex-1">
           <EntityListSection<AgentSpec>
             title="Agents"
-            items={snapshot.agents}
+            items={chatAgents}
             selectedId={selectedTarget?.type === 'agent' ? selectedTarget.id : null}
-            emptyText="No agents yet."
+            emptyText="No agents."
             getLabel={(agent) => agent.name}
-            getBody={(agent) => agent.description}
+            getBody={() => ''}
             icon={<Bot size={16} />}
             onSelect={(agent) => {
               onSelectTarget({ type: 'agent', id: agent.id });
@@ -154,9 +159,9 @@ export function ChatsWorkspace({
             title="Groups"
             items={snapshot.groups}
             selectedId={selectedTarget?.type === 'group' ? selectedTarget.id : null}
-            emptyText="No groups yet."
+            emptyText="No groups."
             getLabel={(group) => group.name}
-            getBody={(group) => group.description || `${group.memberAgentIds.length} members`}
+            getBody={(group) => `${group.memberAgentIds.length}`}
             icon={<BrainCircuit size={16} />}
             onSelect={(group) => {
               onSelectTarget({ type: 'group', id: group.id });
@@ -168,11 +173,11 @@ export function ChatsWorkspace({
 
       <div className="min-w-0 flex-1 space-y-4">
         {!selectedTarget ? (
-          <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center rounded-2xl border border-white/[0.08] bg-surface-2 px-8 text-center">
+          <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center rounded-2xl border border-black/5 dark:border-white/5 bg-white dark:bg-white/[0.02] px-8 text-center">
             <EmptyState
-              icon={<MessageSquare className="text-white/40" size={24} />}
+              icon={<ChatIcon size={24} className="text-gray-400 dark:text-white/40" />}
               title="Open a chat."
-              description={snapshot.agents.length === 0 && snapshot.groups.length === 0 ? 'Nothing here yet.' : 'Pick one from the left.'}
+              description={chatAgents.length === 0 && snapshot.groups.length === 0 ? 'Nothing here yet.' : 'Pick one from the left.'}
             />
           </div>
         ) : selectedAgent ? (
@@ -185,8 +190,7 @@ export function ChatsWorkspace({
                 modelLabel: describeProviderStrategy(selectedAgent),
                 providerLabel: selectedAgent.providerStrategy.mode.replaceAll('_', ' '),
                 runtimeStatus,
-                threadStatus: agentThreadStatus,
-                ...(selectedAgent.description ? { description: selectedAgent.description } : {})
+                threadStatus: agentThreadStatus
               }}
               transcript={transcript}
               busy={busy}
@@ -194,7 +198,7 @@ export function ChatsWorkspace({
               onTaskClick={() => setShowTaskComposer((current) => !current)}
               {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
               {...(draftSeed && draftSeed.target.type === 'agent' && draftSeed.target.id === selectedAgent.id ? { draftSeed } : {})}
-              emptyState={snapshot.runtime.available ? 'Start the chat.' : 'Check Settings if messages are not sending.'}
+              emptyState=""
             />
             {showTaskComposer ? (
               <TaskComposerCard
@@ -216,16 +220,15 @@ export function ChatsWorkspace({
               memberCount: selectedGroup.memberAgentIds.length,
               runtimeStatus,
               threadStatus: groupThreadStatus,
-              routingMode: selectedGroup.routingMode,
-              ...(selectedGroup.description ? { description: selectedGroup.description } : {})
+              routingMode: selectedGroup.routingMode
             }}
             members={mentionableMembers}
             transcript={transcript}
             busy={busy}
             onSendMessage={(message) => onSendGroupMessage({ groupId: selectedGroup.id, message })}
             {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
-            emptyState={snapshot.runtime.available ? (selectedGroup.routingMode === 'auto' ? 'Message the group. Routing will pick the best fit.' : 'Route with @mentions.') : 'Check Settings if messages are not sending.'}
-            placeholder={selectedGroup.routingMode === 'auto' ? 'Message the group' : 'Message the group with @mentions'}
+            emptyState=""
+            placeholder="Message"
           />
         ) : null}
       </div>
@@ -300,12 +303,12 @@ function EntityListSection<T extends { id: string }>({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`rounded-lg border px-2 py-2 shrink-0 ${active ? 'border-brand/30 bg-brand/10 text-brand-light' : 'border-white/[0.08] bg-white/[0.04] text-white/50'}`}>
+                  <div className={`rounded-lg border px-2 py-2 shrink-0 ${active ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-black/10 dark:border-white/8 bg-black/5 dark:bg-white/[0.04] text-gray-500 dark:text-white/50'}`}>
                     {icon}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/90">{getLabel(item)}</div>
-                    <div className={`mt-0.5 line-clamp-2 text-[11px] leading-4 ${active ? 'text-white/70' : 'text-white/40'}`}>{getBody(item)}</div>
+                    {getBody(item) ? <div className={`mt-0.5 line-clamp-2 text-[11px] leading-4 ${active ? 'text-white/70' : 'text-white/40'}`}>{getBody(item)}</div> : null}
                   </div>
                 </div>
               </motion.button>

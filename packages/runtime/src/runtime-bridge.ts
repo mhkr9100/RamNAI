@@ -7,41 +7,41 @@ const execFileAsync = promisify(execFile);
 const PROMPT_TIMEOUT_MS = 120_000;
 const HEALTH_TIMEOUT_MS = 10_000;
 
-export interface OpenClawModel {
+export interface BridgeModel {
   id: string;
   provider: string;
   installed: boolean;
 }
 
-export interface OpenClawPromptOptions {
+export interface BridgePromptOptions {
   model: string;
   systemPrompt: string;
   userPrompt: string;
   tools?: string[];
 }
 
-export interface OpenClawPromptResult {
+export interface BridgePromptResult {
   text: string;
   provider: string;
   modelId: string;
 }
 
-export interface OpenClawHealthResult {
+export interface BridgeHealthResult {
   ok: boolean;
   message: string;
 }
 
-export class OpenClawBridgeError extends Error {
+export class RuntimeBridgeError extends Error {
   constructor(
     message: string,
     public readonly code: 'NOT_AVAILABLE' | 'TIMEOUT' | 'PARSE_ERROR' | 'CLI_ERROR',
   ) {
     super(message);
-    this.name = 'OpenClawBridgeError';
+    this.name = 'RuntimeBridgeError';
   }
 }
 
-export class OpenClawBridge {
+export class RuntimeBridge {
   private cachedAvailable: boolean | null = null;
 
   async isAvailable(): Promise<boolean> {
@@ -70,10 +70,10 @@ export class OpenClawBridge {
     }
   }
 
-  async sendPrompt(opts: OpenClawPromptOptions): Promise<OpenClawPromptResult> {
+  async sendPrompt(opts: BridgePromptOptions): Promise<BridgePromptResult> {
     const available = await this.isAvailable();
     if (!available) {
-      throw new OpenClawBridgeError(`${EXTERNAL_RUNTIME_CLI} CLI is not available`, 'NOT_AVAILABLE');
+      throw new RuntimeBridgeError('Runtime bridge CLI is not available', 'NOT_AVAILABLE');
     }
 
     const args = [
@@ -90,43 +90,43 @@ export class OpenClawBridge {
 
     try {
       const { stdout } = await execFileAsync(EXTERNAL_RUNTIME_CLI, args, { timeout: PROMPT_TIMEOUT_MS });
-      return this.parseJsonOutput<OpenClawPromptResult>(stdout);
+      return this.parseJsonOutput<BridgePromptResult>(stdout);
     } catch (error) {
       if (this.isTimeoutError(error)) {
-        throw new OpenClawBridgeError('Prompt timed out after 120s', 'TIMEOUT');
+        throw new RuntimeBridgeError('Prompt timed out after 120s', 'TIMEOUT');
       }
-      throw new OpenClawBridgeError(
+      throw new RuntimeBridgeError(
         `CLI error: ${error instanceof Error ? error.message : String(error)}`,
         'CLI_ERROR',
       );
     }
   }
 
-  async listModels(): Promise<OpenClawModel[]> {
+  async listModels(): Promise<BridgeModel[]> {
     const available = await this.isAvailable();
     if (!available) return [];
 
     try {
       const { stdout } = await execFileAsync(EXTERNAL_RUNTIME_CLI, ['models', '--format', 'json'], { timeout: HEALTH_TIMEOUT_MS });
-      const parsed = this.parseJsonOutput<{ models?: OpenClawModel[] }>(stdout);
+      const parsed = this.parseJsonOutput<{ models?: BridgeModel[] }>(stdout);
       return parsed.models ?? [];
     } catch {
       return [];
     }
   }
 
-  async healthCheck(): Promise<OpenClawHealthResult> {
+  async healthCheck(): Promise<BridgeHealthResult> {
     try {
       const available = await this.isAvailable();
       if (!available) {
-        return { ok: false, message: `${EXTERNAL_RUNTIME_CLI} CLI not found on PATH` };
+        return { ok: false, message: 'Runtime bridge CLI not found on PATH' };
       }
 
       const version = await this.getVersion();
       const models = await this.listModels();
       return {
         ok: true,
-        message: `${EXTERNAL_RUNTIME_CLI} v${version ?? 'unknown'} — ${models.length} model(s) available`,
+        message: `Runtime bridge v${version ?? 'unknown'} — ${models.length} model(s) available`,
       };
     } catch (error) {
       return {
@@ -146,7 +146,7 @@ export class OpenClawBridge {
       if (arrStart >= 0 && arrEnd >= arrStart) {
         return JSON.parse(trimmed.slice(arrStart, arrEnd + 1)) as T;
       }
-      throw new OpenClawBridgeError('Unable to parse CLI output as JSON', 'PARSE_ERROR');
+      throw new RuntimeBridgeError('Unable to parse CLI output as JSON', 'PARSE_ERROR');
     }
     return JSON.parse(trimmed.slice(start, end + 1)) as T;
   }

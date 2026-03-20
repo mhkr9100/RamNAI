@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { MessageSquare, ClipboardList, Bot, ArrowRight, Zap } from 'lucide-react';
 import type { WorkspaceSnapshot } from '../lib/electron';
 import type { ViewId } from './Sidebar';
-import { Card, Badge } from './ui';
+import { Badge } from './ui';
 import { RamanIcon } from './RamanIcon';
 
 interface DashboardViewProps {
@@ -14,129 +14,113 @@ interface DashboardViewProps {
 export function DashboardView({ snapshot, onNavigate }: DashboardViewProps) {
   const activeChats = snapshot.chatThreads.filter(t => t.messages.length > 0).length;
   const totalAgents = snapshot.agents.length;
-  const totalTasks = snapshot.tasks.length;
+  const totalTasks = snapshot.counts?.tasks ?? snapshot.tasks.length;
   const runningTasks = snapshot.tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
   const recentWork = snapshot.workItems.slice(0, 5);
 
   return (
-    <div className="space-y-6">
-      {/* Welcome header */}
+    <div className="max-w-5xl mx-auto space-y-6">
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-4"
+        transition={{ duration: 0.8 }}
+        className="flex flex-col items-center text-center space-y-12"
       >
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-          <RamanIcon size={24} />
+        <div className="text-gray-900 dark:text-white/30">
+          <RamanIcon size={120} />
         </div>
-        <div>
-          <h1 className="text-xl font-semibold text-white">
-            {snapshot.profile?.name ? `Welcome, ${snapshot.profile.name}` : 'Dashboard'}
+        <div className="space-y-6">
+          <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-gray-900 dark:text-white uppercase leading-none">
+            RamN <span className="text-gray-400 dark:text-white/20">AI</span>
+            <span className="text-[12px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold ml-4 align-top border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 rounded px-2 py-0.5">Beta</span>
           </h1>
-          <p className="text-sm text-white/40 mt-0.5">Your workspace at a glance</p>
+        </div>
+        <div className="flex flex-col md:flex-row gap-4">
+          <button
+            onClick={() => onNavigate('prism')}
+            className="px-12 py-5 bg-gray-900 dark:bg-white text-white dark:text-black text-xs font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-2xl hover:bg-gray-800 dark:hover:bg-slate-200 active:scale-[0.98]"
+          >
+            Enter Workspace
+          </button>
         </div>
       </motion.div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          onClick={() => onNavigate('chats')}
-          className="group text-left"
-        >
-          <Card className="p-4 hover:border-white/[0.12] transition-colors cursor-pointer">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="grid grid-cols-3 gap-3 pt-8">
+        <motion.button type="button" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} onClick={() => onNavigate('chats')} className="group text-left">
+          <div className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/10">
-                <MessageSquare size={16} className="text-brand-light" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                <MessageSquare size={20} />
               </div>
-              <ArrowRight size={14} className="text-white/20 group-hover:text-white/50 transition-colors" />
+              <ArrowRight size={14} className="text-gray-400 dark:text-white/40 group-hover:text-gray-900 dark:group-hover:text-white transition-colors" />
             </div>
-            <p className="text-2xl font-semibold text-white">{activeChats}</p>
-            <p className="text-xs text-white/40 mt-0.5">Active Chats</p>
-          </Card>
+            <p className="text-2xl font-semibold text-gray-900 dark:text-white">{activeChats}</p>
+            <p className="text-xs text-gray-500 dark:text-white/40 mt-0.5">Active Chats</p>
+          </div>
         </motion.button>
-
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          onClick={() => onNavigate('spectrum')}
-          className="group text-left"
-        >
-          <Card className="p-4 hover:border-white/[0.12] transition-colors cursor-pointer">
+        <motion.button type="button" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} onClick={() => onNavigate('settings')} className="group text-left">
+          <div className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#38bdf8]/10">
-                <Bot size={16} className="text-[#38bdf8]" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-300">
+                <Bot size={20} />
               </div>
-              <ArrowRight size={14} className="text-white/20 group-hover:text-white/50 transition-colors" />
+              <ArrowRight size={14} className="text-gray-400 dark:text-white/40 group-hover:text-gray-900 dark:group-hover:text-white transition-colors" />
             </div>
-            <p className="text-2xl font-semibold text-white">{totalAgents}</p>
-            <p className="text-xs text-white/40 mt-0.5">Agents</p>
-          </Card>
+            <p className="text-2xl font-semibold text-gray-900 dark:text-white">{totalAgents}</p>
+            <p className="text-xs text-gray-500 dark:text-white/40 mt-0.5">Agents</p>
+          </div>
         </motion.button>
-
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          onClick={() => onNavigate('work')}
-          className="group text-left"
-        >
-          <Card className="p-4 hover:border-white/[0.12] transition-colors cursor-pointer">
+        <motion.button type="button" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} onClick={() => onNavigate('work')} className="group text-left">
+          <div className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#a78bfa]/10">
-                <ClipboardList size={16} className="text-[#a78bfa]" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black/5 dark:bg-white/8 text-gray-900 dark:text-white">
+                <ClipboardList size={20} />
               </div>
-              <ArrowRight size={14} className="text-white/20 group-hover:text-white/50 transition-colors" />
+              <ArrowRight size={14} className="text-gray-400 dark:text-white/40 group-hover:text-gray-900 dark:group-hover:text-white transition-colors" />
             </div>
-            <p className="text-2xl font-semibold text-white">{totalTasks}</p>
-            <p className="text-xs text-white/40 mt-0.5">
-              Tasks{runningTasks > 0 ? ` (${runningTasks} active)` : ''}
-            </p>
-          </Card>
+            <p className="text-2xl font-semibold text-gray-900 dark:text-white">{totalTasks}</p>
+            <p className="text-xs text-gray-500 dark:text-white/40 mt-0.5">Tasks{runningTasks > 0 ? ` (${runningTasks})` : ''}</p>
+          </div>
         </motion.button>
-      </div>
+      </motion.div>
 
-      {/* Quick actions */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/30 mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => onNavigate('prism')} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-3 text-left hover:border-white/[0.10] hover:bg-surface-4 transition-colors">
-            <Zap size={16} className="text-brand-light shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-white/80">Ask Prism</p>
-              <p className="text-[11px] text-white/30">Strategy, prompts, architecture</p>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="pt-8">
+        <h2 className="text-[10px] font-black text-gray-400 dark:text-white/30 uppercase tracking-[0.5em] mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <button type="button" onClick={() => onNavigate('prism')} className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] flex gap-6 text-left shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-300 flex-shrink-0">
+              <Zap size={20} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-widest">Ask Prism</h3>
+              <p className="text-xs text-gray-600 dark:text-white/40 mt-1 leading-relaxed">Strategy, prompts, architecture</p>
             </div>
           </button>
-          <button type="button" onClick={() => onNavigate('prism')} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-3 text-left hover:border-white/[0.10] hover:bg-surface-4 transition-colors">
-            <Bot size={16} className="text-[#38bdf8] shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-white/80">Create Agent</p>
-              <p className="text-[11px] text-white/30">Design from an objective</p>
+          <button type="button" onClick={() => onNavigate('prism')} className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] flex gap-6 text-left shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-300 flex-shrink-0">
+              <Bot size={20} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-widest">Create Agent</h3>
+              <p className="text-xs text-gray-600 dark:text-white/40 mt-1 leading-relaxed">Design from an objective</p>
             </div>
           </button>
         </div>
       </motion.div>
 
-      {/* Recent work */}
       {recentWork.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="pt-8">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/30">Recent Work</h2>
-            <button type="button" onClick={() => onNavigate('work')} className="text-[11px] text-brand-light hover:text-brand transition-colors">
+            <h2 className="text-[10px] font-black text-gray-400 dark:text-white/30 uppercase tracking-[0.5em]">Recent Work</h2>
+            <button type="button" onClick={() => onNavigate('work')} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-300 hover:text-emerald-700 dark:hover:text-emerald-200 transition-colors uppercase tracking-wider">
               View all
             </button>
           </div>
           <div className="space-y-1.5">
             {recentWork.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded-xl border border-white/[0.04] bg-surface-3/50 px-4 py-2.5">
+              <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-black/5 dark:border-white/5 bg-white dark:bg-white/[0.02] px-4 py-2.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/70 truncate">{item.title}</p>
+                  <p className="text-sm text-gray-900 dark:text-white/70 truncate">{item.title}</p>
                 </div>
                 <Badge variant={item.status === 'done' ? 'success' : item.status === 'failed' ? 'error' : 'default'}>
                   {item.status}

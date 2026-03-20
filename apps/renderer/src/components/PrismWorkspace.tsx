@@ -479,6 +479,7 @@ export function PrismWorkspace({
           models={snapshot.models}
           onSavePrismOverride={onSavePrismOverride}
           busy={busy}
+          bridgeAvailable={snapshot.runtime.runtimeBridgeReady}
         />
       )}
     </div>

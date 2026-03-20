@@ -7,7 +7,7 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "wait-on tcp:5180 && npm run build && cross-env SUPREME_RENDERER_URL=http://127.0.0.1:5180 electron dist/main.js",
+    "dev": "wait-on tcp:5180 && npm run build && cross-env SUPREME_RENDERER_URL=http://127.0.0.1:5180 SUPREME_SKIP_KEYCHAIN=1 electron dist/main.js",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "build": "tsc -p tsconfig.json && node scripts/copy-renderer.mjs",
     "package:preview": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir",

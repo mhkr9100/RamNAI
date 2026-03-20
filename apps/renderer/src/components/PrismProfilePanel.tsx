@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -9,13 +9,24 @@ import {
   Zap,
   Terminal,
   Wrench,
+  Loader2,
+  Trash2,
+  Send,
 } from 'lucide-react';
 import type {
   PrismProviderOverrideSettings,
   ProviderId,
   ProviderModelPreset,
 } from '@supreme/shared';
+import { getDesktopApi } from '@/lib/electron';
 import { Badge, Button, Card, Divider, SectionLabel, Select, Input } from './ui';
+
+interface ChannelEntry {
+  id: string;
+  provider: string;
+  enabled: boolean;
+  accountName: string;
+}
 
 interface PrismProfilePanelProps {
   open: boolean;
@@ -24,18 +35,9 @@ interface PrismProfilePanelProps {
   models: ProviderModelPreset[];
   onSavePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
   busy: boolean;
+  /** Whether runtime bridge is available for channels */
+  bridgeAvailable?: boolean;
 }
-
-const CHANNELS = [
-  { id: 'whatsapp', label: 'WhatsApp', status: 'available' as const },
-  { id: 'telegram', label: 'Telegram', status: 'available' as const },
-  { id: 'discord', label: 'Discord', status: 'available' as const },
-  { id: 'slack', label: 'Slack', status: 'available' as const },
-  { id: 'imessage', label: 'iMessage', status: 'coming_soon' as const },
-  { id: 'signal', label: 'Signal', status: 'coming_soon' as const },
-  { id: 'google_chat', label: 'Google Chat', status: 'coming_soon' as const },
-  { id: 'teams', label: 'Microsoft Teams', status: 'coming_soon' as const },
-];
 
 const PRISM_CAPABILITIES = [
   { label: 'Web Search', icon: Globe },
@@ -53,6 +55,8 @@ const PROVIDER_OPTIONS = [
   { value: 'google', label: 'Google' },
 ];
 
+const TELEGRAM_CHANNEL_ID = 'telegram';
+
 export function PrismProfilePanel({
   open,
   onClose,
@@ -60,11 +64,31 @@ export function PrismProfilePanel({
   models,
   onSavePrismOverride,
   busy,
+  bridgeAvailable = false,
 }: PrismProfilePanelProps) {
   const [overrideProvider, setOverrideProvider] = useState<ProviderId>('ollama');
   const [overrideModelId, setOverrideModelId] = useState('');
+  const [channels, setChannels] = useState<ChannelEntry[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+  const [telegramToken, setTelegramToken] = useState('');
+  const [channelAddLoading, setChannelAddLoading] = useState(false);
+  const [channelError, setChannelError] = useState<string | null>(null);
 
   const installedModels = models.filter((m) => m.installed);
+
+  const refreshChannels = useCallback(() => {
+    setChannelsLoading(true);
+    getDesktopApi()
+      .bridge.listChannels()
+      .then((list: ChannelEntry[]) => setChannels(list))
+      .catch(() => setChannels([]))
+      .finally(() => setChannelsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    refreshChannels();
+  }, [open, refreshChannels]);
 
   useEffect(() => {
     if (prismOverride) {
@@ -84,6 +108,37 @@ export function PrismProfilePanel({
     event.preventDefault();
     if (!overrideModelId.trim()) return;
     await onSavePrismOverride({ provider: overrideProvider, modelId: overrideModelId.trim() });
+  };
+
+  const handleAddTelegram = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const token = telegramToken.trim();
+    if (!token) return;
+    setChannelError(null);
+    setChannelAddLoading(true);
+    try {
+      const ok = await getDesktopApi().bridge.addChannel(TELEGRAM_CHANNEL_ID, token);
+      if (ok) {
+        setTelegramToken('');
+        refreshChannels();
+      } else {
+        setChannelError('Failed to add Telegram. Ensure the runtime bridge is installed and running.');
+      }
+    } catch (e) {
+      setChannelError(e instanceof Error ? e.message : 'Failed to connect Telegram.');
+    } finally {
+      setChannelAddLoading(false);
+    }
+  };
+
+  const handleRemoveChannel = async (channelId: string) => {
+    setChannelError(null);
+    try {
+      const ok = await getDesktopApi().bridge.removeChannel(channelId);
+      if (ok) refreshChannels();
+    } catch {
+      setChannelError('Failed to remove channel.');
+    }
   };
 
   return (
@@ -131,7 +186,6 @@ export function PrismProfilePanel({
                     META ARCHITECT
                   </div>
                   <h3 className="text-lg font-semibold text-white">Prism</h3>
-                  <p className="text-[12px] text-white/40 mt-0.5">Special agent - not listed in Spectrum</p>
                 </div>
               </div>
 
@@ -238,27 +292,86 @@ export function PrismProfilePanel({
               <div>
                 <SectionLabel className="mb-3">CHANNELS</SectionLabel>
                 <p className="text-[12px] text-white/35 mb-3">
-                  Prism can communicate through multiple messaging platforms.
+                  Prism can communicate through Telegram and other platforms via the runtime bridge.
                 </p>
-                <div className="space-y-2">
-                  {CHANNELS.map((channel) => (
-                    <div
-                      key={channel.id}
-                      className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-2.5"
+                {!bridgeAvailable && (
+                  <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    Runtime bridge is not available. Install the CLI to connect messaging channels.
+                  </div>
+                )}
+                {bridgeAvailable && (
+                  <form onSubmit={handleAddTelegram} className="mb-4 space-y-2">
+                    <Input
+                      type="password"
+                      label="Telegram bot token"
+                      placeholder="From @BotFather"
+                      value={telegramToken}
+                      onChange={(e) => setTelegramToken(e.target.value)}
+                      disabled={channelAddLoading || busy}
+                    />
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      size="sm"
+                      loading={channelAddLoading}
+                      disabled={!telegramToken.trim() || busy}
+                      icon={<Send size={14} />}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <MessageSquare size={14} className="text-white/35" />
-                        <span className="text-sm text-white/60">{channel.label}</span>
-                      </div>
-                      <Badge
-                        variant={channel.status === 'available' ? 'outline' : 'default'}
-                        size="xs"
+                      Connect Telegram
+                    </Button>
+                  </form>
+                )}
+                {channelError && (
+                  <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                    {channelError}
+                  </div>
+                )}
+                {channelsLoading ? (
+                  <div className="flex items-center gap-2 py-4 justify-center text-white/30">
+                    <Loader2 size={14} className="animate-spin" />
+                    <span className="text-[12px]">Loading channels...</span>
+                  </div>
+                ) : channels.length === 0 ? (
+                  <Card className="bg-surface-3 p-4">
+                    <p className="text-[12px] text-white/35 text-center">
+                      {bridgeAvailable
+                        ? 'Add your Telegram bot token above to connect.'
+                        : 'Install the runtime bridge to connect messaging platforms.'}
+                    </p>
+                  </Card>
+                ) : (
+                  <div className="space-y-2">
+                    {channels.map((channel) => (
+                      <div
+                        key={channel.id}
+                        className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-2.5"
                       >
-                        {channel.status === 'available' ? 'Configure' : 'Soon'}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                        <div className="flex items-center gap-2.5">
+                          <MessageSquare size={14} className="text-white/35" />
+                          <span className="text-sm text-white/60">{channel.provider}</span>
+                          {channel.accountName && (
+                            <span className="text-[11px] text-white/25">{channel.accountName}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={channel.enabled ? 'brand' : 'default'} size="xs">
+                            {channel.enabled ? 'Connected' : 'Disabled'}
+                          </Badge>
+                          {bridgeAvailable && (
+                            <button
+                              type="button"
+                              onClick={() => void handleRemoveChannel(channel.id)}
+                              className="rounded p-1.5 text-white/35 hover:bg-white/10 hover:text-white/70 transition-colors"
+                              aria-label={`Remove ${channel.provider}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

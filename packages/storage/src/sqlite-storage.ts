@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import {
+  AgentMode,
   AgentSpec,
   ArtifactRecord,
+  AuditEventKind,
   ChatThread,
   DEFAULT_MODEL_PRESETS,
   EMPTY_PRIVATE_USERMAP_TREE,
@@ -10,13 +13,17 @@ import {
   GroupSpec,
   LocalProfile,
   MemoryFact,
+  Permission,
   ProviderModelPreset,
   ProviderAuthSelection,
   PrismProviderOverrideSettings,
+  ROLE_PERMISSIONS,
   TaskSpec,
   TaskRunRecord,
   UserMapNode,
   UserMapState,
+  VoiceConfig,
+  WorkspaceRole,
   WorkItem
 } from '@supreme/shared';
 
@@ -28,6 +35,12 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+export interface WorkspaceSnapshotCounts {
+  tasks: number;
+  workItems: number;
+  chatThreads: number;
 }
 
 export interface WorkspaceSnapshot {
@@ -46,10 +59,18 @@ export interface WorkspaceSnapshot {
   publicMemoryFacts: MemoryFact[];
   privateMemoryFacts: MemoryFact[];
   models: ProviderModelPreset[];
+  /** Present when snapshot was built with pagination limits (lite mode) */
+  counts?: WorkspaceSnapshotCounts;
+}
+
+export interface GetWorkspaceSnapshotOptions {
+  tasksLimit?: number;
+  workItemsLimit?: number;
+  chatThreadsLimit?: number;
 }
 
 type VisibilityScope = 'public' | 'private';
-const STORAGE_SCHEMA_VERSION = 2;
+const STORAGE_SCHEMA_VERSION = 3;
 
 interface TaskRunRow {
   id: string;
@@ -386,6 +407,18 @@ export class SqliteStorage {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         payload TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS voice_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        entity_id TEXT,
+        entity_type TEXT,
+        payload TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
 
     this.ensureTaskRunSchemaColumns();
@@ -419,6 +452,112 @@ export class SqliteStorage {
     }
   }
 
+  appendAuditEvent(event: {
+    kind: AuditEventKind;
+    entityId?: string;
+    entityType?: string;
+    payload?: Record<string, unknown>;
+    createdAt: string;
+  }): void {
+    const id = randomUUID();
+    this.db.prepare(`
+      INSERT INTO audit_log (id, kind, entity_id, entity_type, payload, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      event.kind,
+      event.entityId ?? null,
+      event.entityType ?? null,
+      event.payload ? JSON.stringify(event.payload) : null,
+      event.createdAt
+    );
+  }
+
+  listAuditEvents(limit = 500, offset = 0): Array<{ id: string; kind: AuditEventKind; entityId?: string; entityType?: string; payload?: Record<string, unknown>; createdAt: string }> {
+    const rows = this.db.prepare(`
+      SELECT id, kind, entity_id, entity_type, payload, created_at
+      FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(limit, offset) as Array<{ id: string; kind: string; entity_id?: string | null; entity_type?: string | null; payload?: string | null; created_at: string }>;
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind as AuditEventKind,
+      ...(row.entity_id ? { entityId: row.entity_id } : {}),
+      ...(row.entity_type ? { entityType: row.entity_type } : {}),
+      ...(row.payload ? { payload: parseJson(row.payload, {}) } : {}),
+      createdAt: row.created_at
+    }));
+  }
+
+  exportAuditLog(format: 'json' | 'csv', limit = 5000): string {
+    const events = this.listAuditEvents(limit, 0);
+    if (format === 'json') {
+      return JSON.stringify({ exportedAt: new Date().toISOString(), count: events.length, events }, null, 2);
+    }
+    const escape = (v: string) => (v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v);
+    const header = 'id,kind,entityId,entityType,payload,createdAt';
+    const rows = events.map((e) => {
+      const payload = e.payload ? escape(JSON.stringify(e.payload)) : '';
+      return [escape(e.id), escape(e.kind), escape(e.entityId ?? ''), escape(e.entityType ?? ''), payload, escape(e.createdAt)].join(',');
+    });
+    return [header, ...rows].join('\n');
+  }
+
+  getTaskRunMetrics(sinceDays = 30): {
+    completed: number;
+    failed: number;
+    cancelled: number;
+    successRate: number;
+    modelUsage: Array<{ provider: string; modelId: string; count: number }>;
+    avgLatencyMs: number | null;
+  } {
+    const since = new Date();
+    since.setDate(since.getDate() - sinceDays);
+    const sinceIso = since.toISOString();
+    const rows = this.db.prepare(`
+      SELECT status, provider, model_id, started_at, completed_at
+      FROM task_runs WHERE updated_at >= ?
+    `).all(sinceIso) as Array<{ status: string; provider?: string | null; model_id?: string | null; started_at?: string | null; completed_at?: string | null }>;
+    let completed = 0;
+    let failed = 0;
+    let cancelled = 0;
+    const modelCounts = new Map<string, number>();
+    let totalLatencyMs = 0;
+    let latencyCount = 0;
+    for (const r of rows) {
+      if (r.status === 'done') completed++;
+      else if (r.status === 'failed') failed++;
+      else if (r.status === 'cancelled') cancelled++;
+      const key = r.provider && r.model_id ? `${r.provider}:${r.model_id}` : null;
+      if (key) modelCounts.set(key, (modelCounts.get(key) ?? 0) + 1);
+      if (r.started_at && r.completed_at && r.status === 'done') {
+        const ms = Date.parse(r.completed_at) - Date.parse(r.started_at);
+        if (!Number.isNaN(ms) && ms >= 0) {
+          totalLatencyMs += ms;
+          latencyCount++;
+        }
+      }
+    }
+    const total = completed + failed + cancelled;
+    const modelUsage = Array.from(modelCounts.entries())
+      .map(([key, count]) => {
+        const idx = key.indexOf(':');
+        const provider = idx >= 0 ? key.slice(0, idx) : '';
+        const modelId = idx >= 0 ? key.slice(idx + 1) : '';
+        return provider && modelId ? { provider, modelId, count } : null;
+      })
+      .filter((r): r is { provider: string; modelId: string; count: number } => r !== null)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+    return {
+      completed,
+      failed,
+      cancelled,
+      successRate: total > 0 ? completed / total : 0,
+      modelUsage,
+      avgLatencyMs: latencyCount > 0 ? Math.round(totalLatencyMs / latencyCount) : null
+    };
+  }
+
   getProfile(): LocalProfile | null {
     const row = this.db.prepare('SELECT payload FROM profile WHERE id = 1').get() as { payload?: string } | undefined;
     return row?.payload ? parseJson(row.payload, null) : null;
@@ -426,6 +565,7 @@ export class SqliteStorage {
 
   saveProfile(profile: LocalProfile): LocalProfile {
     this.db.prepare('INSERT OR REPLACE INTO profile (id, payload) VALUES (1, ?)').run(JSON.stringify(profile));
+    this.appendAuditEvent({ kind: 'profile_updated', entityType: 'profile', createdAt: new Date().toISOString() });
     return profile;
   }
 
@@ -463,7 +603,14 @@ export class SqliteStorage {
   }
 
   upsertAgent(agent: AgentSpec): AgentSpec {
+    const existing = this.getAgent(agent.id);
     this.db.prepare('INSERT OR REPLACE INTO agents (id, payload) VALUES (?, ?)').run(agent.id, JSON.stringify(agent));
+    this.appendAuditEvent({
+      kind: existing ? 'agent_updated' : 'agent_created',
+      entityId: agent.id,
+      entityType: 'agent',
+      createdAt: new Date().toISOString()
+    });
     return agent;
   }
 
@@ -490,6 +637,16 @@ export class SqliteStorage {
     return rows.map((row) => parseJson(row.payload, null as never));
   }
 
+  listChatThreadsPaginated(limit: number, offset: number): ChatThread[] {
+    const rows = this.db.prepare('SELECT payload FROM chat_threads ORDER BY id LIMIT ? OFFSET ?').all(limit, offset) as Array<{ payload: string }>;
+    return rows.map((row) => parseJson(row.payload, null as never));
+  }
+
+  getCountChatThreads(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM chat_threads').get() as { count: number };
+    return row?.count ?? 0;
+  }
+
   getChatThread(threadId: string): ChatThread | null {
     const row = this.db.prepare('SELECT payload FROM chat_threads WHERE id = ?').get(threadId) as { payload?: string } | undefined;
     return row?.payload ? parseJson(row.payload, null) : null;
@@ -507,6 +664,16 @@ export class SqliteStorage {
   listTasks(): TaskSpec[] {
     const rows = this.db.prepare('SELECT payload FROM tasks ORDER BY id').all() as Array<{ payload: string }>;
     return rows.map((row) => parseJson(row.payload, null as never));
+  }
+
+  listTasksPaginated(limit: number, offset: number): TaskSpec[] {
+    const rows = this.db.prepare('SELECT payload FROM tasks ORDER BY id LIMIT ? OFFSET ?').all(limit, offset) as Array<{ payload: string }>;
+    return rows.map((row) => parseJson(row.payload, null as never));
+  }
+
+  getCountTasks(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM tasks').get() as { count: number };
+    return row?.count ?? 0;
   }
 
   getTask(taskId: string): TaskSpec | null {
@@ -586,6 +753,7 @@ export class SqliteStorage {
   }
 
   upsertTaskRun(run: TaskRunRecord): TaskRunRecord {
+    const previous = this.getTaskRun(run.id);
     const columns = taskRunColumns(run);
     this.db.prepare(`
       INSERT OR REPLACE INTO task_runs (
@@ -598,7 +766,28 @@ export class SqliteStorage {
         @artifact_ids, @council_trace, @payload
       )
     `).run(columns);
+    const kind = this.inferTaskRunAuditKind(previous?.status, run.status);
+    if (kind) {
+      this.appendAuditEvent({
+        kind,
+        entityId: run.id,
+        entityType: 'task_run',
+        payload: { taskId: run.taskId, status: run.status },
+        createdAt: run.updatedAt
+      });
+    }
     return run;
+  }
+
+  private inferTaskRunAuditKind(
+    previousStatus: TaskRunRecord['status'] | undefined,
+    currentStatus: TaskRunRecord['status']
+  ): AuditEventKind | null {
+    if (currentStatus === 'running' && previousStatus !== 'running') return 'task_run_started';
+    if (currentStatus === 'done') return 'task_run_completed';
+    if (currentStatus === 'failed') return 'task_run_failed';
+    if (currentStatus === 'cancelled') return 'task_run_cancelled';
+    return null;
   }
 
   deleteTaskRun(runId: string) {
@@ -618,6 +807,22 @@ export class SqliteStorage {
         }
         return right.id.localeCompare(left.id);
       });
+  }
+
+  listWorkItemsPaginated(limit: number, offset: number): WorkItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload FROM work_items ORDER BY json_extract(payload, '$.updatedAt') DESC, json_extract(payload, '$.createdAt') DESC, id DESC LIMIT ? OFFSET ?`
+      )
+      .all(limit, offset) as Array<{ payload: string }>;
+    return rows
+      .map((row) => parseJson<WorkItem | null>(row.payload, null))
+      .filter((item): item is WorkItem => item !== null);
+  }
+
+  getCountWorkItems(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM work_items').get() as { count: number };
+    return row?.count ?? 0;
   }
 
   getWorkItem(workItemId: string): WorkItem | null {
@@ -673,6 +878,13 @@ export class SqliteStorage {
     this.db.exec('DELETE FROM memory_facts');
   }
 
+  deleteMemoryFactsByIds(ids: string[]) {
+    const del = this.db.prepare('DELETE FROM memory_facts WHERE id = ?');
+    for (const id of ids) {
+      del.run(id);
+    }
+  }
+
   listModels(): ProviderModelPreset[] {
     const rows = this.db.prepare('SELECT payload FROM models ORDER BY id').all() as Array<{ payload: string }>;
     return rows.map((row) => parseJson(row.payload, null as never));
@@ -695,6 +907,12 @@ export class SqliteStorage {
       selection.provider,
       JSON.stringify(selection)
     );
+    this.appendAuditEvent({
+      kind: 'provider_selection_changed',
+      entityType: 'provider_auth',
+      payload: { provider: selection.provider },
+      createdAt: new Date().toISOString()
+    });
     return selection;
   }
 
@@ -720,21 +938,99 @@ export class SqliteStorage {
       providerOverride: override ?? null
     };
     this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    this.appendAuditEvent({
+      kind: 'prism_override_changed',
+      entityType: 'prism_settings',
+      payload: override ? { provider: override.provider, modelId: override.modelId } : { cleared: true },
+      createdAt: new Date().toISOString()
+    });
     return override;
   }
 
-  getWorkspaceSnapshot(): WorkspaceSnapshot {
+  getAgentMode(): AgentMode {
+    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const raw = parsed.agentMode;
+    if (raw === 'ollama' || raw === 'bridge' || raw === 'auto') return raw;
+    if (raw === 'openclaw') return 'bridge'; // migration from legacy
+    return 'auto';
+  }
+
+  saveAgentMode(mode: AgentMode): AgentMode {
+    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const next = {
+      ...parsed,
+      agentMode: mode
+    };
+    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    return mode;
+  }
+
+  getWorkspaceRole(): WorkspaceRole {
+    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const raw = parsed.workspaceRole;
+    if (raw === 'owner' || raw === 'admin' || raw === 'member' || raw === 'viewer') return raw;
+    return 'owner';
+  }
+
+  saveWorkspaceRole(role: WorkspaceRole): WorkspaceRole {
+    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const next = { ...parsed, workspaceRole: role };
+    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    return role;
+  }
+
+  hasPermission(permission: Permission): boolean {
+    const role = this.getWorkspaceRole();
+    const allowed = ROLE_PERMISSIONS[role] ?? [];
+    return allowed.includes(permission);
+  }
+
+  getVoiceConfig(): VoiceConfig {
+    const row = this.db.prepare('SELECT payload FROM voice_config WHERE id = 1').get() as { payload?: string } | undefined;
+    if (row?.payload) {
+      return parseJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
+    }
+    return { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' };
+  }
+
+  saveVoiceConfig(config: VoiceConfig): VoiceConfig {
+    this.db.prepare('INSERT OR REPLACE INTO voice_config (id, payload) VALUES (1, ?)').run(JSON.stringify(config));
+    return config;
+  }
+
+  getWorkspaceSnapshot(options?: GetWorkspaceSnapshotOptions): WorkspaceSnapshot {
     const userMap = this.getUserMap();
     const { publicRoot, privateRoot } = stateRoots(userMap);
     const memoryFacts = this.listMemoryFacts();
-    return {
+
+    const useLite =
+      options &&
+      (options.tasksLimit !== undefined || options.workItemsLimit !== undefined || options.chatThreadsLimit !== undefined);
+
+    const tasksLimit = options?.tasksLimit ?? 0;
+    const workItemsLimit = options?.workItemsLimit ?? 0;
+    const chatThreadsLimit = options?.chatThreadsLimit ?? 0;
+
+    const chatThreads =
+      useLite && chatThreadsLimit > 0
+        ? this.listChatThreadsPaginated(chatThreadsLimit, 0)
+        : this.listChatThreads();
+    const tasks = useLite && tasksLimit > 0 ? this.listTasksPaginated(tasksLimit, 0) : this.listTasks();
+    const workItems =
+      useLite && workItemsLimit > 0 ? this.listWorkItemsPaginated(workItemsLimit, 0) : this.listWorkItems();
+
+    const snapshot: WorkspaceSnapshot = {
       profile: this.getProfile(),
       agents: this.listAgents(),
       groups: this.listGroups(),
-      chatThreads: this.listChatThreads(),
-      tasks: this.listTasks(),
+      chatThreads,
+      tasks,
       taskRuns: this.listTaskRuns(),
-      workItems: this.listWorkItems(),
+      workItems,
       artifacts: this.listArtifacts(),
       userMap,
       publicUserMap: publicRoot,
@@ -744,5 +1040,15 @@ export class SqliteStorage {
       privateMemoryFacts: memoryFacts.filter((fact) => memoryVisibility(fact) === 'private'),
       models: this.listModels()
     };
+
+    if (useLite) {
+      snapshot.counts = {
+        tasks: tasksLimit > 0 ? this.getCountTasks() : snapshot.tasks.length,
+        workItems: workItemsLimit > 0 ? this.getCountWorkItems() : snapshot.workItems.length,
+        chatThreads: chatThreadsLimit > 0 ? this.getCountChatThreads() : snapshot.chatThreads.length
+      };
+    }
+
+    return snapshot;
   }
 }

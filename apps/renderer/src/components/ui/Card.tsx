@@ -14,7 +14,7 @@ const variantClasses: Record<CardVariant, string> = {
   elevated: 'bg-[#1a1e28] border border-white/[0.10] shadow-[0_4px_12px_rgba(0,0,0,0.4)]',
   outline: 'bg-transparent border border-white/[0.10] hover:border-white/[0.16]',
   ghost: 'bg-white/[0.03] border border-transparent',
-  brand: 'bg-[#7c5cfc]/[0.08] border border-[#7c5cfc]/[0.20]',
+  brand: 'bg-emerald-500/10 border border-emerald-500/20',
 };
 
 const paddingClasses: Record<NonNullable<CardProps['padding']>, string> = {

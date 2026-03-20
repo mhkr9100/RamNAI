@@ -62,10 +62,10 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         components={{
           code: CodeBlock,
           pre: ({ children }) => <>{children}</>,
-          a: (props) => <a className="text-[#7c5cfc] underline hover:text-[#a78bfa] transition-colors" target="_blank" rel="noopener noreferrer" {...props} />,
+          a: (props) => <a className="text-emerald-600 dark:text-emerald-300 underline hover:text-emerald-700 dark:hover:text-emerald-200 transition-colors" target="_blank" rel="noopener noreferrer" {...props} />,
           ul: (props) => <ul className="list-disc list-outside ml-5 my-4 space-y-1 text-white/85 text-sm" {...props} />,
           ol: (props) => <ol className="list-decimal list-outside ml-5 my-4 space-y-1 text-white/85 text-sm" {...props} />,
-          blockquote: (props) => <blockquote className="border-l-2 border-[#7c5cfc] bg-white/5 px-4 py-2 my-4 rounded-r-lg italic text-white/70" {...props} />,
+          blockquote: (props) => <blockquote className="border-l-2 border-emerald-500/50 bg-white/5 px-4 py-2 my-4 rounded-r-lg italic text-white/70" {...props} />,
           table: (props) => (
             <div className="overflow-x-auto my-4">
               <table className="min-w-full border border-white/10 rounded-lg text-sm" {...props} />

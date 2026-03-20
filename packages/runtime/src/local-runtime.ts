@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  AgentMode,
   AgentSpec,
   DEFAULT_MODEL_PRESETS,
   GroupSpec,
@@ -14,7 +15,7 @@ import {
   UserMapNode,
   UserMapState
 } from '@supreme/shared';
-import { OpenClawBridge, type OpenClawPromptResult } from './openclaw-bridge.js';
+import { RuntimeBridge, type BridgePromptResult } from './runtime-bridge.js';
 
 const OLLAMA_API = 'http://127.0.0.1:11434/api';
 const ALLOWED_MEMORY_CATEGORIES: MemoryCategory[] = [
@@ -68,7 +69,8 @@ export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
   private prismOverride: PrismProviderOverrideSettings | null = null;
-  private readonly openClawBridge = new OpenClawBridge();
+  private agentMode: AgentMode = 'auto';
+  private readonly runtimeBridge = new RuntimeBridge();
 
   setWorkspaceRoot(rootDir: string) {
     this.workspaceRoot = rootDir;
@@ -82,14 +84,18 @@ export class LocalRuntimeAdapter {
     this.prismOverride = override;
   }
 
-  async getOpenClawVersion(): Promise<string | null> {
-    return this.openClawBridge.getVersion();
+  setAgentMode(mode: AgentMode) {
+    this.agentMode = mode;
+  }
+
+  async getBridgeVersion(): Promise<string | null> {
+    return this.runtimeBridge.getVersion();
   }
 
   async getStatus(): Promise<RuntimeStatus> {
     const [ollamaReady, runtimeBridgeReady] = await Promise.all([
       this.isOllamaReachable(),
-      this.isOpenClawAvailable()
+      this.isBridgeAvailable()
     ]);
 
     return {
@@ -106,12 +112,12 @@ export class LocalRuntimeAdapter {
 
   async listModels(): Promise<ProviderModelPreset[]> {
     const configured = new Map<string, ProviderModelPreset>();
-    const [ollamaModels, openClawModels] = await Promise.all([
+    const [ollamaModels, bridgeModels] = await Promise.all([
       this.listOllamaModels(),
-      this.listOpenClawModels()
+      this.listBridgeModels()
     ]);
 
-    for (const model of [...ollamaModels, ...openClawModels]) {
+    for (const model of [...ollamaModels, ...bridgeModels]) {
       configured.set(`${model.provider}:${model.id}`, model);
     }
 
@@ -123,9 +129,11 @@ export class LocalRuntimeAdapter {
   }
 
   async sendPrismRequest(input: PrismRequest): Promise<PrismReply> {
-    const openClawReply = await this.tryOpenClawPrism(input);
-    if (openClawReply) {
-      return openClawReply;
+    if (this.agentMode !== 'ollama') {
+      const bridgeReply = await this.tryBridgePrism(input);
+      if (bridgeReply) {
+        return bridgeReply;
+      }
     }
 
     const models = await this.listOllamaModels();
@@ -169,9 +177,11 @@ export class LocalRuntimeAdapter {
   }
 
   async executeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult> {
-    const openClawResult = await this.tryOpenClawTask(task, context);
-    if (openClawResult) {
-      return openClawResult;
+    if (this.agentMode !== 'ollama') {
+      const bridgeResult = await this.tryBridgeTask(task, context);
+      if (bridgeResult) {
+        return bridgeResult;
+      }
     }
 
     if (task.mode === 'council') {
@@ -234,15 +244,15 @@ export class LocalRuntimeAdapter {
     return [...configured.values()];
   }
 
-  private async listOpenClawModels(): Promise<ProviderModelPreset[]> {
+  private async listBridgeModels(): Promise<ProviderModelPreset[]> {
     try {
-      const available = await this.isOpenClawAvailable();
+      const available = await this.isBridgeAvailable();
       if (!available) {
         return [];
       }
 
       return await this.withRuntimeBridgeHooks(async () => {
-        const models = await this.openClawBridge.listModels();
+        const models = await this.runtimeBridge.listModels();
         return models.map((model) => {
           const provider = this.normalizeProviderId(model.provider);
           return {
@@ -255,13 +265,13 @@ export class LocalRuntimeAdapter {
         });
       });
     } catch (error) {
-      console.warn('[runtime] OpenClaw model listing failed, using Ollama-only catalog:', error);
+      console.warn('[runtime] Runtime bridge model listing failed, using Ollama-only catalog:', error);
       return [];
     }
   }
 
-  private async tryOpenClawPrism(input: PrismRequest): Promise<PrismReply | null> {
-    const available = await this.isOpenClawAvailable();
+  private async tryBridgePrism(input: PrismRequest): Promise<PrismReply | null> {
+    const available = await this.isBridgeAvailable();
     if (!available) {
       return null;
     }
@@ -271,7 +281,7 @@ export class LocalRuntimeAdapter {
       const selectedModel = this.pickPrismBridgeModel(models);
 
       if (input.mode === 'create') {
-        const response = await this.sendWithOpenClaw({
+        const response = await this.sendWithBridge({
           modelRef: selectedModel,
           system: this.buildPrismCreateSystemPrompt(),
           prompt: this.buildPrismCreatePrompt(input)
@@ -281,14 +291,14 @@ export class LocalRuntimeAdapter {
 
         return {
           id: randomUUID(),
-          text: `Created ${createdAgent.name}. Prism designed this chatbot through the OpenClaw bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+          text: `Created ${createdAgent.name}. Prism designed this chatbot through the runtime bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
           provider: this.normalizeProviderId(response.provider),
           modelId: response.modelId,
           createdAgent
         };
       }
 
-      const response = await this.sendWithOpenClaw({
+      const response = await this.sendWithBridge({
         modelRef: selectedModel,
         system: this.buildPrismAskSystemPrompt(),
         prompt: this.buildPrismAskPrompt(input)
@@ -301,20 +311,20 @@ export class LocalRuntimeAdapter {
         modelId: response.modelId
       };
     } catch (error) {
-      console.warn('[runtime] OpenClaw Prism execution failed, falling back to Ollama:', error);
+      console.warn('[runtime] Runtime bridge execution failed, falling back to Ollama:', error);
       return null;
     }
   }
 
-  private async tryOpenClawTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
-    const available = await this.isOpenClawAvailable();
+  private async tryBridgeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult | null> {
+    const available = await this.isBridgeAvailable();
     if (!available) {
       return null;
     }
 
     try {
       if (task.mode === 'council') {
-        return await this.executeCouncil(task, context, 'openclaw');
+        return await this.executeCouncil(task, context, 'bridge');
       }
 
       const models = await this.listModels();
@@ -336,7 +346,7 @@ export class LocalRuntimeAdapter {
         `Task Objective:\n${task.objective}`
       ].filter(Boolean).join('\n\n');
 
-      const response = await this.sendWithOpenClaw({
+      const response = await this.sendWithBridge({
         modelRef,
         system: 'Complete the scheduled task thoroughly. Return the finished output directly with no preamble.',
         prompt,
@@ -349,13 +359,13 @@ export class LocalRuntimeAdapter {
         modelId: response.modelId
       };
     } catch (error) {
-      console.warn('[runtime] OpenClaw task execution failed, falling back to Ollama:', error);
+      console.warn('[runtime] Runtime bridge task execution failed, falling back to Ollama:', error);
       return null;
     }
   }
 
-  private async isOpenClawAvailable(): Promise<boolean> {
-    return this.withRuntimeBridgeHooks(async () => this.openClawBridge.isAvailable());
+  private async isBridgeAvailable(): Promise<boolean> {
+    return this.withRuntimeBridgeHooks(async () => this.runtimeBridge.isAvailable());
   }
 
   private async withRuntimeBridgeHooks<T>(action: () => Promise<T>): Promise<T> {
@@ -419,25 +429,25 @@ export class LocalRuntimeAdapter {
   private async executeCouncil(
     task: TaskSpec,
     context: TaskExecutionContext,
-    runtime: 'ollama' | 'openclaw'
+    runtime: 'ollama' | 'bridge'
   ): Promise<TaskExecutionResult> {
-    const models = runtime === 'openclaw' ? await this.listModels() : await this.listOllamaModels();
+    const models = runtime === 'bridge' ? await this.listModels() : await this.listOllamaModels();
     const installedModels = models.filter((model) => model.installed);
     const installedModelIds = installedModels.map((model) => model.id);
     const workers = task.council?.workerModels.length
       ? task.council.workerModels.map((worker) => (
-        runtime === 'openclaw'
+        runtime === 'bridge'
           ? this.resolveBridgeModel(worker.provider, worker.modelId, installedModels)
           : this.resolveSupportedModel(worker.provider, worker.modelId, installedModelIds)
       ))
-      : [runtime === 'openclaw' ? this.pickBridgeModel(models) : this.pickModelId(models)];
+      : [runtime === 'bridge' ? this.pickBridgeModel(models) : this.pickModelId(models)];
     const judge = task.council?.judgeModel
       ? (
-        runtime === 'openclaw'
+        runtime === 'bridge'
           ? this.resolveBridgeModel(task.council.judgeModel.provider, task.council.judgeModel.modelId, installedModels)
           : this.resolveSupportedModel(task.council.judgeModel.provider, task.council.judgeModel.modelId, installedModelIds)
       )
-      : (workers[0] ?? (runtime === 'openclaw' ? this.pickBridgeModel(models) : this.pickModelId(models)));
+      : (workers[0] ?? (runtime === 'bridge' ? this.pickBridgeModel(models) : this.pickModelId(models)));
 
     const sharedBrief = [
       'You are part of a council run in Supreme Raman AI.',
@@ -450,8 +460,8 @@ export class LocalRuntimeAdapter {
     const workerDrafts: Array<{ modelId: string; output: string }> = [];
 
     for (const workerModelId of workers) {
-      const output = runtime === 'openclaw'
-        ? (await this.sendWithOpenClaw({
+      const output = runtime === 'bridge'
+        ? (await this.sendWithBridge({
           modelRef: workerModelId,
           system: 'You are a council worker. Produce a concrete first-pass answer.',
           prompt: sharedBrief
@@ -472,8 +482,8 @@ export class LocalRuntimeAdapter {
         .map((candidate) => `Peer (${candidate.modelId}):\n${candidate.output}`)
         .join('\n\n');
 
-      const output = runtime === 'openclaw'
-        ? (await this.sendWithOpenClaw({
+      const output = runtime === 'bridge'
+        ? (await this.sendWithBridge({
           modelRef: draft.modelId,
           system: 'Revise your answer after considering peer outputs. Keep the best parts and improve weaknesses.',
           prompt: `${sharedBrief}\n\nYour original draft:\n${draft.output}\n\nPeer outputs:\n${peerOutputs}`
@@ -491,8 +501,8 @@ export class LocalRuntimeAdapter {
       .map((draft) => `Revised worker output (${draft.modelId}):\n${draft.output}`)
       .join('\n\n');
 
-    const judgeResult = runtime === 'openclaw'
-      ? await this.sendWithOpenClaw({
+    const judgeResult = runtime === 'bridge'
+      ? await this.sendWithBridge({
         modelRef: judge,
         system: 'You are the council judge. Synthesize the strongest final answer from the revised worker outputs.',
         prompt: `${sharedBrief}\n\n${judgePrompt}`
@@ -512,8 +522,8 @@ export class LocalRuntimeAdapter {
 
     return {
       text,
-      provider: runtime === 'openclaw' ? this.normalizeProviderId(judgeResult.provider) : 'ollama',
-      modelId: runtime === 'openclaw' ? judgeResult.modelId : judge,
+      provider: runtime === 'bridge' ? this.normalizeProviderId(judgeResult.provider) : 'ollama',
+      modelId: runtime === 'bridge' ? judgeResult.modelId : judge,
       councilTrace: trace
     };
   }
@@ -771,7 +781,7 @@ export class LocalRuntimeAdapter {
       ? installed.find((model) => model.id === preferred.id)
       : installed[0];
     if (!selected) {
-      throw new Error('No OpenClaw-backed models are available yet.');
+      throw new Error('No runtime bridge-backed models are available yet.');
     }
 
     return this.toProviderModelId(selected.provider, selected.id);
@@ -815,14 +825,14 @@ export class LocalRuntimeAdapter {
     const normalizedId = this.toProviderModelId(provider, modelId);
     const installed = models.some((model) => model.installed && this.toProviderModelId(model.provider, model.id) === normalizedId);
     if (!installed) {
-      throw new Error(`Model "${normalizedId}" is not available through the OpenClaw bridge.`);
+      throw new Error(`Model "${normalizedId}" is not available through the runtime bridge.`);
     }
 
     return normalizedId;
   }
 
-  private async sendWithOpenClaw(input: { modelRef: string; system: string; prompt: string; tools?: string[] }): Promise<OpenClawPromptResult> {
-    return this.withRuntimeBridgeHooks(async () => this.openClawBridge.sendPrompt({
+  private async sendWithBridge(input: { modelRef: string; system: string; prompt: string; tools?: string[] }): Promise<BridgePromptResult> {
+    return this.withRuntimeBridgeHooks(async () => this.runtimeBridge.sendPrompt({
       model: input.modelRef,
       systemPrompt: input.system,
       userPrompt: input.prompt,

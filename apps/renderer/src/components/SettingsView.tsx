@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Download, FlaskConical, KeyRound, Trash2 } from 'lucide-react';
 import type {
+  AgentMode,
   OllamaRuntimeStatus,
   PrismProviderOverrideSettings,
   ProviderAuthProfile,
@@ -21,7 +22,11 @@ import {
   StatusDot,
 } from './ui';
 
-type SettingsSection = 'runtime' | 'providers' | 'prism';
+import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
+import type { ChatTarget } from './ChatsWorkspace';
+import { SpectrumView } from './SpectrumView';
+
+type SettingsSection = 'runtime' | 'providers' | 'agents' | 'prism';
 type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
 
 interface SettingsViewProps {
@@ -31,14 +36,17 @@ interface SettingsViewProps {
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
   prismOverride: PrismProviderOverrideSettings | null;
+  agentMode: AgentMode;
+  onSaveAgentMode: (mode: AgentMode) => Promise<void>;
   ollamaStatus: OllamaRuntimeStatus | null;
   models: ProviderModelPreset[];
+  snapshot: WorkspaceSnapshot;
   busy: boolean;
   loading: boolean;
   onRefresh: () => Promise<void>;
   onInstallDefaults: () => Promise<void>;
   onSaveProfile: (input: {
-    id: string;
+    id?: string;
     provider: RemoteProviderId;
     label: string;
     description?: string;
@@ -50,11 +58,18 @@ interface SettingsViewProps {
   onTestProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   onSetProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
   onSavePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  onSaveScheduleTimezone: (timezone: string) => Promise<void>;
+  onCreateAgentTask: (input: TaskCreateInput) => Promise<void>;
+  onUpsertGroup: (group: { id?: string; name: string; description?: string; memberAgentIds: string[]; routingMode: 'auto' | 'manual'; autoRouteThreshold: number; defaultResponderAgentId?: string }) => Promise<void>;
+  onDeleteGroup: (groupId: string) => Promise<void>;
+  onOpenChat: (target: ChatTarget) => void;
 }
 
 const sections: Array<{ id: SettingsSection; label: string }> = [
   { id: 'runtime', label: 'Local' },
   { id: 'providers', label: 'Accounts' },
+  { id: 'agents', label: 'Agents' },
+  { id: 'prism', label: 'Prism' },
 ];
 
 const listVariants = {
@@ -78,8 +93,11 @@ export function SettingsView({
   providerProfiles,
   providerSelections,
   prismOverride,
+  agentMode,
+  onSaveAgentMode,
   ollamaStatus,
   models,
+  snapshot,
   busy,
   loading,
   onRefresh,
@@ -89,6 +107,11 @@ export function SettingsView({
   onTestProfile,
   onSetProviderSelection,
   onSavePrismOverride,
+  onSaveScheduleTimezone,
+  onCreateAgentTask,
+  onUpsertGroup,
+  onDeleteGroup,
+  onOpenChat,
 }: SettingsViewProps) {
   const providerRef = useRef<HTMLSelectElement | null>(null);
   const labelRef = useRef<HTMLInputElement | null>(null);
@@ -134,10 +157,8 @@ export function SettingsView({
     }
 
     setFormError(null);
-    const id = `${provider}-${slugify(label)}`;
 
     await onSaveProfile({
-      id,
       provider,
       label,
       ...(description ? { description } : {}),
@@ -154,8 +175,7 @@ export function SettingsView({
     <div className="space-y-5">
       <Card variant="elevated" padding="lg" animate={false} className="bg-surface-2">
         <CardHeader
-          title="Local App"
-          subtitle="Manage local runtime models, connected provider accounts, and Prism overrides."
+          title="Settings"
           action={
             <div className="flex flex-wrap gap-2">
               <Badge variant="brand">Local {runtimeReady ? 'Ready' : 'Check'}</Badge>
@@ -191,7 +211,6 @@ export function SettingsView({
           <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
             <CardHeader
               title="Local Models"
-              subtitle="Current Ollama runtime state and the models available to the app."
               action={
                 <div className="flex flex-wrap items-center gap-3">
                   <StatusDot
@@ -212,9 +231,51 @@ export function SettingsView({
               }
             />
 
-            <CardSection label="Overview" className="mt-5">
-              <div className="grid gap-3 md:grid-cols-3">
-                <InfoCard label="App" value={ollamaStatus?.running ? 'Running' : 'Not running'} />
+            <CardSection label="Runtime mode" className="mt-5">
+              <Select
+                label="Agent runtime"
+                value={agentMode}
+                onChange={(e) => void onSaveAgentMode(e.target.value as AgentMode)}
+                disabled={busy || loading}
+                options={[
+                  { value: 'auto', label: 'Auto (bridge if available, else Ollama)' },
+                  { value: 'ollama', label: 'Ollama only' },
+                  { value: 'bridge', label: 'Runtime bridge (external)' },
+                ]}
+              />
+              {agentMode === 'bridge' && !snapshot.runtime.runtimeBridgeReady ? (
+                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  Runtime bridge is not available. Install the CLI or switch to Ollama.
+                </div>
+              ) : null}
+            </CardSection>
+
+            <CardSection label="Scheduling timezone">
+              <Select
+                label="Task schedule timezone"
+                value={snapshot.profile?.timezone ?? ''}
+                onChange={(e) => void onSaveScheduleTimezone(e.target.value)}
+                disabled={busy || loading || !snapshot.profile}
+                options={[
+                  { value: '', label: 'System default' },
+                  { value: 'UTC', label: 'UTC' },
+                  { value: 'America/New_York', label: 'Eastern (America/New_York)' },
+                  { value: 'America/Chicago', label: 'Central (America/Chicago)' },
+                  { value: 'America/Denver', label: 'Mountain (America/Denver)' },
+                  { value: 'America/Los_Angeles', label: 'Pacific (America/Los_Angeles)' },
+                  { value: 'Europe/London', label: 'London (Europe/London)' },
+                  { value: 'Europe/Paris', label: 'Paris (Europe/Paris)' },
+                  { value: 'Europe/Berlin', label: 'Berlin (Europe/Berlin)' },
+                  { value: 'Asia/Tokyo', label: 'Tokyo (Asia/Tokyo)' },
+                  { value: 'Asia/Kolkata', label: 'India (Asia/Kolkata)' },
+                ]}
+              />
+            </CardSection>
+
+            <CardSection label="Overview">
+              <div className="grid gap-3 md:grid-cols-4">
+                <InfoCard label="Ollama" value={ollamaStatus?.running ? 'Running' : 'Not running'} />
+                <InfoCard label="Bridge" value={snapshot.runtime.runtimeBridgeReady ? 'Ready' : 'Not available'} />
                 <InfoCard label="Installed" value={`${installedModelCount}`} />
                 <InfoCard label="Shown" value={`${ollamaStatus?.models.length ?? 0}`} />
               </div>
@@ -294,15 +355,9 @@ export function SettingsView({
           <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
             <CardHeader
               title="Starter Models"
-              subtitle="Install the default local stack RamN AI expects."
               icon={<Download size={16} className="text-brand-light" />}
             />
 
-            <CardSection label="Recommended" className="mt-5">
-              <div className="rounded-2xl border border-white/[0.08] bg-surface-3 p-4 text-sm leading-7 text-white/62">
-                Install the three local models this app expects first.
-              </div>
-            </CardSection>
 
             <CardSection label="Presets" className="mt-5">
               <motion.div
@@ -350,10 +405,7 @@ export function SettingsView({
       {activeSection === 'providers' ? (
         <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
           <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
-            <CardHeader
-              title="Connected Accounts"
-              subtitle="Review saved remote credentials and choose which profile is active."
-            />
+            <CardHeader title="Accounts" />
             <Divider className="my-5" />
 
             {providerProfiles.length === 0 ? (
@@ -383,9 +435,6 @@ export function SettingsView({
                         }
                       />
 
-                      <div className="mt-3 text-sm leading-6 text-white/60">
-                        {profile.description || 'No notes.'}
-                      </div>
 
                       <div className="mt-4 grid gap-3 md:grid-cols-2">
                         <InfoCard label="Key" value={profile.keyRef ? 'Saved' : 'Not added'} />
@@ -442,11 +491,7 @@ export function SettingsView({
           </Card>
 
           <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
-            <CardHeader
-              title="Add Account"
-              subtitle="Save a remote provider profile for OpenAI, Anthropic, or Google."
-              icon={<KeyRound size={16} className="text-brand-light" />}
-            />
+            <CardHeader title="Add Account" icon={<KeyRound size={16} className="text-brand-light" />} />
 
             <form onSubmit={handleSaveProfile} className="mt-5 space-y-4">
               <Select
@@ -470,7 +515,7 @@ export function SettingsView({
                 </span>
                 <textarea
                   ref={descriptionRef}
-                  className="min-h-[112px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-[#7c5cfc]/50 focus:ring-2 focus:ring-[#7c5cfc]/20"
+                  className="min-h-[112px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
                   placeholder="Optional"
                 />
               </label>
@@ -523,7 +568,22 @@ export function SettingsView({
         </section>
       ) : null}
 
-      {/* Prism config has been moved to Prism's own profile panel */}
+      {activeSection === 'agents' ? (
+        <SpectrumView
+          snapshot={snapshot}
+          busy={busy}
+          onCreateAgentTask={onCreateAgentTask}
+          onUpsertGroup={onUpsertGroup}
+          onDeleteGroup={onDeleteGroup}
+          onOpenChat={onOpenChat}
+        />
+      ) : null}
+
+      {activeSection === 'prism' ? (
+        <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
+          <CardHeader title="Prism" />
+        </Card>
+      ) : null}
     </div>
   );
 }
@@ -566,10 +626,6 @@ function resolveModelVariant(
   }
 
   return model.installed ? 'success' : 'default';
-}
-
-function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 }
 
 function InfoCard({ label, value }: { label: string; value: string }) {

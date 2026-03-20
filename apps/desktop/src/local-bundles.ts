@@ -31,6 +31,13 @@ interface LocalBundleContext {
   prismOverride: PrismProviderOverrideSettings | null;
   runtimeStatus: RuntimeStatus;
   ollamaStatus: OllamaRuntimeStatus;
+  health?: {
+    ollama: { ready: boolean; available: boolean };
+    runtimeBridge: { ready: boolean; version: string | null };
+    storage: { ok: boolean };
+    scheduler: { ok: boolean };
+  };
+  auditLogJson?: string;
   schemaVersion: number;
   databasePath: string;
   userDataPath: string;
@@ -344,6 +351,7 @@ async function writeSupportDiagnostics(rootDir: string, context: LocalBundleCont
     schemaVersion: context.schemaVersion,
     runtime: context.runtimeStatus,
     ollama: context.ollamaStatus,
+    health: context.health,
     counts,
     paths: {
       userDataPath: context.userDataPath,
@@ -370,6 +378,9 @@ async function writeSupportDiagnostics(rootDir: string, context: LocalBundleCont
     runtime: context.runtimeStatus,
     ollama: context.ollamaStatus
   });
+  if (context.auditLogJson) {
+    await writeFile(path.join(rootDir, 'diagnostics', 'audit-log.json'), context.auditLogJson, 'utf8');
+  }
 }
 
 async function writeSupportLogs(rootDir: string, workspacePaths: WorkspacePaths, mainProcessLogPath: string) {

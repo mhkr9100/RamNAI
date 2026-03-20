@@ -82,12 +82,21 @@ async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
+function isKeychainError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /keychain|cannot be found|securityd|SecItem/i.test(msg);
+}
+
 export class ProviderAuthStore {
   private nativeKeytar: any | null = null;
+  /** When true, keytar caused keychain prompts; skip it for the rest of the session. */
+  private keytarDisabled = false;
 
   constructor(private readonly cipher: SecretStoreCipher) {}
 
   private async getKeytar(): Promise<any | null> {
+    if (this.keytarDisabled) return null;
+    if (process.env.SUPREME_SKIP_KEYCHAIN === '1') return null;
     if (this.nativeKeytar) return this.nativeKeytar;
     try {
       const mod = await import('keytar');
@@ -105,6 +114,11 @@ export class ProviderAuthStore {
     }
   }
 
+  private disableKeytar(): void {
+    this.keytarDisabled = true;
+    this.nativeKeytar = null;
+  }
+
   private async readNativeSecretState(): Promise<SecretsFile | null> {
     const keytar = await this.getKeytar();
     if (!keytar) return null;
@@ -115,7 +129,8 @@ export class ProviderAuthStore {
       const parsed = JSON.parse(json) as SecretsFile;
       if (!parsed?.providers || typeof parsed.providers !== 'object') return null;
       return parsed;
-    } catch {
+    } catch (err) {
+      if (isKeychainError(err)) this.disableKeytar();
       return null;
     }
   }
@@ -127,7 +142,8 @@ export class ProviderAuthStore {
     try {
       await keytar.setPassword(NATIVE_SECRETS_SERVICE, NATIVE_SECRETS_ACCOUNT, JSON.stringify(state));
       return true;
-    } catch {
+    } catch (err) {
+      if (isKeychainError(err)) this.disableKeytar();
       return false;
     }
   }

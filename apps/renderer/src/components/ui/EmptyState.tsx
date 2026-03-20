@@ -61,7 +61,7 @@ export function EmptyState({
               onClick={s.onClick}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="rounded-xl border border-white/[0.10] bg-white/[0.04] px-3.5 py-2 text-xs font-medium text-white/60 transition-colors hover:border-[#7c5cfc]/30 hover:bg-[#7c5cfc]/[0.06] hover:text-white/80"
+              className="rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/[0.04] px-3.5 py-2 text-xs font-medium text-gray-600 dark:text-white/60 transition-colors hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-gray-900 dark:hover:text-white/80"
             >
               {s.label}
             </motion.button>

@@ -5,6 +5,7 @@ import { RamanIcon } from './RamanIcon';
 interface ErrorBoundaryProps {
   children: React.ReactNode;
   viewName?: string;
+  onDismiss?: () => void;
 }
 
 interface ErrorBoundaryState {
@@ -36,14 +37,25 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <p className="mt-2 text-sm text-white/45">
               {this.state.error?.message ?? 'An unexpected error occurred.'}
             </p>
-            <button
-              type="button"
-              onClick={() => this.setState({ hasError: false, error: null })}
-              className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/[0.10] bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/[0.10] hover:text-white"
-            >
-              <RotateCcw size={14} />
-              Try again
-            </button>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/[0.10] bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/[0.10] hover:text-white"
+              >
+                <RotateCcw size={14} />
+                Try again
+              </button>
+              {this.props.onDismiss && (
+                <button
+                  type="button"
+                  onClick={() => { this.setState({ hasError: false, error: null }); this.props.onDismiss?.(); }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/[0.10] bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/[0.10] hover:text-white"
+                >
+                  Close
+                </button>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -65,7 +77,7 @@ export function AppCrashScreen({ error, onRetry }: { error: Error; onRetry: () =
         <button
           type="button"
           onClick={onRetry}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#7c5cfc] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#6d4de8]"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-black px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black dark:hover:bg-white/90"
         >
           <RotateCcw size={14} />
           Reload

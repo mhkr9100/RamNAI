@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, LoaderCircle } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, Mic } from 'lucide-react';
 import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
 import { CommandPalette, buildDefaultCommands } from './components/CommandPalette';
 import { DashboardView } from './components/DashboardView';
@@ -9,9 +9,10 @@ import { OnboardingFlow } from './components/OnboardingFlow';
 import { Sidebar, ViewId } from './components/Sidebar';
 import { PrismWorkspace } from './components/PrismWorkspace';
 import { SettingsView } from './components/SettingsView';
-import { SpectrumView } from './components/SpectrumView';
 import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
+import { CanvasWorkspace } from './components/CanvasWorkspace';
+import { VoicePanel } from './components/VoicePanel';
 import { RamanIcon } from './components/RamanIcon';
 import { useToast } from './components/ui';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -21,6 +22,7 @@ import { usePrismStore } from './stores/prism-store';
 import { useChatStore } from './stores/chat-store';
 import { useSettingsStore } from './stores/settings-store';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput } from './lib/electron';
+import { logger } from './lib/logger';
 import type {
   PrismMode,
   UserMapState,
@@ -37,7 +39,7 @@ export default function App() {
   }, []);
 
   // -- Zustand stores --
-  const { snapshot, loading, error, refreshSnapshot, setError, clearError, startPolling, stopPolling } = useWorkspaceStore();
+  const { snapshot, loading, error, refreshSnapshot, loadMoreTasks, loadMoreWorkItems, setError, clearError, startPolling, stopPolling } = useWorkspaceStore();
   const { activeView, navigate } = useNavigationStore();
   const prismStore = usePrismStore();
   const chatStore = useChatStore();
@@ -48,6 +50,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [voicePanelOpen, setVoicePanelOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   // -- Command palette --
@@ -61,8 +64,7 @@ export default function App() {
       { key: '1', meta: true, handler: () => navigate('prism'), description: 'Prism', label: 'Prism' },
       { key: '2', meta: true, handler: () => navigate('chats'), description: 'Chats', label: 'Chats' },
       { key: '3', meta: true, handler: () => navigate('usermap'), description: 'Context Brain', label: 'Context Brain' },
-      { key: '4', meta: true, handler: () => navigate('spectrum'), description: 'Spectrum', label: 'Spectrum' },
-      { key: '5', meta: true, handler: () => navigate('work'), description: 'Work', label: 'Work' },
+      { key: '4', meta: true, handler: () => navigate('work'), description: 'Work', label: 'Work' },
       { key: ',', meta: true, handler: () => navigate('settings'), description: 'Settings', label: 'Settings' },
     ], [navigate]),
   );
@@ -77,6 +79,7 @@ export default function App() {
       try {
         await Promise.all([refreshSnapshot(), settingsStore.refreshSettings()]);
       } catch (e) {
+        logger.error('Bootstrap failed', { error: getErrorMessage(e) });
         setError(getErrorMessage(e));
       }
     })();
@@ -118,12 +121,12 @@ export default function App() {
 
   // -- Profile --
   const handleSaveProfile = useCallback(
-    async (profile: { name: string; email: string }) => {
+    async (profile: { name: string }) => {
       if (!api) throw new Error('Desktop bridge unavailable.');
       setSavingProfile(true);
       clearError();
       try {
-        await api.profile.save(profile);
+        await api.profile.save({ ...profile, email: '' });
         await refreshSnapshot();
         setShowOnboarding(false);
         toast.success('Welcome to RamN AI!');
@@ -135,6 +138,24 @@ export default function App() {
       }
     },
     [api, clearError, refreshSnapshot, setError, toast],
+  );
+
+  const handleSaveScheduleTimezone = useCallback(
+    async (timezone: string) => {
+      if (!api || !snapshot?.profile) return;
+      await withBusy(
+        async () => {
+          const profile = {
+            name: snapshot.profile!.name,
+            email: snapshot.profile!.email ?? '',
+            ...(timezone ? { timezone } : {}),
+          };
+          await api.profile.save(profile);
+        },
+        'Saved scheduling timezone.',
+      );
+    },
+    [api, snapshot?.profile, withBusy],
   );
 
   // -- Prism --
@@ -321,43 +342,55 @@ export default function App() {
   }
 
   if (showOnboarding || !snapshot?.profile) {
-    return (
-      <OnboardingFlow
-        onComplete={handleSaveProfile}
-        runtimeAvailable={snapshot?.runtime?.available}
-      />
-    );
+    const onboardingProps = {
+      onComplete: handleSaveProfile,
+      isCheckingRuntime: loading,
+      runtimeAvailable: snapshot?.runtime?.available,
+      ...(snapshot?.runtime?.available && api
+        ? { onInstallDefaults: () => api.settings.installDefaultModels() }
+        : {}),
+    };
+    return <OnboardingFlow {...onboardingProps} />;
   }
 
-  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', prism: 'PRISM CORE', chats: 'LIVE CHATS', usermap: 'CONTEXT BRAIN', spectrum: 'SPECTRUM', work: 'Work', settings: 'Settings' };
-  const viewDescriptions: Record<ViewId, string> = { home: 'Overview', prism: 'META ARCHITECT', chats: 'Conversations', usermap: 'NEURAL MAP', spectrum: 'Management Layer', work: 'Tasks & results', settings: 'Configuration' };
+  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', prism: 'Prism', chats: 'Chats', canvas: 'Canvas', usermap: 'UserMap', work: 'Work', settings: 'Settings' };
+  const viewDescriptions: Record<ViewId, string> = { home: '', prism: '', chats: '', canvas: '', usermap: '', work: '', settings: '' };
 
   return (
-    <div className="flex min-h-screen bg-surface-0 text-white">
+    <div className="flex min-h-screen bg-[#F8F9FA] dark:bg-[#1A1A1A] text-gray-900 dark:text-white">
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} items={commandItems} />
+      <ErrorBoundary viewName="Voice" onDismiss={() => setVoicePanelOpen(false)}>
+        <VoicePanel open={voicePanelOpen} onClose={() => setVoicePanelOpen(false)} />
+      </ErrorBoundary>
       <Sidebar activeView={activeView} onSelect={navigate} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-2">
-        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-white/[0.06] bg-surface-1/95 px-5 backdrop-blur-xl">
-          <div>
-            <h1 className="text-[15px] font-semibold text-white">{viewTitles[activeView]}</h1>
-            <p className="text-[10px] font-medium text-white/30">{viewDescriptions[activeView]}</p>
-          </div>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#F8F9FA] dark:bg-[#1A1A1A]">
+        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-black/5 dark:border-white/5 bg-[#F8F9FA]/95 dark:bg-[#141619]/90 px-5 backdrop-blur-xl">
+          <h1 className="text-[15px] font-semibold text-gray-900 dark:text-white">{viewTitles[activeView]}</h1>
           <div className="flex items-center gap-3">
             {snapshot.runtime.available && (
               <div className="flex items-center gap-1.5">
                 <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#34d399] opacity-50" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#34d399]" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 </span>
-                <span className="text-[10px] font-medium text-white/35">Runtime</span>
+                <span className="text-[10px] font-medium text-gray-500 dark:text-white/35">Runtime</span>
               </div>
             )}
-            <div className="h-4 w-px bg-white/[0.06]" />
-            <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1">
-              <div className="h-5 w-5 rounded-md bg-brand/20 flex items-center justify-center text-[10px] font-bold text-brand-light">
+            <button
+              type="button"
+              onClick={() => setVoicePanelOpen(true)}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-black/5 dark:text-white/40 dark:hover:bg-white/5 dark:hover:text-white/70 transition-colors"
+              title="Voice Mode (Cmd+Shift+V)"
+              aria-label="Open voice mode"
+            >
+              <Mic size={14} />
+            </button>
+            <div className="h-4 w-px bg-black/10 dark:bg-white/10" />
+            <div className="flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/8 bg-white/70 dark:bg-white/[0.04] px-2.5 py-1">
+              <div className="h-5 w-5 rounded-md bg-emerald-500/10 flex items-center justify-center text-[10px] font-bold text-emerald-600 dark:text-emerald-300">
                 {snapshot.profile.name.charAt(0).toUpperCase()}
               </div>
-              <span className="text-xs font-medium text-white/60">{snapshot.profile.name}</span>
+              <span className="text-xs font-medium text-gray-600 dark:text-white/60">{snapshot.profile.name}</span>
             </div>
           </div>
         </header>
@@ -392,14 +425,14 @@ export default function App() {
                   <ChatsWorkspace snapshot={snapshot} busy={busy} selectedTarget={chatStore.selectedTarget} draftSeed={chatStore.draftSeed} onSelectTarget={handleSelectChatTarget} onSendAgentMessage={handleSendAgentMessage} onSendGroupMessage={handleSendGroupMessage} onCreateTask={handleTaskCreate} onDeleteThread={handleDeleteThread} />
                 </ErrorBoundary>
               )}
-              {activeView === 'spectrum' && (
-                <ErrorBoundary viewName="Spectrum">
-                  <SpectrumView snapshot={snapshot} busy={busy} onCreateAgentTask={handleTaskCreate} onUpsertGroup={handleUpsertGroup} onDeleteGroup={handleDeleteGroup} onOpenChat={handleOpenChatTarget} />
+              {activeView === 'canvas' && (
+                <ErrorBoundary viewName="Canvas">
+                  <CanvasWorkspace busy={busy} />
                 </ErrorBoundary>
               )}
               {activeView === 'work' && (
                 <ErrorBoundary viewName="Work">
-                  <WorkView snapshot={snapshot} busy={busy} onDeleteTask={handleDeleteTask} onDuplicateTask={handleDuplicateTask} onRerunTask={handleRerunTask} onDeleteWorkItem={handleDeleteWorkItem} onSendToChat={handleSendWorkToChat} onOpenChat={handleOpenChatDestination} onOpenArtifact={handleOpenArtifact} />
+                  <WorkView snapshot={snapshot} busy={busy} onDeleteTask={handleDeleteTask} onDuplicateTask={handleDuplicateTask} onRerunTask={handleRerunTask} onDeleteWorkItem={handleDeleteWorkItem} onSendToChat={handleSendWorkToChat} onOpenChat={handleOpenChatDestination} onOpenArtifact={handleOpenArtifact} onLoadMoreTasks={loadMoreTasks} onLoadMoreWorkItems={loadMoreWorkItems} />
                 </ErrorBoundary>
               )}
               {activeView === 'usermap' && (
@@ -413,12 +446,15 @@ export default function App() {
                     activeSection={settingsStore.activeSection} onSelectSection={settingsStore.setActiveSection}
                     runtimeReady={snapshot.runtime.available} providerProfiles={settingsStore.providerProfiles}
                     providerSelections={settingsStore.providerSelections} prismOverride={settingsStore.prismOverride}
-                    ollamaStatus={settingsStore.ollamaStatus} models={snapshot.models}
+                    agentMode={settingsStore.agentMode} onSaveAgentMode={settingsStore.saveAgentMode}
+                    ollamaStatus={settingsStore.ollamaStatus} models={snapshot.models} snapshot={snapshot}
                     busy={busy} loading={settingsStore.loading}
                     onRefresh={settingsStore.refreshSettings} onInstallDefaults={settingsStore.installDefaultModels}
                     onSaveProfile={settingsStore.saveProviderProfile} onDeleteProfile={settingsStore.deleteProviderProfile}
                     onTestProfile={settingsStore.testProviderProfile} onSetProviderSelection={settingsStore.setProviderSelection}
                     onSavePrismOverride={settingsStore.savePrismOverride}
+                    onSaveScheduleTimezone={handleSaveScheduleTimezone}
+                    onCreateAgentTask={handleTaskCreate} onUpsertGroup={handleUpsertGroup} onDeleteGroup={handleDeleteGroup} onOpenChat={handleOpenChatTarget}
                   />
                 </ErrorBoundary>
               )}

@@ -22,7 +22,10 @@ import {
 import { createBackupExport, createSupportBundle } from './local-bundles.js';
 import { recoverInterruptedWork as recoverInterruptedWorkModule } from './scheduler-recovery.js';
 import { startTaskRunHeartbeat } from './task-run-heartbeat.js';
+import { setupTray, destroyTray } from './tray.js';
+import { logger } from './logger.js';
 import type {
+  AgentMode,
   AgentSpec,
   ArtifactMode,
   ArtifactRecord,
@@ -34,6 +37,7 @@ import type {
   MemoryFact,
   OllamaRuntimeStatus,
   OllamaModelInstallStatus,
+  Permission,
   PrismRequest,
   PrismProviderOverrideSettings,
   ProviderAuthProfile,
@@ -43,10 +47,12 @@ import type {
   TaskRunRecord,
   UserMapNode,
   UserMapState,
+  VoiceConfig,
+  VoiceEvent,
   WorkItem
 } from '@supreme/shared';
 import { SqliteStorage } from '@supreme/storage';
-import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, type SecretStoreCipher } from '@supreme/runtime';
+import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, BridgeAgentManager, HeartbeatService, type SecretStoreCipher } from '@supreme/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -66,6 +72,7 @@ const DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD = 0.55;
 const USER_MAP_VISIBILITY_ORDER: Array<'public' | 'private'> = ['public', 'private'];
 const EXPORT_PROVIDER_IDS: ProviderId[] = ['ollama', 'openai', 'anthropic', 'google'];
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+let resolvedAgentModeForAuto: AgentMode = 'ollama'; // A5: resolved when stored mode is 'auto'
 
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -91,7 +98,7 @@ interface GroupChatInput {
 }
 
 interface ProviderAuthUpsertInput {
-  id: string;
+  id?: string;
   provider: ProviderId;
   label: string;
   description?: string;
@@ -187,7 +194,7 @@ function createSecretStoreCipher(): SecretStoreCipher {
     // Fall back to a local envelope if Electron's keychain backend is not ready.
   }
 
-  console.warn('[auth] Electron safeStorage unavailable; using local AES envelope for provider secrets.');
+  logger.warn('Electron safeStorage unavailable; using local AES envelope for provider secrets.', { area: 'auth' });
   return createFallbackSecretCipher();
 }
 
@@ -212,7 +219,7 @@ function logMainProcessIssue(kind: 'unhandledRejection' | 'uncaughtException' | 
     ...extra
   };
 
-  console.error('[main]', record);
+  logger.error('Uncaught exception', { error: String(record) });
 
   try {
     mkdirSync(path.dirname(getMainProcessLogPath()), { recursive: true });
@@ -262,6 +269,12 @@ process.on('uncaughtException', (error) => {
 
 async function withRuntimeBridgeCompatibility<T>(action: () => Promise<T>): Promise<T> {
   return providerAuthStore.withRuntimeBridgeCompatibility(action);
+}
+
+function syncRuntimeConfig() {
+  runtime.setPrismProviderOverride(storage.getPrismProviderOverride());
+  const stored = storage.getAgentMode();
+  runtime.setAgentMode(stored === 'auto' ? resolvedAgentModeForAuto : stored);
 }
 
 function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: 'public' | 'private'): UserMapNode {
@@ -459,11 +472,41 @@ async function refreshStoredModels() {
   return models;
 }
 
-async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus & { openclawVersion: string | null }> {
-  const [models, status, openclawVersion] = await Promise.all([
+async function getHealthStatus(agentManager: BridgeAgentManager): Promise<{
+  ollama: { ready: boolean; available: boolean };
+  runtimeBridge: { ready: boolean; version: string | null };
+  storage: { ok: boolean };
+  scheduler: { ok: boolean };
+  metrics?: { taskRuns: ReturnType<SqliteStorage['getTaskRunMetrics']> };
+}> {
+  const [runtimeStatus, bridgeStatus] = await Promise.all([
+    runtime.getStatus(),
+    agentManager.getStatus()
+  ]);
+  let storageOk = false;
+  let metrics: ReturnType<SqliteStorage['getTaskRunMetrics']> | undefined;
+  try {
+    storage.getProfile();
+    storage.listTasks();
+    storageOk = true;
+    metrics = storage.getTaskRunMetrics(30);
+  } catch {
+    storageOk = false;
+  }
+  return {
+    ollama: { ready: runtimeStatus.ollamaReady, available: runtimeStatus.available },
+    runtimeBridge: { ready: runtimeStatus.runtimeBridgeReady, version: bridgeStatus?.version ?? null },
+    storage: { ok: storageOk },
+    scheduler: { ok: true },
+    ...(metrics ? { metrics: { taskRuns: metrics } } : {})
+  };
+}
+
+async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus & { bridgeVersion: string | null }> {
+  const [models, status, bridgeVersion] = await Promise.all([
     runtime.listModels(),
     runtime.getStatus(),
-    runtime.getOpenClawVersion()
+    runtime.getBridgeVersion()
   ]);
   const byId = new Map(models.map((model) => [model.id, model]));
 
@@ -485,7 +528,7 @@ async function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus & { opencla
   return {
     running: status.ollamaReady,
     models: entries,
-    openclawVersion
+    bridgeVersion
   };
 }
 
@@ -575,8 +618,13 @@ async function ensureDefaultOllamaModelsInstalled() {
   await ollamaInstallJob;
 }
 
-async function buildSnapshot() {
-  const snapshot = storage.getWorkspaceSnapshot();
+const DEFAULT_LITE_LIMIT = 100;
+
+async function buildSnapshot(options?: { lite?: boolean }) {
+  const limits = options?.lite
+    ? { tasksLimit: DEFAULT_LITE_LIMIT, workItemsLimit: DEFAULT_LITE_LIMIT, chatThreadsLimit: DEFAULT_LITE_LIMIT }
+    : undefined;
+  const snapshot = storage.getWorkspaceSnapshot(limits);
   const [runtimeStatus, models] = await Promise.all([runtime.getStatus(), refreshStoredModels()]);
 
   return {
@@ -595,7 +643,8 @@ async function buildSnapshot() {
     publicMemoryFacts: snapshot.publicMemoryFacts,
     privateMemoryFacts: snapshot.privateMemoryFacts,
     models,
-    runtime: runtimeStatus
+    runtime: runtimeStatus,
+    counts: snapshot.counts
   };
 }
 
@@ -603,13 +652,14 @@ function syncStructuredExports() {
   syncStructuredExportsToDisk(getWorkspacePaths(), storage.getWorkspaceSnapshot(), runtimeWorkspace);
 }
 
-async function buildLocalBundleContext() {
+async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
   const workspacePaths = getWorkspacePaths();
   const snapshot = storage.getWorkspaceSnapshot();
-  const [providerProfiles, runtimeStatus, ollamaStatus] = await Promise.all([
+  const [providerProfiles, runtimeStatus, ollamaStatus, health] = await Promise.all([
     providerAuthStore.listProfiles(),
     runtime.getStatus(),
-    getOllamaRuntimeStatus()
+    getOllamaRuntimeStatus(),
+    getHealthStatus(agentManager)
   ]);
 
   return {
@@ -620,6 +670,8 @@ async function buildLocalBundleContext() {
     prismOverride: storage.getPrismProviderOverride(),
     runtimeStatus,
     ollamaStatus,
+    health,
+    auditLogJson: storage.exportAuditLog('json', 5000),
     schemaVersion: storage.getSchemaVersion(),
     databasePath: getDatabasePath(),
     userDataPath: app.getPath('userData'),
@@ -635,6 +687,26 @@ async function buildLocalBundleContext() {
       processVersions: process.versions
     }
   };
+}
+
+function collectFactIdsFromTree(node: UserMapNode): Set<string> {
+  const ids = new Set<string>();
+  if (node.nodeType === 'fact') {
+    ids.add(node.id);
+  }
+  for (const child of node.children) {
+    for (const id of collectFactIdsFromTree(child)) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function collectAllFactIdsFromState(state: UserMapState): Set<string> {
+  const ids = new Set<string>();
+  for (const id of collectFactIdsFromTree(state.publicTree)) ids.add(id);
+  for (const id of collectFactIdsFromTree(state.privateTree)) ids.add(id);
+  return ids;
 }
 
 function upsertFactsIntoTree(tree: UserMapState, facts: MemoryFact[]): UserMapState {
@@ -728,7 +800,7 @@ async function extractAndPersistMemories(source: MemoryFact['source'], sourceRef
     const facts = await runtime.extractMemoryFacts(source, sourceRef, text, storage.listMemoryFacts());
     await mergeAndPersistMemoryFacts(facts);
   } catch (error) {
-    console.warn('[runtime] memory extraction skipped:', error);
+    logger.warn('Memory extraction skipped', { error: String(error) });
   }
 }
 
@@ -889,6 +961,7 @@ function parseMentions(message: string) {
 }
 
 async function sendAgentChat(input: AgentChatInput) {
+  syncRuntimeConfig();
   const snapshot = storage.getWorkspaceSnapshot();
   const agent = snapshot.agents.find((candidate) => candidate.id === input.agentId);
   if (!agent) {
@@ -932,6 +1005,7 @@ async function sendAgentChat(input: AgentChatInput) {
 }
 
 async function sendGroupChat(input: GroupChatInput) {
+  syncRuntimeConfig();
   const snapshot = storage.getWorkspaceSnapshot();
   const group = snapshot.groups.find((candidate) => candidate.id === input.groupId);
   if (!group) {
@@ -1163,6 +1237,7 @@ async function executeDueTask(task: TaskSpec) {
   });
 
   try {
+    syncRuntimeConfig();
     const snapshot = storage.getWorkspaceSnapshot();
     const result = await withRuntimeBridgeCompatibility(() => runtime.executeTask(task, {
       userMap: snapshot.userMap,
@@ -1413,10 +1488,10 @@ function setupAutoUpdater() {
     });
 
     autoUpdater.on('error', (error) => {
-      console.warn('[auto-update] Error:', error.message);
+      logger.warn('Auto-update error', { message: error.message, area: 'auto-update' });
     });
   } catch (error) {
-    console.warn('[auto-update] Setup failed:', error);
+    logger.warn('Auto-update setup failed', { error: String(error), area: 'auto-update' });
   }
 }
 
@@ -1450,7 +1525,14 @@ function recoverInterruptedWork() {
   recoverInterruptedWorkModule(storage, new Date());
 }
 
+function requirePermission(permission: Permission): void {
+  if (!storage.hasPermission(permission)) {
+    throw new Error(`Permission denied: ${permission}`);
+  }
+}
+
 app.whenReady().then(async () => {
+  logger.info('App starting', { version: app.getVersion(), platform: process.platform });
   const workspacePaths = getWorkspacePaths();
   runtime.setWorkspaceRoot(workspacePaths.root);
 
@@ -1460,21 +1542,50 @@ app.whenReady().then(async () => {
   await refreshStoredModels();
   syncStructuredExports();
 
+  // A5: Resolve 'auto' agent mode at init (in-memory only; does not overwrite user choice)
+  const storedMode = storage.getAgentMode();
+  if (storedMode === 'auto') {
+    try {
+      const status = await runtime.getStatus();
+      resolvedAgentModeForAuto = status.runtimeBridgeReady ? 'bridge' : 'ollama';
+    } catch {
+      resolvedAgentModeForAuto = 'ollama';
+    }
+  }
+
   ipcMain.handle(channels.profileGet, async () => storage.getProfile());
   ipcMain.handle(channels.profileSave, async (_event, profile: LocalProfile) => {
+    requirePermission('manage_settings');
     const saved = storage.saveProfile(profile);
     syncStructuredExports();
     return saved;
   });
-  ipcMain.handle(channels.workspaceSnapshot, async () => buildSnapshot());
+  ipcMain.handle(channels.workspaceSnapshot, async () => buildSnapshot({ lite: true }));
+  ipcMain.handle(channels.workspaceListTasksPaginated, async (_event, limit: number, offset: number) => {
+    return storage.listTasksPaginated(limit, offset);
+  });
+  ipcMain.handle(channels.workspaceListWorkItemsPaginated, async (_event, limit: number, offset: number) => {
+    return storage.listWorkItemsPaginated(limit, offset);
+  });
+  ipcMain.handle(channels.workspaceListChatThreadsPaginated, async (_event, limit: number, offset: number) => {
+    return storage.listChatThreadsPaginated(limit, offset);
+  });
   ipcMain.handle(channels.workspaceBackupExport, async () => {
+    requirePermission('manage_settings');
     syncStructuredExports();
-    return createBackupExport(await buildLocalBundleContext());
+    return createBackupExport(await buildLocalBundleContext(agentManager));
   });
   ipcMain.handle(channels.userMapSave, async (_event, tree: UserMapState) => {
-    const saved = storage.saveUserMap(tree);
+    requirePermission('edit_usermap');
+    storage.saveUserMap(tree);
+    const factIdsInTree = collectAllFactIdsFromState(tree);
+    const allFacts = storage.listMemoryFacts();
+    const toDelete = allFacts.filter((f) => !factIdsInTree.has(f.id)).map((f) => f.id);
+    if (toDelete.length > 0) {
+      storage.deleteMemoryFactsByIds(toDelete);
+    }
     syncStructuredExports();
-    return saved;
+    return storage.getUserMap();
   });
   ipcMain.handle(channels.userMapSync, async () => {
     const tree = upsertFactsIntoTree(storage.getUserMap(), storage.listMemoryFacts());
@@ -1486,6 +1597,7 @@ app.whenReady().then(async () => {
     };
   });
   ipcMain.handle(channels.groupUpsert, async (_event, group: unknown) => {
+    requirePermission('create_agents');
     const parsed = group as GroupSpec;
     const payload = normalizeGroupAutoRouting({
       id: parsed.id || randomUUID(),
@@ -1507,6 +1619,7 @@ app.whenReady().then(async () => {
     return payload;
   });
   ipcMain.handle(channels.groupDelete, async (_event, groupId: string) => {
+    requirePermission('delete_groups');
     const threads = storage.listChatThreads().filter((thread) => thread.targetType === 'group' && thread.targetId === groupId);
     for (const thread of threads) {
       storage.deleteChatThread(thread.id);
@@ -1516,7 +1629,8 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle(channels.prismSend, async (_event, input: PrismRequest) => {
-    runtime.setPrismProviderOverride(storage.getPrismProviderOverride());
+    requirePermission('create_agents');
+    syncRuntimeConfig();
     const reply = await withRuntimeBridgeCompatibility(() => runtime.sendPrismRequest(input));
     if (reply.createdAgent) {
       storage.upsertAgent(reply.createdAgent);
@@ -1525,15 +1639,25 @@ app.whenReady().then(async () => {
     await extractAndPersistMemories('chat', `prism:${reply.id}`, `${input.message}\n\n${reply.text}`);
     return reply;
   });
-  ipcMain.handle(channels.agentChat, async (_event, input: AgentChatInput) => sendAgentChat(input));
-  ipcMain.handle(channels.groupChat, async (_event, input: GroupChatInput) => sendGroupChat(input));
+  ipcMain.handle(channels.agentChat, async (_event, input: AgentChatInput) => {
+    requirePermission('run_tasks');
+    return sendAgentChat(input);
+  });
+  ipcMain.handle(channels.groupChat, async (_event, input: GroupChatInput) => {
+    requirePermission('run_tasks');
+    return sendGroupChat(input);
+  });
   ipcMain.handle(channels.threadDelete, async (_event, threadId: string) => {
+    requirePermission('manage_settings');
     storage.deleteChatThread(threadId);
     syncStructuredExports();
     return { ok: true };
   });
   ipcMain.handle(channels.taskCreate, async (_event, input: TaskCreateInput) => {
+    const profile = storage.getProfile();
+    const timezone = profile?.timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
     const task = buildTaskSpec(input, {
+      timezone,
       installedModelIds: storage.listModels().filter((model) => model.installed).map((model) => model.id)
     });
     storage.upsertTask(task);
@@ -1541,11 +1665,13 @@ app.whenReady().then(async () => {
     return task;
   });
   ipcMain.handle(channels.taskDelete, async (_event, taskId: string) => {
+    requirePermission('delete_tasks');
     storage.deleteTask(taskId);
     syncStructuredExports();
     return { ok: true };
   });
   ipcMain.handle(channels.taskDuplicate, async (_event, taskId: string) => {
+    requirePermission('run_tasks');
     const original = storage.getTask(taskId);
     if (!original) {
       throw new Error('Task not found.');
@@ -1569,6 +1695,7 @@ app.whenReady().then(async () => {
     return duplicated;
   });
   ipcMain.handle(channels.taskRerun, async (_event, taskId: string) => {
+    requirePermission('run_tasks');
     const task = storage.getTask(taskId);
     if (!task) {
       throw new Error('Task not found.');
@@ -1598,6 +1725,7 @@ app.whenReady().then(async () => {
     return rerun;
   });
   ipcMain.handle(channels.workDelete, async (_event, workItemId: string) => {
+    requirePermission('delete_tasks');
     deleteWorkItemArtifacts(workItemId);
     storage.deleteWorkItem(workItemId);
     syncStructuredExports();
@@ -1609,11 +1737,13 @@ app.whenReady().then(async () => {
     return profiles as ProviderAuthProfile[];
   });
   ipcMain.handle(channels.providerAuthUpsert, async (_event, input: ProviderAuthUpsertInput) => {
+    requirePermission('manage_settings');
     if (input.provider === 'ollama') {
       throw new Error('Auth profiles are only supported for remote providers.');
     }
+    const id = input.id ?? `${input.provider}-${slugify(input.label)}`;
     const payload: Parameters<typeof providerAuthStore.upsertProfile>[0] = {
-      id: input.id,
+      id,
       provider: input.provider as Exclude<ProviderId, 'ollama'>,
       label: input.label
     };
@@ -1631,6 +1761,7 @@ app.whenReady().then(async () => {
     return profile as ProviderAuthProfile;
   });
   ipcMain.handle(channels.providerAuthDelete, async (_event, input: ProviderAuthDeleteInput) => {
+    requirePermission('manage_settings');
     if (input.provider === 'ollama') {
       throw new Error('Auth profiles are only supported for remote providers.');
     }
@@ -1658,6 +1789,7 @@ app.whenReady().then(async () => {
     return storage.getProviderAuthSelection(provider) as ProviderAuthSelection | null;
   });
   ipcMain.handle(channels.providerAuthSetSelection, async (_event, selection: ProviderAuthSelection) => {
+    requirePermission('manage_settings');
     const saved = storage.upsertProviderAuthSelection(selection);
     await providerAuthStore.setProviderDefaultProfile(selection.provider as Exclude<ProviderId, 'ollama'>, selection.profileId);
     syncStructuredExports();
@@ -1667,9 +1799,15 @@ app.whenReady().then(async () => {
     return storage.getPrismProviderOverride() as PrismProviderOverrideSettings | null;
   });
   ipcMain.handle(channels.prismOverrideSave, async (_event, override: PrismProviderOverrideSettings | null) => {
+    requirePermission('manage_settings');
     const saved = storage.savePrismProviderOverride(override);
     syncStructuredExports();
     return saved;
+  });
+  ipcMain.handle(channels.agentModeGet, async () => storage.getAgentMode());
+  ipcMain.handle(channels.agentModeSave, async (_event, mode: AgentMode) => {
+    requirePermission('manage_settings');
+    return storage.saveAgentMode(mode);
   });
   ipcMain.handle(channels.ollamaStatus, async () => getOllamaRuntimeStatus());
   ipcMain.handle(channels.ollamaInstallDefaults, async () => {
@@ -1678,9 +1816,79 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(channels.checkForUpdates, async () => checkForAppUpdates());
   ipcMain.handle(channels.supportBundleCreate, async () => {
+    requirePermission('create_support_bundle');
     syncStructuredExports();
-    return createSupportBundle(await buildLocalBundleContext());
+    return createSupportBundle(await buildLocalBundleContext(agentManager));
   });
+  ipcMain.handle(channels.auditLogExport, async (_event, format: 'json' | 'csv') => {
+    requirePermission('export_audit');
+    return storage.exportAuditLog(format, 5000);
+  });
+
+  const agentManager = new BridgeAgentManager();
+  ipcMain.handle(channels.healthGet, async () => getHealthStatus(agentManager));
+  ipcMain.handle(channels.bridgeAgentsList, async () => agentManager.listAgents());
+  ipcMain.handle(channels.bridgeAgentSend, async (_event, agentId: string, message: string) => agentManager.sendMessage(agentId, message));
+  ipcMain.handle(channels.bridgeSessions, async (_event, agentId?: string) => agentManager.getSessions(agentId));
+  ipcMain.handle(channels.bridgeStatus, async () => agentManager.getStatus());
+  ipcMain.handle(channels.bridgeGatewayRestart, async () => agentManager.restartGateway());
+  ipcMain.handle(channels.bridgeChannelsList, async () => agentManager.listChannels());
+  ipcMain.handle(channels.bridgeChannelAdd, async (_event, channel: string, token: string) => agentManager.addChannel(channel, token));
+  ipcMain.handle(channels.bridgeChannelRemove, async (_event, channel: string) => agentManager.removeChannel(channel));
+  ipcMain.handle(channels.bridgeChannelStatus, async () => agentManager.getChannelStatus());
+
+  // Voice
+  ipcMain.handle(channels.voiceGetConfig, async () => storage.getVoiceConfig());
+  ipcMain.handle(channels.voiceSetConfig, async (_event, config: VoiceConfig) => {
+    requirePermission('manage_settings');
+    return storage.saveVoiceConfig(config);
+  });
+  ipcMain.handle(channels.voiceStart, async (_event, text: string, agentId?: string) => {
+    syncRuntimeConfig();
+    const snapshot = storage.getWorkspaceSnapshot();
+    const targetAgentId = agentId ?? snapshot.agents[0]?.id ?? 'voice';
+    const task = buildEphemeralTask({
+      target: { type: 'agent', agentId: targetAgentId },
+      objective: text,
+    });
+    const result = await withRuntimeBridgeCompatibility(() =>
+      runtime.executeTask(task, {
+        userMap: snapshot.userMap,
+        agents: snapshot.agents,
+        groups: snapshot.groups,
+      }),
+    );
+    const event: VoiceEvent = {
+      type: 'response',
+      text: result.text,
+      timestamp: Date.now(),
+      agentId,
+    };
+    return event;
+  });
+  ipcMain.handle(channels.voiceStop, async () => ({ ok: true }));
+
+  const heartbeat = new HeartbeatService();
+  heartbeat.registerChecklistItem({
+    id: 'due-tasks',
+    description: 'Process scheduled tasks that are overdue',
+    handler: async () => {
+      const before = storage.listWorkItems().length;
+      await processDueTasks();
+      const after = storage.listWorkItems().length;
+      const acted = after > before;
+      return { acted, message: acted ? `Processed ${after - before} task(s)` : undefined };
+    },
+  });
+  heartbeat.registerChecklistItem({
+    id: 'bridge-health',
+    description: 'Verify runtime bridge gateway is reachable',
+    handler: async () => {
+      const status = await agentManager.getStatus();
+      return { acted: false, message: status ? `Gateway OK — ${status.agents} agent(s)` : 'Gateway unreachable' };
+    },
+  });
+  heartbeat.start();
 
   schedulerHandle = setInterval(() => {
     void processDueTasks();
@@ -1688,6 +1896,7 @@ app.whenReady().then(async () => {
 
   await createWindow();
   setupAutoUpdater();
+  setupTray(() => mainWindow);
   void checkForAppUpdates();
 
   app.on('activate', async () => {
@@ -1701,6 +1910,7 @@ app.on('before-quit', () => {
   if (schedulerHandle) {
     clearInterval(schedulerHandle);
   }
+  destroyTray();
 });
 
 app.on('window-all-closed', () => {

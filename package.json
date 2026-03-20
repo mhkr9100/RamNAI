@@ -12,7 +12,7 @@
     "build": "npm run build --workspace @supreme/shared && npm run build --workspace @supreme/storage && npm run build --workspace @supreme/runtime && npm run build --workspace @supreme/renderer && npm run build --workspace @supreme/desktop",
     "renderer:dev": "npm run dev --workspace @supreme/renderer",
     "renderer:build": "npm run build --workspace @supreme/renderer",
-    "desktop:dev": "concurrently -k -n renderer,desktop -c cyan,magenta \"npm run dev --workspace @supreme/renderer\" \"npm run dev --workspace @supreme/desktop\"",
+    "desktop:dev": "node scripts/free-port-5180.mjs && concurrently -k -n renderer,desktop -c cyan,magenta \"npm run dev --workspace @supreme/renderer\" \"npm run dev --workspace @supreme/desktop\"",
     "desktop:build": "npm run build --workspace @supreme/renderer && npm run build --workspace @supreme/desktop",
     "desktop:package": "npm run build --workspace @supreme/renderer && npm run package --workspace @supreme/desktop",
     "desktop:package:mac:preview": "npm run package:mac:preview --workspace @supreme/desktop",
