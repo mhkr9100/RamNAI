@@ -11,6 +11,8 @@ export interface PersistentChatbotChatViewProps {
   chatbot: PersistentChatbotIdentity;
   transcript: ChatTranscriptMessage[];
   busy?: boolean;
+  /** When set, that transcript row is the in-flight streamed assistant reply */
+  streamingMessageId?: string | null;
   emptyState?: string;
   placeholder?: string;
   sendLabel?: string;
@@ -25,6 +27,7 @@ export function PersistentChatbotChatView({
   chatbot,
   transcript,
   busy = false,
+  streamingMessageId = null,
   emptyState = 'No messages yet.',
   placeholder = 'Message this agent...',
   sendLabel = 'Send',
@@ -46,7 +49,7 @@ export function PersistentChatbotChatView({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcript.length, busy]);
+  }, [transcript, busy]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -108,11 +111,12 @@ export function PersistentChatbotChatView({
                 text={message.text}
                 agentName={message.label || (message.role !== 'user' ? chatbot.name : undefined)}
                 timestamp={message.timestamp}
+                isStreaming={Boolean(streamingMessageId && message.id === streamingMessageId && busy)}
               />
             ))}
-            {busy && (
+            {busy && !streamingMessageId ? (
               <TypingIndicator agentName={chatbot.name} />
-            )}
+            ) : null}
           </motion.div>
         )}
       </div>

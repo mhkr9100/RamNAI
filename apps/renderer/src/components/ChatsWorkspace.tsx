@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bot, BrainCircuit } from 'lucide-react';
 import { ChatIcon } from './icons/ChatIcon';
-import type { AgentSpec, ChatThread, GroupSpec } from '@supreme/shared';
+import type { AgentSpec, ChatThread, GroupSpec, GroupRouteMetadata } from '@supreme/shared';
 import type { AgentChatInput, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
+import type { ChatTranscriptMessage } from './chat/types';
 import { TaskComposerCard } from './TaskComposerCard';
 import { GroupChatView, PersistentChatbotChatView } from './chat';
 import { SectionLabel, EmptyState } from './ui';
@@ -19,11 +20,22 @@ export interface ChatDraftSeed {
   text: string;
 }
 
+export interface ActiveChatStreamState {
+  scope: 'agent' | 'group';
+  targetId: string;
+  streamId: string;
+  userMessage: string;
+  text: string;
+  assistantLabel?: string;
+  routeMode?: string;
+}
+
 interface ChatsWorkspaceProps {
   snapshot: WorkspaceSnapshot;
   busy: boolean;
   selectedTarget: ChatTarget | null;
   draftSeed: ChatDraftSeed | null;
+  chatStream: ActiveChatStreamState | null;
   onSelectTarget: (target: ChatTarget | null) => void;
   onSendAgentMessage: (input: AgentChatInput) => Promise<void>;
   onSendGroupMessage: (input: GroupChatInput) => Promise<void>;
@@ -36,6 +48,7 @@ export function ChatsWorkspace({
   busy,
   selectedTarget,
   draftSeed,
+  chatStream,
   onSelectTarget,
   onSendAgentMessage,
   onSendGroupMessage,
@@ -90,7 +103,7 @@ export function ChatsWorkspace({
     [snapshot.chatThreads, selectedTarget]
   );
 
-  const transcript = useMemo(
+  const baseTranscript = useMemo(
     () => (selectedThread?.messages ?? []).map((entry) => ({
       id: entry.id,
       role: entry.role,
@@ -102,6 +115,51 @@ export function ChatsWorkspace({
     })),
     [selectedThread]
   );
+
+  const streamForSelection =
+    chatStream && selectedTarget && chatStream.scope === selectedTarget.type && chatStream.targetId === selectedTarget.id
+      ? chatStream
+      : null;
+
+  const transcript = useMemo(() => {
+    if (!streamForSelection) {
+      return baseTranscript;
+    }
+    const nowTs = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const pendingUser: ChatTranscriptMessage = {
+      id: `stream-user-${streamForSelection.streamId}`,
+      role: 'user',
+      text: streamForSelection.userMessage,
+      label: 'You',
+      timestamp: nowTs
+    };
+    const streamingRoute: GroupRouteMetadata | undefined = streamForSelection.routeMode
+      ? {
+          mode: streamForSelection.routeMode as GroupRouteMetadata['mode'],
+          targetType: 'group',
+          targetIds: [],
+          reason: 'Streaming reply'
+        }
+      : undefined;
+    const pendingAssistant: ChatTranscriptMessage = {
+      id: `stream-assistant-${streamForSelection.streamId}`,
+      role: 'assistant',
+      text: streamForSelection.text,
+      timestamp: nowTs,
+      ...(streamForSelection.assistantLabel ? { label: streamForSelection.assistantLabel } : {}),
+      ...(streamingRoute ? { route: streamingRoute } : {})
+    };
+    const showAssistantPending =
+      streamForSelection.text.length > 0 || Boolean(streamForSelection.assistantLabel);
+    return showAssistantPending
+      ? [...baseTranscript, pendingUser, pendingAssistant]
+      : [...baseTranscript, pendingUser];
+  }, [baseTranscript, streamForSelection]);
+
+  const streamingAssistantId =
+    streamForSelection && (streamForSelection.text.length > 0 || streamForSelection.assistantLabel)
+      ? `stream-assistant-${streamForSelection.streamId}`
+      : null;
 
   const mentionableMembers = useMemo(() => {
     if (!selectedGroup) return [];
@@ -194,6 +252,7 @@ export function ChatsWorkspace({
               }}
               transcript={transcript}
               busy={busy}
+              streamingMessageId={streamingAssistantId}
               onSendMessage={(message) => onSendAgentMessage({ agentId: selectedAgent.id, message })}
               onTaskClick={() => setShowTaskComposer((current) => !current)}
               {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
@@ -225,6 +284,7 @@ export function ChatsWorkspace({
             members={mentionableMembers}
             transcript={transcript}
             busy={busy}
+            streamingMessageId={streamingAssistantId}
             onSendMessage={(message) => onSendGroupMessage({ groupId: selectedGroup.id, message })}
             {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
             emptyState=""

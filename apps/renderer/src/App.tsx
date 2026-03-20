@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, LoaderCircle, Mic } from 'lucide-react';
-import { ChatsWorkspace, ChatDraftSeed, ChatTarget } from './components/ChatsWorkspace';
+import { ChatsWorkspace, ChatDraftSeed, ChatTarget, type ActiveChatStreamState } from './components/ChatsWorkspace';
 import { CommandPalette, buildDefaultCommands } from './components/CommandPalette';
 import { DashboardView } from './components/DashboardView';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -52,6 +52,7 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [voicePanelOpen, setVoicePanelOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [chatStream, setChatStream] = useState<ActiveChatStreamState | null>(null);
 
   // -- Command palette --
   const commandItems = useMemo(() => buildDefaultCommands(navigate), [navigate]);
@@ -222,15 +223,99 @@ export default function App() {
     [api, withBusy],
   );
 
-  // -- Chat --
+  // -- Chat (token streaming via IPC; persisted thread refreshes when the stream completes) --
   const handleSendAgentMessage = useCallback(
-    (input: AgentChatInput) => withBusy(async () => { if (!api) throw new Error('Desktop bridge unavailable.'); await api.chat.sendAgentMessage(input); }),
-    [api, withBusy],
+    async (input: AgentChatInput) => {
+      if (!api) throw new Error('Desktop bridge unavailable.');
+      setBusy(true);
+      clearError();
+      const streamId = crypto.randomUUID();
+      api.chat.offStreamToken();
+      setChatStream({
+        scope: 'agent',
+        targetId: input.agentId,
+        streamId,
+        userMessage: input.message.trim(),
+        text: ''
+      });
+      api.chat.onStreamToken((_, data) => {
+        if (data.streamId !== streamId) return;
+        if (data.done) {
+          if (data.error) setError(data.error);
+          return;
+        }
+        setChatStream((prev) => {
+          if (!prev || prev.streamId !== streamId) return prev;
+          return {
+            ...prev,
+            text: prev.text + data.token,
+            ...(data.assistantLabel ? { assistantLabel: data.assistantLabel } : {}),
+            ...(data.routeMode ? { routeMode: data.routeMode } : {})
+          };
+        });
+      });
+      try {
+        await api.chat.sendAgentMessageStream({ ...input, streamId });
+        await refreshSnapshot();
+      } catch (e) {
+        const msg = getErrorMessage(e);
+        setError(msg);
+        toast.error(msg);
+        throw e;
+      } finally {
+        api.chat.offStreamToken();
+        setChatStream(null);
+        setBusy(false);
+      }
+    },
+    [api, clearError, refreshSnapshot, setError, toast],
   );
 
   const handleSendGroupMessage = useCallback(
-    (input: GroupChatInput) => withBusy(async () => { if (!api) throw new Error('Desktop bridge unavailable.'); await api.chat.sendGroupMessage(input); }),
-    [api, withBusy],
+    async (input: GroupChatInput) => {
+      if (!api) throw new Error('Desktop bridge unavailable.');
+      setBusy(true);
+      clearError();
+      const streamId = crypto.randomUUID();
+      api.chat.offStreamToken();
+      setChatStream({
+        scope: 'group',
+        targetId: input.groupId,
+        streamId,
+        userMessage: input.message.trim(),
+        text: ''
+      });
+      api.chat.onStreamToken((_, data) => {
+        if (data.streamId !== streamId) return;
+        if (data.done) {
+          if (data.error) setError(data.error);
+          return;
+        }
+        setChatStream((prev) => {
+          if (!prev || prev.streamId !== streamId) return prev;
+          return {
+            ...prev,
+            text: prev.text + data.token,
+            ...(data.assistantLabel ? { assistantLabel: data.assistantLabel } : {}),
+            ...(data.routeMode ? { routeMode: data.routeMode } : {})
+          };
+        });
+      });
+      try {
+        await api.chat.sendGroupMessageStream({ ...input, streamId });
+        await refreshSnapshot();
+      } catch (e) {
+        const msg = getErrorMessage(e);
+        setError(msg);
+        toast.error(msg);
+        throw e;
+      } finally {
+        api.chat.offStreamToken();
+        setChatStream(null);
+        setBusy(false);
+      }
+    },
+    [api, clearError, refreshSnapshot, setError, toast],
   );
 
   const handleDeleteThread = useCallback(
@@ -422,7 +507,7 @@ export default function App() {
               )}
               {activeView === 'chats' && (
                 <ErrorBoundary viewName="Chats">
-                  <ChatsWorkspace snapshot={snapshot} busy={busy} selectedTarget={chatStore.selectedTarget} draftSeed={chatStore.draftSeed} onSelectTarget={handleSelectChatTarget} onSendAgentMessage={handleSendAgentMessage} onSendGroupMessage={handleSendGroupMessage} onCreateTask={handleTaskCreate} onDeleteThread={handleDeleteThread} />
+                  <ChatsWorkspace snapshot={snapshot} busy={busy} selectedTarget={chatStore.selectedTarget} draftSeed={chatStore.draftSeed} chatStream={chatStream} onSelectTarget={handleSelectChatTarget} onSendAgentMessage={handleSendAgentMessage} onSendGroupMessage={handleSendGroupMessage} onCreateTask={handleTaskCreate} onDeleteThread={handleDeleteThread} />
                 </ErrorBoundary>
               )}
               {activeView === 'canvas' && (

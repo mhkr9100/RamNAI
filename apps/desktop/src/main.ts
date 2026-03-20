@@ -90,11 +90,13 @@ interface GroupRoutingDecision {
 interface AgentChatInput {
   agentId: string;
   message: string;
+  streamId?: string;
 }
 
 interface GroupChatInput {
   groupId: string;
   message: string;
+  streamId?: string;
 }
 
 interface ProviderAuthUpsertInput {
@@ -1663,18 +1665,34 @@ app.whenReady().then(async () => {
     const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', route });
     const withUser = appendThreadMessages(thread, [userMessage]);
 
-    const streamId = randomUUID();
+    const streamId = input.streamId?.trim() || randomUUID();
     const objective = buildAgentChatObjective(agent, withUser, input.message.trim());
     const webContents = event.sender;
+    const taskContext = {
+      userMap: snapshot.userMap,
+      agents: snapshot.agents,
+      groups: snapshot.groups
+    };
+
+    if (!webContents.isDestroyed()) {
+      webContents.send(channels.chatStreamToken, {
+        streamId,
+        token: '',
+        done: false,
+        assistantLabel: agent.name
+      });
+    }
 
     try {
-      const result = await runtime.streamAgentChat(
-        { agent, objective, userMap: snapshot.userMap },
-        (token) => {
-          if (!webContents.isDestroyed()) {
-            webContents.send(channels.agentChatStreamToken, { streamId, token, done: false });
+      const result = await withRuntimeBridgeCompatibility(() =>
+        runtime.streamAgentChat(
+          { agent, objective, userMap: snapshot.userMap, context: taskContext },
+          (token) => {
+            if (!webContents.isDestroyed()) {
+              webContents.send(channels.chatStreamToken, { streamId, token, done: false });
+            }
           }
-        }
+        )
       );
 
       const assistantMessage = makeChatMessage({
@@ -1689,7 +1707,7 @@ app.whenReady().then(async () => {
       const nextThread = appendThreadMessages(withUser, [assistantMessage]);
 
       if (!webContents.isDestroyed()) {
-        webContents.send(channels.agentChatStreamToken, { streamId, token: '', done: true });
+        webContents.send(channels.chatStreamToken, { streamId, token: '', done: true });
       }
 
       void extractAndPersistMemories('chat', `agent:${agent.id}:${assistantMessage.id}`, `${input.message}\n\n${result.text}`);
@@ -1701,7 +1719,7 @@ app.whenReady().then(async () => {
       };
     } catch (error) {
       if (!webContents.isDestroyed()) {
-        webContents.send(channels.agentChatStreamToken, {
+        webContents.send(channels.chatStreamToken, {
           streamId,
           token: '',
           done: true,
@@ -1714,6 +1732,154 @@ app.whenReady().then(async () => {
   ipcMain.handle(channels.groupChat, async (_event, input: GroupChatInput) => {
     requirePermission('run_tasks');
     return sendGroupChat(input);
+  });
+  ipcMain.handle(channels.groupChatStream, async (event, input: GroupChatInput) => {
+    requirePermission('run_tasks');
+    syncRuntimeConfig();
+    const snapshot = storage.getWorkspaceSnapshot();
+    const group = snapshot.groups.find((candidate) => candidate.id === input.groupId);
+    if (!group) {
+      throw new Error('Group not found.');
+    }
+    const routingGroup = normalizeGroupAutoRouting(group);
+
+    const memberAgents = snapshot.agents.filter((agent) => routingGroup.memberAgentIds.includes(agent.id));
+    const routingDecision = selectGroupRoutingDecision(routingGroup, memberAgents, input.message.trim());
+    const thread = findOrCreateThread('group', routingGroup.id, routingGroup.name);
+    const mentions = parseMentions(input.message);
+    const userRoute = routingDecision
+      ? buildRouteMetadata({
+          mode: routingDecision.mode,
+          targetType: 'group',
+          targetIds: [routingDecision.agent.id],
+          confidence: routingDecision.confidence,
+          reason: routingDecision.mode === 'mention' ? 'Explicit @mention pin' : 'Auto-routed best fit',
+          pinnedMentions: routingDecision.pinnedMentions
+        })
+      : undefined;
+    const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', mentions, ...(userRoute ? { route: userRoute } : {}) });
+    const withUser = appendThreadMessages(thread, [userMessage]);
+
+    const streamId = input.streamId?.trim() || randomUUID();
+    const webContents = event.sender;
+    const taskContext = {
+      userMap: snapshot.userMap,
+      agents: snapshot.agents,
+      groups: snapshot.groups
+    };
+
+    if (!routingDecision) {
+      const systemMessage = makeChatMessage({
+        role: 'system',
+        text: routingGroup.routingMode === 'manual'
+          ? 'Manual routing is enabled for this group. Mention one member chatbot with @chatbot-name to route the message.'
+          : 'No eligible member chatbots are configured for this group yet.',
+        authorLabel: 'System'
+      });
+      const nextThread = appendThreadMessages(withUser, [systemMessage]);
+      return {
+        streamId,
+        thread: nextThread,
+        newMessages: [userMessage, systemMessage]
+      };
+    }
+
+    const assistantRoute = buildRouteMetadata({
+      mode: routingDecision.mode,
+      targetType: 'group',
+      targetIds: [routingDecision.agent.id],
+      confidence: routingDecision.confidence,
+      reason: routingDecision.mode === 'mention' ? 'Explicit @mention pin' : 'Auto-routed best fit',
+      pinnedMentions: routingDecision.pinnedMentions
+    });
+
+    const assistantMessages: ChatMessage[] = [];
+    let activeThread = withUser;
+
+    if (routingDecision.hintMessage) {
+      const systemMessage = makeChatMessage({
+        role: 'system',
+        text: routingDecision.hintMessage,
+        authorLabel: 'System',
+        route: buildRouteMetadata({
+          mode: 'hint',
+          targetType: 'group',
+          targetIds: [routingDecision.agent.id],
+          confidence: routingDecision.confidence,
+          reason: 'Low-confidence auto route'
+        })
+      });
+      activeThread = appendThreadMessages(activeThread, [systemMessage]);
+    }
+
+    if (!webContents.isDestroyed()) {
+      webContents.send(channels.chatStreamToken, {
+        streamId,
+        token: '',
+        done: false,
+        assistantLabel: routingDecision.agent.name,
+        routeMode: routingDecision.mode
+      });
+    }
+
+    const groupObjective = [
+      `You are replying as "${routingDecision.agent.name}" inside the group "${group.name}".`,
+      formatThreadHistory(activeThread),
+      `Latest group message:\n${input.message.trim()}`,
+      'Reply only for your own role and perspective.'
+    ].filter(Boolean).join('\n\n');
+
+    try {
+      const result = await withRuntimeBridgeCompatibility(() =>
+        runtime.streamAgentChat(
+          {
+            agent: routingDecision.agent,
+            objective: groupObjective,
+            userMap: snapshot.userMap,
+            context: taskContext
+          },
+          (token) => {
+            if (!webContents.isDestroyed()) {
+              webContents.send(channels.chatStreamToken, { streamId, token, done: false });
+            }
+          }
+        )
+      );
+
+      const assistantMessage = makeChatMessage({
+        role: 'assistant',
+        text: result.text,
+        authorId: routingDecision.agent.id,
+        authorLabel: routingDecision.agent.name,
+        provider: result.provider,
+        modelId: result.modelId,
+        route: assistantRoute
+      });
+      activeThread = appendThreadMessages(activeThread, [assistantMessage]);
+      assistantMessages.push(assistantMessage);
+
+      if (!webContents.isDestroyed()) {
+        webContents.send(channels.chatStreamToken, { streamId, token: '', done: true });
+      }
+
+      void extractAndPersistMemories('chat', `group:${group.id}:${userMessage.id}`, input.message.trim());
+
+      return {
+        streamId,
+        thread: activeThread,
+        newMessages: [userMessage, ...assistantMessages]
+      };
+    } catch (error) {
+      if (!webContents.isDestroyed()) {
+        webContents.send(channels.chatStreamToken, {
+          streamId,
+          token: '',
+          done: true,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      throw error;
+    }
   });
   ipcMain.handle(channels.threadDelete, async (_event, threadId: string) => {
     requirePermission('manage_settings');

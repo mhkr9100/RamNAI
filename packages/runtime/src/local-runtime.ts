@@ -725,7 +725,7 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private async generateText(input: { modelId: string; system: string; prompt: string; format?: 'json' }) {
+  private async generateTextNonStreaming(input: { modelId: string; system: string; prompt: string; format?: 'json' }) {
     const response = await fetch(`${OLLAMA_API}/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -755,13 +755,28 @@ export class LocalRuntimeAdapter {
   }
 
   /**
-   * Stream text from Ollama token-by-token.
-   * Each NDJSON line from the API contains `{ "response": "<token>" }` until `done: true`.
+   * Accumulate Ollama `/generate` with `stream: true` (NDJSON). Falls back to a single non-streaming request on failure.
    */
-  async generateTextStream(
-    input: { modelId: string; system: string; prompt: string },
-    onToken: StreamTokenCallback
-  ): Promise<string> {
+  private async generateText(input: { modelId: string; system: string; prompt: string; format?: 'json' }) {
+    try {
+      const chunks: string[] = [];
+      for await (const chunk of this.generateTextStream(input)) {
+        chunks.push(chunk);
+      }
+      const text = chunks.join('').trim();
+      if (!text) {
+        throw new Error('Ollama returned an empty response.');
+      }
+      return text;
+    } catch {
+      return this.generateTextNonStreaming(input);
+    }
+  }
+
+  /**
+   * Yields each `response` fragment from Ollama's streaming `/generate` API (NDJSON lines).
+   */
+  async *generateTextStream(input: { modelId: string; system: string; prompt: string; format?: 'json' }): AsyncGenerator<string> {
     const response = await fetch(`${OLLAMA_API}/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -770,7 +785,10 @@ export class LocalRuntimeAdapter {
         system: input.system,
         prompt: input.prompt,
         stream: true,
-        options: { temperature: 0.35 }
+        format: input.format,
+        options: {
+          temperature: input.format === 'json' ? 0.15 : 0.35
+        }
       })
     });
 
@@ -785,13 +803,14 @@ export class LocalRuntimeAdapter {
 
     const reader = body.getReader();
     const decoder = new TextDecoder();
-    const chunks: string[] = [];
     let buffer = '';
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -799,20 +818,17 @@ export class LocalRuntimeAdapter {
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed) continue;
+          if (!trimmed) {
+            continue;
+          }
 
           try {
             const parsed = JSON.parse(trimmed) as { response?: string; done?: boolean };
             if (parsed.response) {
-              chunks.push(parsed.response);
-              const shouldContinue = onToken(parsed.response);
-              if (shouldContinue === false) {
-                reader.cancel();
-                return chunks.join('');
-              }
+              yield parsed.response;
             }
             if (parsed.done) {
-              return chunks.join('');
+              return;
             }
           } catch {
             // Skip malformed NDJSON lines
@@ -822,22 +838,56 @@ export class LocalRuntimeAdapter {
     } finally {
       reader.releaseLock();
     }
+  }
 
-    return chunks.join('');
+  private buildEphemeralAgentTask(agentId: string, objective: string): TaskSpec {
+    const now = new Date().toISOString();
+    return {
+      id: randomUUID(),
+      title: 'Ad hoc chat execution',
+      objective,
+      mode: 'task',
+      target: { type: 'agent', agentId },
+      schedule: { kind: 'once', runAt: now, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+      outputPolicy: {
+        saveResult: true,
+        artifactMode: 'none',
+        notificationMode: 'none',
+        defaultSendToChat: false
+      },
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      nextRunAt: now,
+      runCount: 0,
+      artifactIds: []
+    };
   }
 
   /**
-   * Stream a chat response for an agent, yielding tokens via callback.
-   * Returns the full accumulated text when done.
+   * Stream a chat response for an agent. Uses Ollama streaming when agent mode is `ollama`; otherwise runs the same path as `executeTask` and emits the full reply once (bridge / non-local).
+   * On Ollama streaming failure, falls back to `generateTextNonStreaming` and delivers a single chunk.
    */
   async streamAgentChat(
     input: {
       agent: AgentSpec;
       objective: string;
       userMap: UserMapState;
+      context: TaskExecutionContext;
     },
     onToken: StreamTokenCallback
   ): Promise<StreamResult> {
+    if (this.agentMode !== 'ollama') {
+      const task = this.buildEphemeralAgentTask(input.agent.id, input.objective);
+      const result = await this.executeTask(task, input.context);
+      onToken(result.text);
+      return {
+        text: result.text.trim(),
+        provider: result.provider,
+        modelId: result.modelId
+      };
+    }
+
     const models = await this.listOllamaModels();
     const modelId = this.pickModelId(models);
 
@@ -853,10 +903,22 @@ export class LocalRuntimeAdapter {
       input.objective
     ].filter(Boolean).join('\n\n');
 
-    const text = await this.generateTextStream({ modelId, system, prompt }, onToken);
+    let full = '';
+    try {
+      for await (const token of this.generateTextStream({ modelId, system, prompt })) {
+        full += token;
+        if (onToken(token) === false) {
+          break;
+        }
+      }
+    } catch {
+      const text = await this.generateTextNonStreaming({ modelId, system, prompt });
+      full = text;
+      onToken(text);
+    }
 
     return {
-      text: text.trim(),
+      text: full.trim(),
       provider: 'ollama',
       modelId
     };

@@ -77,11 +77,14 @@ export interface TaskCreateInput {
 export interface AgentChatInput {
   agentId: string;
   message: string;
+  /** Client-generated id so stream tokens can be correlated before `invoke` resolves */
+  streamId?: string;
 }
 
 export interface GroupChatInput {
   groupId: string;
   message: string;
+  streamId?: string;
 }
 
 export interface ChatSendResult {
@@ -100,6 +103,8 @@ export interface StreamTokenEvent {
   token: string;
   done: boolean;
   error?: string;
+  assistantLabel?: string;
+  routeMode?: string;
 }
 
 export interface SupremeDesktopApi {
@@ -128,6 +133,7 @@ export interface SupremeDesktopApi {
   chat: {
     sendAgentMessage: (input: AgentChatInput) => Promise<ChatSendResult>;
     sendAgentMessageStream: (input: AgentChatInput) => Promise<ChatSendResult & { streamId: string }>;
+    sendGroupMessageStream: (input: GroupChatInput) => Promise<ChatSendResult & { streamId: string }>;
     onStreamToken: (callback: (event: unknown, data: StreamTokenEvent) => void) => void;
     offStreamToken: () => void;
     sendGroupMessage: (input: GroupChatInput) => Promise<ChatSendResult>;

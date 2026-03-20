@@ -12,6 +12,7 @@ export interface GroupChatViewProps {
   members: MentionableParticipant[];
   transcript: ChatTranscriptMessage[];
   busy?: boolean;
+  streamingMessageId?: string | null;
   emptyState?: string;
   placeholder?: string;
   sendLabel?: string;
@@ -30,6 +31,7 @@ export function GroupChatView({
   members,
   transcript,
   busy = false,
+  streamingMessageId = null,
   emptyState = 'No messages yet.',
   placeholder = 'Message the group',
   sendLabel = 'Send',
@@ -45,7 +47,7 @@ export function GroupChatView({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcript.length, busy]);
+  }, [transcript, busy]);
 
   const lastManualRoute = useMemo(
     () => [...transcript].reverse().find((message) => message.role === 'user' && message.mentions?.length)?.mentions ?? [],
@@ -190,6 +192,7 @@ export function GroupChatView({
                   agentName={message.label || (message.role !== 'user' ? group.name : undefined)}
                   timestamp={message.timestamp}
                   mode={message.route?.mode}
+                  isStreaming={Boolean(streamingMessageId && message.id === streamingMessageId && busy)}
                 />
                 {message.route?.reason ? (
                   <div className={`mt-1 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} px-2`}>
@@ -200,9 +203,9 @@ export function GroupChatView({
                 ) : null}
               </div>
             ))}
-            {busy && (
+            {busy && !streamingMessageId ? (
               <TypingIndicator agentName="Group" />
-            )}
+            ) : null}
           </motion.div>
         )}
       </div>
