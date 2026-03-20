@@ -13,6 +13,7 @@ import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
 import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { VoicePanel } from './components/VoicePanel';
+import { WorkspaceLockScreen } from './components/WorkspaceLockScreen';
 import { RamanIcon } from './components/RamanIcon';
 import { Button, Card, Input, useToast } from './components/ui';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -54,8 +55,6 @@ export default function App() {
   const [voicePanelOpen, setVoicePanelOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [workspaceSecurity, setWorkspaceSecurity] = useState<WorkspaceSecurityState | null>(null);
-  const [unlockPassword, setUnlockPassword] = useState('');
-  const [unlockingWorkspace, setUnlockingWorkspace] = useState(false);
   const [chatStream, setChatStream] = useState<ActiveChatStreamState | null>(null);
 
   // -- Command palette --
@@ -365,29 +364,19 @@ export default function App() {
       navigate('prism');
     },
     [snapshot?.agents, chatStore, prismStore, navigate, toast],
-  );
-
-  const handleUnlockWorkspace = useCallback(async () => {
+  );  const handleUnlockWorkspace = useCallback(async (password: string) => {
     if (!api) throw new Error('Desktop bridge unavailable.');
-    setUnlockingWorkspace(true);
     clearError();
-    try {
-      const security = await api.security.unlock(unlockPassword);
-      setWorkspaceSecurity(security);
-      setUnlockPassword('');
-      await Promise.all([refreshSnapshot(), settingsStore.refreshSettings()]);
-      toast.success('Workspace unlocked.');
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setUnlockingWorkspace(false);
-    }
-  }, [api, clearError, refreshSnapshot, setError, settingsStore, toast, unlockPassword]);
+    const security = await api.security.unlock(password);
+    setWorkspaceSecurity(security);
+    await Promise.all([refreshSnapshot(), settingsStore.refreshSettings()]);
+    toast.success('Workspace unlocked.');
+  }, [api, clearError, refreshSnapshot, settingsStore, toast]);
 
   if (api && workspaceSecurity === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-6 text-white">
-        <div className="flex items-center gap-3 text-sm text-white/70">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#08090a] dark:to-[#0D0D0D] px-6 text-gray-900 dark:text-white">
+        <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-white/70">
           <LoaderCircle className="animate-spin" size={18} />
           Preparing workspace
         </div>
@@ -396,45 +385,7 @@ export default function App() {
   }
 
   if (workspaceSecurity?.locked) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-6">
-        <Card variant="elevated" padding="lg" animate={false} className="w-full max-w-md bg-surface-2">
-          <div className="flex items-center gap-3">
-            <RamanIcon size={30} />
-            <div>
-              <div className="text-lg font-semibold text-white">Workspace Locked</div>
-              <div className="text-sm text-white/60">Enter the workspace password to continue.</div>
-            </div>
-          </div>
-          <div className="mt-5 space-y-4">
-            <Input
-              type="password"
-              autoComplete="current-password"
-              label="Workspace Password"
-              value={unlockPassword}
-              onChange={(event) => setUnlockPassword(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void handleUnlockWorkspace();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              variant="brand"
-              fullWidth
-              loading={unlockingWorkspace}
-              onClick={() => void handleUnlockWorkspace()}
-            >
-              Unlock Workspace
-            </Button>
-            <div className="text-xs leading-6 text-white/45">
-              This password is never auto-recoverable. If it’s lost, the encrypted workspace data is lost too.
-            </div>
-          </div>
-        </Card>
-      </div>
-    );
+    return <WorkspaceLockScreen onUnlock={handleUnlockWorkspace} />;
   }
 
   const handleOpenChatTarget = useCallback(

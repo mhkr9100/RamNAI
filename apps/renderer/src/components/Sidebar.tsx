@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, PenTool, Settings2, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Monitor, Moon, PenTool, Settings2, Sun, User } from 'lucide-react';
+import { useThemeStore } from '../stores/theme-store';
 import { RamanIcon } from './RamanIcon';
 import { PrismIcon } from './icons/PrismIcon';
 import { UserMapIcon } from './icons/UserMapIcon';
@@ -81,6 +82,15 @@ function NavButton({
 
 export function Sidebar({ activeView, onSelect }: SidebarProps) {
   const [expanded, setExpanded] = useState(false);
+  const { preference, setPreference } = useThemeStore();
+
+  const cycleTheme = () => {
+    const next = preference === 'dark' ? 'light' : preference === 'light' ? 'system' : 'dark';
+    setPreference(next);
+  };
+
+  const ThemeIcon = preference === 'dark' ? Moon : preference === 'light' ? Sun : Monitor;
+  const themeLabel = preference === 'dark' ? 'Dark' : preference === 'light' ? 'Light' : 'System';
 
   return (
     <motion.aside
@@ -136,7 +146,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Bottom section: Settings + Profile + Collapse */}
+      {/* Bottom section: Settings + Theme + Profile + Collapse */}
       <div className="px-2 pb-3 space-y-0.5">
         <NavButton
           id="settings"
@@ -146,6 +156,32 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
           expanded={expanded}
           onSelect={onSelect}
         />
+
+        {/* Theme toggle */}
+        <button
+          type="button"
+          onClick={cycleTheme}
+          className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-gray-500 dark:text-white/40 hover:text-gray-900 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/5 transition-all duration-150"
+          title={`Theme: ${themeLabel}`}
+          aria-label={`Switch theme (currently ${themeLabel})`}
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+            <ThemeIcon size={16} />
+          </span>
+          <AnimatePresence>
+            {expanded && (
+              <motion.span
+                initial={{ opacity: 0, x: -4 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -4 }}
+                transition={{ duration: 0.12 }}
+                className="whitespace-nowrap text-[11px] tracking-[0.06em] font-semibold text-gray-500 dark:text-white/40"
+              >
+                {themeLabel}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
 
         {/* User profile indicator */}
         <button
