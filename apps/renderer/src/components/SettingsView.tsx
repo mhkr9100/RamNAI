@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Download, FlaskConical, KeyRound, Trash2 } from 'lucide-react';
 import type {
@@ -131,6 +131,25 @@ export function SettingsView({
   const [encryptionConfirm, setEncryptionConfirm] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
   const [securityError, setSecurityError] = useState<string | null>(null);
+
+  const installedOllamaModels = useMemo(
+    () => models.filter((model) => model.provider === 'ollama' && model.installed),
+    [models],
+  );
+
+  const [prismOverrideProvider, setPrismOverrideProvider] = useState<ProviderId>(prismOverride?.provider ?? 'ollama');
+  const [prismOverrideModelId, setPrismOverrideModelId] = useState<string>(prismOverride?.modelId ?? '');
+
+  useEffect(() => {
+    if (prismOverride) {
+      setPrismOverrideProvider(prismOverride.provider);
+      setPrismOverrideModelId(prismOverride.modelId);
+      return;
+    }
+
+    setPrismOverrideProvider('ollama');
+    setPrismOverrideModelId(installedOllamaModels[0]?.id ?? '');
+  }, [prismOverride, installedOllamaModels]);
 
   const installedModelCount = useMemo(
     () => models.filter((model) => model.installed).length,
@@ -690,7 +709,125 @@ export function SettingsView({
 
       {activeSection === 'prism' ? (
         <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
-          <CardHeader title="Prism" />
+          <CardHeader
+            title="Prism"
+            action={
+              <Badge variant={prismOverride ? 'brand' : 'default'}>
+                {prismOverride ? `${prismOverride.provider} / ${prismOverride.modelId}` : 'Automatic'}
+              </Badge>
+            }
+          />
+
+          <Divider className="my-5" />
+
+          <CardSection label="Runtime override">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const modelId = prismOverrideModelId.trim();
+                if (!modelId) return;
+                await onSavePrismOverride({ provider: prismOverrideProvider, modelId });
+              }}
+              className="space-y-4"
+            >
+              <Select
+                label="Provider"
+                value={prismOverrideProvider}
+                onChange={(e) => {
+                  const nextProvider = e.target.value as ProviderId;
+                  setPrismOverrideProvider(nextProvider);
+
+                  const installedForProvider = models.filter((m) => m.provider === nextProvider && m.installed);
+                  const isCurrentStillValid = prismOverrideModelId
+                    ? installedForProvider.some((m) => m.id === prismOverrideModelId)
+                    : false;
+                  if (isCurrentStillValid) return;
+
+                  const nextModelId = nextProvider === prismOverride?.provider ? prismOverride?.modelId : installedForProvider[0]?.id;
+                  setPrismOverrideModelId(nextModelId ?? '');
+                }}
+                disabled={busy || loading}
+                options={[
+                  { value: 'openai', label: 'OpenAI' },
+                  { value: 'anthropic', label: 'Anthropic' },
+                  { value: 'google', label: 'Google' },
+                  { value: 'ollama', label: 'Ollama' },
+                ]}
+              />
+
+              {(() => {
+                const installedForProvider = models.filter(
+                  (m) => m.provider === prismOverrideProvider && m.installed,
+                );
+                const options: Array<{ value: string; label: string; disabled?: boolean }> = installedForProvider.map((m) => ({
+                  value: m.id,
+                  label: `${m.label} / ${m.id}`,
+                  disabled: false,
+                }));
+
+                // Keep the currently selected model visible even if it's not installed.
+                if (prismOverrideModelId && !options.some((opt) => opt.value === prismOverrideModelId)) {
+                  options.unshift({ value: prismOverrideModelId, label: `${prismOverrideModelId} (not installed)`, disabled: true });
+                }
+
+                const resolvedOptions =
+                  options.length > 0
+                    ? options
+                    : [{ value: '', label: 'No installed models', disabled: true }];
+
+                if (prismOverrideProvider === 'ollama') {
+                  return (
+                    <Select
+                      label="Local Model"
+                      value={prismOverrideModelId}
+                      onChange={(e) => setPrismOverrideModelId(e.target.value)}
+                      disabled={busy || loading}
+                      options={resolvedOptions}
+                      hint="Shows installed local Ollama models."
+                    />
+                  );
+                }
+
+                return (
+                  <Select
+                    label="Model"
+                    value={prismOverrideModelId}
+                    onChange={(e) => setPrismOverrideModelId(e.target.value)}
+                    disabled={busy || loading}
+                    options={resolvedOptions}
+                  />
+                );
+              })()}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="submit"
+                  variant="brand"
+                  size="md"
+                  loading={busy || loading}
+                  disabled={!prismOverrideModelId.trim() || busy || loading}
+                  className="flex-1"
+                >
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  disabled={busy || loading || prismOverride === null}
+                  onClick={() => void onSavePrismOverride(null)}
+                >
+                  Reset to default
+                </Button>
+              </div>
+            </form>
+
+            {prismOverrideProvider === 'ollama' && installedOllamaModels.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                No local Ollama models installed. Install a model under the Local section first.
+              </div>
+            ) : null}
+          </CardSection>
         </Card>
       ) : null}
     </div>

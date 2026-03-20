@@ -6,8 +6,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@google/genai": "^1.46.0",
     "@supreme/shared": "file:../shared",
-    "keytar": "^7.9.0"
+    "keytar": "^7.9.0",
+    "openai": "^6.32.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

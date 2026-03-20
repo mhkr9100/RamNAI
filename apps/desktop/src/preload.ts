@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('supreme', {
     testProviderProfile: (input: unknown) => ipcRenderer.invoke(channels.providerAuthTest, input),
     getProviderSelection: (provider: string) => ipcRenderer.invoke(channels.providerAuthGetSelection, provider),
     setProviderSelection: (selection: unknown) => ipcRenderer.invoke(channels.providerAuthSetSelection, selection),
+    getRetentionConfig: () => ipcRenderer.invoke(channels.retentionConfigGet),
+    saveRetentionConfig: (config: unknown) => ipcRenderer.invoke(channels.retentionConfigSave, config),
     getPrismOverride: () => ipcRenderer.invoke(channels.prismOverrideGet),
     savePrismOverride: (override: unknown) => ipcRenderer.invoke(channels.prismOverrideSave, override),
     getAgentMode: () => ipcRenderer.invoke(channels.agentModeGet),

@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import {
   AgentMode,
   AgentSpec,
@@ -15,6 +17,7 @@ import {
   UserMapNode,
   UserMapState
 } from '@supreme/shared';
+import OpenAI from 'openai';
 import { RuntimeBridge, type BridgePromptResult } from './runtime-bridge.js';
 
 const OLLAMA_API = 'http://127.0.0.1:11434/api';
@@ -56,6 +59,18 @@ interface ExecutionModelRef {
   provider: ProviderId;
   modelId: string;
   fallbackOllamaModelId?: string | undefined;
+}
+
+interface GenerationInput {
+  provider?: ProviderId;
+  modelId: string;
+  system: string;
+  prompt: string;
+  format?: 'json';
+}
+
+interface RemoteGenerationInput extends GenerationInput {
+  provider: Exclude<ProviderId, 'ollama'>;
 }
 
 export interface RuntimeStatus {
@@ -490,6 +505,7 @@ export class LocalRuntimeAdapter {
     if (input.execution.provider === 'ollama') {
       return {
         text: await this.generateText({
+          provider: 'ollama',
           modelId: input.execution.modelId,
           system: input.system,
           prompt: input.prompt,
@@ -502,7 +518,7 @@ export class LocalRuntimeAdapter {
 
     try {
       return {
-        text: await this.generateByProvider({
+        text: await this.generateText({
           provider: input.execution.provider,
           modelId: input.execution.modelId,
           system: input.system,
@@ -523,6 +539,7 @@ export class LocalRuntimeAdapter {
 
       return {
         text: await this.generateText({
+          provider: 'ollama',
           modelId: input.execution.fallbackOllamaModelId,
           system: input.system,
           prompt: input.prompt,
@@ -534,13 +551,7 @@ export class LocalRuntimeAdapter {
     }
   }
 
-  private async generateByProvider(input: {
-    provider: Exclude<ProviderId, 'ollama'>;
-    modelId: string;
-    system: string;
-    prompt: string;
-    format?: 'json';
-  }): Promise<string> {
+  private async generateByProvider(input: RemoteGenerationInput): Promise<string> {
     if (input.provider === 'openai') {
       return this.generateOpenAIText(input);
     }
@@ -561,37 +572,56 @@ export class LocalRuntimeAdapter {
     return resolved;
   }
 
-  private async generateOpenAIText(input: {
-    modelId: string;
-    system: string;
-    prompt: string;
-    format?: 'json';
-  }): Promise<string> {
-    const auth = await this.resolveRemoteProviderAuth('openai');
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${auth.apiKey ?? auth.token}`,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: input.modelId,
-        messages: [
-          { role: 'system', content: input.system },
-          { role: 'user', content: input.prompt }
-        ],
-        temperature: input.format === 'json' ? 0.15 : 0.35,
-        ...(input.format === 'json' ? { response_format: { type: 'json_object' } } : {})
-      })
-    });
-    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok) {
-      throw new Error(this.extractProviderErrorMessage('openai', response.status, response.statusText, payload));
-    }
+  private temperatureForFormat(format?: 'json'): number {
+    return format === 'json' ? 0.15 : 0.35;
+  }
 
-    const choice = Array.isArray(payload?.choices) ? payload?.choices[0] as Record<string, unknown> | undefined : undefined;
-    const message = choice?.message as Record<string, unknown> | undefined;
-    const text = this.extractMessageText(message?.content);
+  private buildOpenAIMessages(input: Pick<GenerationInput, 'system' | 'prompt'>) {
+    return [
+      { role: 'system' as const, content: input.system },
+      { role: 'user' as const, content: input.prompt }
+    ];
+  }
+
+  private buildAnthropicMessages(input: Pick<GenerationInput, 'prompt'>) {
+    return [
+      {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: input.prompt }]
+      }
+    ];
+  }
+
+  private buildGoogleContents(input: Pick<GenerationInput, 'prompt'>) {
+    return [
+      {
+        role: 'user' as const,
+        parts: [{ text: input.prompt }]
+      }
+    ];
+  }
+
+  private buildGoogleConfig(input: Pick<GenerationInput, 'system' | 'format'>) {
+    return {
+      systemInstruction: input.system,
+      temperature: this.temperatureForFormat(input.format),
+      maxOutputTokens: 4096,
+      ...(input.format === 'json' ? { responseMimeType: 'application/json' } : {})
+    };
+  }
+
+  private async generateOpenAIText(input: RemoteGenerationInput): Promise<string> {
+    const auth = await this.resolveRemoteProviderAuth('openai');
+    const client = new OpenAI({
+      apiKey: auth.apiKey ?? auth.token
+    });
+    const completion = await client.chat.completions.create({
+      model: input.modelId,
+      messages: this.buildOpenAIMessages(input),
+      temperature: this.temperatureForFormat(input.format),
+      ...(input.format === 'json' ? { response_format: { type: 'json_object' as const } } : {})
+    });
+    const text = this.extractMessageText(completion.choices[0]?.message?.content);
     if (!text) {
       throw new Error('OpenAI returned an empty response.');
     }
@@ -599,42 +629,43 @@ export class LocalRuntimeAdapter {
     return text;
   }
 
-  private async generateAnthropicText(input: {
-    modelId: string;
-    system: string;
-    prompt: string;
-    format?: 'json';
-  }): Promise<string> {
-    const auth = await this.resolveRemoteProviderAuth('anthropic');
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': auth.apiKey ?? auth.token ?? '',
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: input.modelId,
-        system: input.system,
-        max_tokens: 4096,
-        temperature: input.format === 'json' ? 0.15 : 0.35,
-        messages: [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: input.prompt }]
-          }
-        ]
-      })
+  private async *generateOpenAITextStream(input: RemoteGenerationInput): AsyncGenerator<string> {
+    const auth = await this.resolveRemoteProviderAuth('openai');
+    const client = new OpenAI({
+      apiKey: auth.apiKey ?? auth.token
     });
-    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok) {
-      throw new Error(this.extractProviderErrorMessage('anthropic', response.status, response.statusText, payload));
-    }
+    const stream = await client.chat.completions.create({
+      model: input.modelId,
+      messages: this.buildOpenAIMessages(input),
+      temperature: this.temperatureForFormat(input.format),
+      stream: true,
+      ...(input.format === 'json' ? { response_format: { type: 'json_object' as const } } : {})
+    });
 
-    const content = Array.isArray(payload?.content) ? payload.content as Array<Record<string, unknown>> : [];
-    const text = content
-      .filter((entry) => entry?.type === 'text' && typeof entry.text === 'string')
-      .map((entry) => entry.text as string)
+    for await (const chunk of stream) {
+      const text = this.extractMessageText(chunk.choices[0]?.delta?.content, { trim: false });
+      if (text) {
+        yield text;
+      }
+    }
+  }
+
+  private async generateAnthropicText(input: RemoteGenerationInput): Promise<string> {
+    const auth = await this.resolveRemoteProviderAuth('anthropic');
+    const client = new Anthropic({
+      ...(auth.apiKey ? { apiKey: auth.apiKey } : {}),
+      ...(auth.token ? { authToken: auth.token } : {})
+    });
+    const message = await client.messages.create({
+      model: input.modelId,
+      system: input.system,
+      max_tokens: 4096,
+      temperature: this.temperatureForFormat(input.format),
+      messages: this.buildAnthropicMessages(input)
+    });
+    const text = message.content
+      .filter((entry) => entry.type === 'text')
+      .map((entry) => entry.text)
       .join('')
       .trim();
     if (!text) {
@@ -644,41 +675,102 @@ export class LocalRuntimeAdapter {
     return text;
   }
 
-  private async generateGoogleText(input: {
-    modelId: string;
-    system: string;
-    prompt: string;
-    format?: 'json';
-  }): Promise<string> {
+  private async *generateAnthropicTextStream(input: RemoteGenerationInput): AsyncGenerator<string> {
+    const auth = await this.resolveRemoteProviderAuth('anthropic');
+    const client = new Anthropic({
+      ...(auth.apiKey ? { apiKey: auth.apiKey } : {}),
+      ...(auth.token ? { authToken: auth.token } : {})
+    });
+    const stream = await client.messages.create({
+      model: input.modelId,
+      system: input.system,
+      max_tokens: 4096,
+      temperature: this.temperatureForFormat(input.format),
+      messages: this.buildAnthropicMessages(input),
+      stream: true
+    });
+
+    for await (const event of stream as AsyncIterable<Record<string, unknown>>) {
+      if (event.type !== 'content_block_delta') {
+        continue;
+      }
+
+      const delta = event.delta as Record<string, unknown> | undefined;
+      if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+        yield delta.text;
+      }
+    }
+  }
+
+  private async generateGoogleText(input: RemoteGenerationInput): Promise<string> {
     const auth = await this.resolveRemoteProviderAuth('google');
-    const headers: Record<string, string> = {
-      'content-type': 'application/json'
-    };
-    const search = new URLSearchParams();
-    if (auth.apiKey) {
-      search.set('key', auth.apiKey);
-    } else if (auth.token) {
-      headers.authorization = `Bearer ${auth.token}`;
+    if (!auth.apiKey && auth.token) {
+      return this.generateGoogleTextWithToken(input, auth.token);
+    }
+    if (!auth.apiKey) {
+      throw new Error('No active google API key is available.');
     }
 
+    const client = new GoogleGenAI({
+      apiKey: auth.apiKey
+    });
+    const response = await client.models.generateContent({
+      model: input.modelId,
+      contents: this.buildGoogleContents(input),
+      config: this.buildGoogleConfig(input)
+    });
+    const text = response.text?.trim();
+    if (!text) {
+      throw new Error('Google Gemini returned an empty response.');
+    }
+
+    return text;
+  }
+
+  private async *generateGoogleTextStream(input: RemoteGenerationInput): AsyncGenerator<string> {
+    const auth = await this.resolveRemoteProviderAuth('google');
+    if (!auth.apiKey && auth.token) {
+      yield await this.generateGoogleTextWithToken(input, auth.token);
+      return;
+    }
+    if (!auth.apiKey) {
+      throw new Error('No active google API key is available.');
+    }
+
+    const client = new GoogleGenAI({
+      apiKey: auth.apiKey
+    });
+    const stream = await client.models.generateContentStream({
+      model: input.modelId,
+      contents: this.buildGoogleContents(input),
+      config: this.buildGoogleConfig(input)
+    });
+
+    for await (const chunk of stream) {
+      const text = chunk.text ?? '';
+      if (text) {
+        yield text;
+      }
+    }
+  }
+
+  private async generateGoogleTextWithToken(input: RemoteGenerationInput, token: string): Promise<string> {
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`
+    };
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.modelId)}:generateContent?${search.toString()}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.modelId)}:generateContent`,
       {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          systemInstruction: {
-            role: 'system',
-            parts: [{ text: input.system }]
-          },
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: input.prompt }]
-            }
-          ],
+          systemInstruction: { parts: [{ text: input.system }] },
+          contents: this.buildGoogleContents(input),
           generationConfig: {
-            temperature: input.format === 'json' ? 0.15 : 0.35,
+            temperature: this.temperatureForFormat(input.format),
+            maxOutputTokens: 4096,
             ...(input.format === 'json' ? { responseMimeType: 'application/json' } : {})
           }
         })
@@ -704,13 +796,28 @@ export class LocalRuntimeAdapter {
     return text;
   }
 
-  private extractMessageText(content: unknown): string {
+  private async *generateTextStreamByProvider(input: RemoteGenerationInput): AsyncGenerator<string> {
+    if (input.provider === 'openai') {
+      yield* this.generateOpenAITextStream(input);
+      return;
+    }
+
+    if (input.provider === 'anthropic') {
+      yield* this.generateAnthropicTextStream(input);
+      return;
+    }
+
+    yield* this.generateGoogleTextStream(input);
+  }
+
+  private extractMessageText(content: unknown, options?: { trim?: boolean }): string {
+    const trim = options?.trim ?? true;
     if (typeof content === 'string') {
-      return content.trim();
+      return trim ? content.trim() : content;
     }
 
     if (Array.isArray(content)) {
-      return content
+      const text = content
         .map((entry) => {
           if (typeof entry === 'string') return entry;
           if (entry && typeof entry === 'object' && typeof (entry as { text?: unknown }).text === 'string') {
@@ -718,8 +825,8 @@ export class LocalRuntimeAdapter {
           }
           return '';
         })
-        .join('')
-        .trim();
+        .join('');
+      return trim ? text.trim() : text;
     }
 
     return '';
@@ -1339,7 +1446,15 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private async generateTextNonStreaming(input: { modelId: string; system: string; prompt: string; format?: 'json' }) {
+  private async generateTextNonStreaming(input: GenerationInput) {
+    const provider = input.provider ?? 'ollama';
+    if (provider !== 'ollama') {
+      return this.generateByProvider({
+        ...input,
+        provider
+      });
+    }
+
     const response = await fetch(`${OLLAMA_API}/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1369,9 +1484,10 @@ export class LocalRuntimeAdapter {
   }
 
   /**
-   * Accumulate Ollama `/generate` with `stream: true` (NDJSON). Falls back to a single non-streaming request on failure.
+   * Accumulate provider-native streaming output when available. Falls back to a single non-streaming request on failure.
    */
-  private async generateText(input: { modelId: string; system: string; prompt: string; format?: 'json' }) {
+  private async generateText(input: GenerationInput) {
+    const provider = input.provider ?? 'ollama';
     try {
       const chunks: string[] = [];
       for await (const chunk of this.generateTextStream(input)) {
@@ -1379,7 +1495,7 @@ export class LocalRuntimeAdapter {
       }
       const text = chunks.join('').trim();
       if (!text) {
-        throw new Error('Ollama returned an empty response.');
+        throw new Error(`${provider} returned an empty response.`);
       }
       return text;
     } catch {
@@ -1388,9 +1504,18 @@ export class LocalRuntimeAdapter {
   }
 
   /**
-   * Yields each `response` fragment from Ollama's streaming `/generate` API (NDJSON lines).
+   * Yields streaming text fragments from Ollama or a remote provider when native streaming is available.
    */
-  async *generateTextStream(input: { modelId: string; system: string; prompt: string; format?: 'json' }): AsyncGenerator<string> {
+  async *generateTextStream(input: GenerationInput): AsyncGenerator<string> {
+    const provider = input.provider ?? 'ollama';
+    if (provider !== 'ollama') {
+      yield* this.generateTextStreamByProvider({
+        ...input,
+        provider
+      });
+      return;
+    }
+
     const response = await fetch(`${OLLAMA_API}/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1454,6 +1579,85 @@ export class LocalRuntimeAdapter {
     }
   }
 
+  private async streamWithFallback(input: {
+    execution: ExecutionModelRef;
+    system: string;
+    prompt: string;
+    onToken: StreamTokenCallback;
+    format?: 'json';
+  }): Promise<{ text: string; provider: ProviderId; modelId: string }> {
+    const streamSingleProvider = async (provider: ProviderId, modelId: string) => {
+      let full = '';
+
+      try {
+        for await (const token of this.generateTextStream({
+          provider,
+          modelId,
+          system: input.system,
+          prompt: input.prompt,
+          ...(input.format ? { format: input.format } : {})
+        })) {
+          full += token;
+          if (input.onToken(token) === false) {
+            break;
+          }
+        }
+      } catch {
+        if (full.trim()) {
+          return full.trim();
+        }
+      }
+
+      if (full.trim()) {
+        return full.trim();
+      }
+
+      const text = (await this.generateTextNonStreaming({
+        provider,
+        modelId,
+        system: input.system,
+        prompt: input.prompt,
+        ...(input.format ? { format: input.format } : {})
+      })).trim();
+      if (text) {
+        input.onToken(text);
+        return text;
+      }
+
+      throw new Error(`${provider} returned an empty response.`);
+    };
+
+    if (input.execution.provider === 'ollama') {
+      return {
+        text: await streamSingleProvider('ollama', input.execution.modelId),
+        provider: 'ollama',
+        modelId: input.execution.modelId
+      };
+    }
+
+    try {
+      return {
+        text: await streamSingleProvider(input.execution.provider, input.execution.modelId),
+        provider: input.execution.provider,
+        modelId: input.execution.modelId
+      };
+    } catch (error) {
+      if (!input.execution.fallbackOllamaModelId) {
+        throw error;
+      }
+
+      console.warn(
+        `[runtime] ${input.execution.provider} streaming request failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
+      );
+
+      return {
+        text: await streamSingleProvider('ollama', input.execution.fallbackOllamaModelId),
+        provider: 'ollama',
+        modelId: input.execution.fallbackOllamaModelId
+      };
+    }
+  }
+
   private buildEphemeralAgentTask(agentId: string, objective: string): TaskSpec {
     const now = new Date().toISOString();
     return {
@@ -1479,8 +1683,9 @@ export class LocalRuntimeAdapter {
   }
 
   /**
-   * Stream a chat response for an agent. Uses Ollama streaming when agent mode is `ollama`; otherwise runs the same path as `executeTask` and emits the full reply once (bridge / non-local).
-   * On Ollama streaming failure, falls back to `generateTextNonStreaming` and delivers a single chunk.
+   * Stream a chat response for an agent. Uses provider-native streaming for direct
+   * remote execution when available, Ollama NDJSON for local execution, and falls
+   * back to a one-shot response when only non-streaming execution is available.
    */
   async streamAgentChat(
     input: {
@@ -1491,19 +1696,12 @@ export class LocalRuntimeAdapter {
     },
     onToken: StreamTokenCallback
   ): Promise<StreamResult> {
-    if (this.agentMode !== 'ollama') {
-      const task = this.buildEphemeralAgentTask(input.agent.id, input.objective);
-      const result = await this.executeTask(task, input.context);
-      onToken(result.text);
-      return {
-        text: result.text.trim(),
-        provider: result.provider,
-        modelId: result.modelId
-      };
-    }
-
     const models = await this.listOllamaModels();
-    const modelId = this.pickModelId(models);
+    const execution = this.resolveAgentExecutionModel(
+      input.agent,
+      models,
+      this.pickFallbackOllamaModelId(input.agent, models)
+    );
 
     const system = [
       `You are "${input.agent.name}".`,
@@ -1517,24 +1715,28 @@ export class LocalRuntimeAdapter {
       input.objective
     ].filter(Boolean).join('\n\n');
 
-    let full = '';
-    try {
-      for await (const token of this.generateTextStream({ modelId, system, prompt })) {
-        full += token;
-        if (onToken(token) === false) {
-          break;
-        }
-      }
-    } catch {
-      const text = await this.generateTextNonStreaming({ modelId, system, prompt });
-      full = text;
-      onToken(text);
+    if (execution.provider === 'ollama' && this.agentMode !== 'ollama') {
+      const task = this.buildEphemeralAgentTask(input.agent.id, input.objective);
+      const result = await this.executeTask(task, input.context);
+      onToken(result.text);
+      return {
+        text: result.text.trim(),
+        provider: result.provider,
+        modelId: result.modelId
+      };
     }
 
+    const result = await this.streamWithFallback({
+      execution,
+      system,
+      prompt,
+      onToken
+    });
+
     return {
-      text: full.trim(),
-      provider: 'ollama',
-      modelId
+      text: result.text.trim(),
+      provider: result.provider,
+      modelId: result.modelId
     };
   }
 
@@ -1581,7 +1783,7 @@ export class LocalRuntimeAdapter {
   }
 
   private pickTaskModel(task: TaskSpec, models: ProviderModelPreset[]): string {
-    if (task.providerOverride) {
+    if (task.providerOverride?.provider === 'ollama') {
       return this.resolveSupportedModel(task.providerOverride.provider, task.providerOverride.modelId, models.filter((model) => model.installed).map((model) => model.id));
     }
 

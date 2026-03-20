@@ -29,6 +29,8 @@ export const channels = {
   providerAuthTest: 'providerAuth:test',
   providerAuthGetSelection: 'providerAuth:getSelection',
   providerAuthSetSelection: 'providerAuth:setSelection',
+  retentionConfigGet: 'retention_config:get',
+  retentionConfigSave: 'retention_config:save',
   securityGetState: 'security:getState',
   securityUnlock: 'security:unlock',
   securityEnable: 'security:enable',

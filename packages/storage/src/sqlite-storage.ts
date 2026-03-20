@@ -14,6 +14,8 @@ import {
   LocalProfile,
   MemoryFact,
   Permission,
+  RetentionConfig,
+  RetentionConfigInput,
   ProviderModelPreset,
   ProviderAuthSelection,
   PrismProviderOverrideSettings,
@@ -78,7 +80,8 @@ export interface StorageTextCipher {
 }
 
 type VisibilityScope = 'public' | 'private';
-const STORAGE_SCHEMA_VERSION = 3;
+const STORAGE_SCHEMA_VERSION = 4;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const PASSTHROUGH_TEXT_CIPHER: StorageTextCipher = {
   id: 'plain',
   enabled: false,
@@ -91,6 +94,13 @@ const PASSTHROUGH_TEXT_CIPHER: StorageTextCipher = {
   isEncrypted() {
     return false;
   }
+};
+const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
+  auditLogDays: 90,
+  chatDays: null,
+  workDays: null,
+  taskRunDays: 180,
+  lastPurgeAt: null
 };
 const TEXT_CIPHER_TABLES: Array<{ table: string; columns: string[] }> = [
   { table: 'profile', columns: ['payload'] },
@@ -132,6 +142,66 @@ interface TaskRunRow {
   artifact_ids?: string | null;
   council_trace?: string | null;
   payload?: string | null;
+}
+
+interface RetentionConfigRow {
+  audit_log_days?: number | null;
+  chat_days?: number | null;
+  work_days?: number | null;
+  task_run_days?: number | null;
+  last_purge_at?: string | null;
+}
+
+function normalizeRetentionDays(
+  value: number | null | undefined,
+  fallback: number | null,
+  options?: { allowNull?: boolean }
+): number | null {
+  if (value == null) {
+    return options?.allowNull ? fallback : (fallback ?? DEFAULT_RETENTION_CONFIG.auditLogDays);
+  }
+
+  const normalized = Math.floor(value);
+  if (!Number.isFinite(normalized) || normalized < 1) {
+    return options?.allowNull ? fallback : (fallback ?? DEFAULT_RETENTION_CONFIG.auditLogDays);
+  }
+
+  return normalized;
+}
+
+function normalizeRetentionTimestamp(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  return new Date(timestamp).toISOString();
+}
+
+function requireRetentionDays(olderThanDays: number): number {
+  const normalized = Math.floor(olderThanDays);
+  if (!Number.isFinite(normalized) || normalized < 1) {
+    throw new Error('Retention period must be at least 1 day.');
+  }
+
+  return normalized;
+}
+
+function retentionCutoffMs(olderThanDays: number): number {
+  return Date.now() - (requireRetentionDays(olderThanDays) * DAY_IN_MS);
+}
+
+function isOlderThanCutoff(value: string | null | undefined, cutoffMs: number): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+  return !Number.isNaN(timestamp) && timestamp < cutoffMs;
 }
 
 function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: VisibilityScope): UserMapNode {
@@ -398,6 +468,41 @@ export class SqliteStorage {
     this.db.exec(`PRAGMA user_version = ${Math.max(0, Math.floor(version))};`);
   }
 
+  private normalizeRetentionConfigRow(row?: RetentionConfigRow): RetentionConfig {
+    return {
+      auditLogDays: normalizeRetentionDays(row?.audit_log_days, DEFAULT_RETENTION_CONFIG.auditLogDays) ?? DEFAULT_RETENTION_CONFIG.auditLogDays,
+      chatDays: normalizeRetentionDays(row?.chat_days, DEFAULT_RETENTION_CONFIG.chatDays, { allowNull: true }),
+      workDays: normalizeRetentionDays(row?.work_days, DEFAULT_RETENTION_CONFIG.workDays, { allowNull: true }),
+      taskRunDays: normalizeRetentionDays(row?.task_run_days, DEFAULT_RETENTION_CONFIG.taskRunDays) ?? DEFAULT_RETENTION_CONFIG.taskRunDays,
+      lastPurgeAt: normalizeRetentionTimestamp(row?.last_purge_at)
+    };
+  }
+
+  private writeRetentionConfig(config: RetentionConfig): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO retention_config (
+        id, audit_log_days, chat_days, work_days, task_run_days, last_purge_at
+      ) VALUES (
+        1, @audit_log_days, @chat_days, @work_days, @task_run_days, @last_purge_at
+      )
+    `).run({
+      audit_log_days: config.auditLogDays,
+      chat_days: config.chatDays,
+      work_days: config.workDays,
+      task_run_days: config.taskRunDays,
+      last_purge_at: config.lastPurgeAt
+    });
+  }
+
+  private ensureRetentionConfigRow() {
+    const row = this.db.prepare(`
+      SELECT audit_log_days, chat_days, work_days, task_run_days, last_purge_at
+      FROM retention_config
+      WHERE id = 1
+    `).get() as RetentionConfigRow | undefined;
+    this.writeRetentionConfig(this.normalizeRetentionConfigRow(row));
+  }
+
   private ensureTaskRunSchemaColumns() {
     const columns = new Set(
       (this.db.prepare('PRAGMA table_info(task_runs)').all() as Array<{ name: string }>)
@@ -550,6 +655,14 @@ export class SqliteStorage {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         payload TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS retention_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        audit_log_days INTEGER NOT NULL DEFAULT 90,
+        chat_days INTEGER,
+        work_days INTEGER,
+        task_run_days INTEGER NOT NULL DEFAULT 180,
+        last_purge_at TEXT
+      );
       CREATE TABLE IF NOT EXISTS audit_log (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
@@ -561,6 +674,8 @@ export class SqliteStorage {
     `);
 
     this.ensureTaskRunSchemaColumns();
+    this.db.exec('CREATE INDEX IF NOT EXISTS task_runs_updated_at_idx ON task_runs(updated_at DESC);');
+    this.db.exec('CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log(created_at DESC);');
 
     const count = this.db.prepare('SELECT COUNT(*) as count FROM models').get() as { count: number };
     if (count.count === 0) {
@@ -583,6 +698,8 @@ export class SqliteStorage {
     if (!prismSettingsRow) {
       this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson({}));
     }
+
+    this.ensureRetentionConfigRow();
 
     const schemaVersion = this.readSchemaVersion();
     if (schemaVersion < STORAGE_SCHEMA_VERSION) {
@@ -695,6 +812,98 @@ export class SqliteStorage {
       modelUsage,
       avgLatencyMs: latencyCount > 0 ? Math.round(totalLatencyMs / latencyCount) : null
     };
+  }
+
+  getRetentionConfig(): RetentionConfig {
+    const row = this.db.prepare(`
+      SELECT audit_log_days, chat_days, work_days, task_run_days, last_purge_at
+      FROM retention_config
+      WHERE id = 1
+    `).get() as RetentionConfigRow | undefined;
+    return this.normalizeRetentionConfigRow(row);
+  }
+
+  saveRetentionConfig(config: Partial<RetentionConfigInput> & { lastPurgeAt?: string | null }): RetentionConfig {
+    const current = this.getRetentionConfig();
+    const next: RetentionConfig = {
+      auditLogDays: config.auditLogDays !== undefined
+        ? normalizeRetentionDays(config.auditLogDays, current.auditLogDays) ?? DEFAULT_RETENTION_CONFIG.auditLogDays
+        : current.auditLogDays,
+      chatDays: config.chatDays !== undefined
+        ? normalizeRetentionDays(config.chatDays, current.chatDays, { allowNull: true })
+        : current.chatDays,
+      workDays: config.workDays !== undefined
+        ? normalizeRetentionDays(config.workDays, current.workDays, { allowNull: true })
+        : current.workDays,
+      taskRunDays: config.taskRunDays !== undefined
+        ? normalizeRetentionDays(config.taskRunDays, current.taskRunDays) ?? DEFAULT_RETENTION_CONFIG.taskRunDays
+        : current.taskRunDays,
+      lastPurgeAt: config.lastPurgeAt !== undefined
+        ? normalizeRetentionTimestamp(config.lastPurgeAt)
+        : current.lastPurgeAt
+    };
+    this.writeRetentionConfig(next);
+    return next;
+  }
+
+  purgeOldAuditLogs(olderThanDays: number): number {
+    const cutoffIso = new Date(retentionCutoffMs(olderThanDays)).toISOString();
+    const result = this.db.prepare('DELETE FROM audit_log WHERE created_at < ?').run(cutoffIso) as { changes?: number };
+    return result.changes ?? 0;
+  }
+
+  purgeOldTaskRuns(olderThanDays: number): number {
+    const cutoffIso = new Date(retentionCutoffMs(olderThanDays)).toISOString();
+    const result = this.db.prepare('DELETE FROM task_runs WHERE updated_at < ?').run(cutoffIso) as { changes?: number };
+    return result.changes ?? 0;
+  }
+
+  purgeOldChatThreads(olderThanDays: number): number {
+    const cutoffMs = retentionCutoffMs(olderThanDays);
+    const rows = this.db.prepare('SELECT id, payload FROM chat_threads').all() as Array<{ id: string; payload: string }>;
+    const staleIds = rows
+      .filter((row) => {
+        const thread = this.decodeJson<ChatThread | null>(row.payload, null);
+        if (!thread) {
+          return false;
+        }
+        return isOlderThanCutoff(thread.updatedAt || thread.createdAt, cutoffMs);
+      })
+      .map((row) => row.id);
+
+    if (staleIds.length === 0) {
+      return 0;
+    }
+
+    const deleteRow = this.db.prepare('DELETE FROM chat_threads WHERE id = ?');
+    for (const threadId of staleIds) {
+      deleteRow.run(threadId);
+    }
+    return staleIds.length;
+  }
+
+  purgeOldWorkItems(olderThanDays: number): number {
+    const cutoffMs = retentionCutoffMs(olderThanDays);
+    const rows = this.db.prepare('SELECT id, payload FROM work_items').all() as Array<{ id: string; payload: string }>;
+    const staleIds = rows
+      .filter((row) => {
+        const item = this.decodeJson<WorkItem | null>(row.payload, null);
+        if (!item) {
+          return false;
+        }
+        return isOlderThanCutoff(item.updatedAt || item.createdAt, cutoffMs);
+      })
+      .map((row) => row.id);
+
+    if (staleIds.length === 0) {
+      return 0;
+    }
+
+    const deleteRow = this.db.prepare('DELETE FROM work_items WHERE id = ?');
+    for (const workItemId of staleIds) {
+      deleteRow.run(workItemId);
+    }
+    return staleIds.length;
   }
 
   getProfile(): LocalProfile | null {

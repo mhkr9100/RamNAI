@@ -25,6 +25,17 @@ export interface ProviderAuthSelection {
   profileId: string | null;
 }
 
+export interface RetentionConfigInput {
+  auditLogDays: number;
+  chatDays: number | null;
+  workDays: number | null;
+  taskRunDays: number;
+}
+
+export interface RetentionConfig extends RetentionConfigInput {
+  lastPurgeAt: string | null;
+}
+
 export interface PrismProviderOverrideSettings {
   provider: ProviderId;
   modelId: string;

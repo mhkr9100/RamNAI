@@ -46,6 +46,7 @@ import type {
   ProviderAuthProfile,
   ProviderAuthSelection,
   ProviderId,
+  RetentionConfigInput,
   TaskSpec,
   TaskRunRecord,
   UserMapNode,
@@ -74,6 +75,7 @@ let heartbeatService: HeartbeatService | null = null;
 const TASK_RUN_LEASE_MS = 5 * 60 * 1000;
 const TASK_RUN_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const TASK_RUN_HARD_TIMEOUT_MS = TASK_RUN_LEASE_MS * 4;
+const RETENTION_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const ollamaModelState = new Map<string, OllamaModelRuntimeState>();
 const DEFAULT_GROUP_ROUTING_LOW_CONFIDENCE_THRESHOLD = 0.55;
 const USER_MAP_VISIBILITY_ORDER: Array<'public' | 'private'> = ['public', 'private'];
@@ -528,6 +530,19 @@ function getWorkspaceSecurityState(): WorkspaceSecurityIpcState {
     locked: state.locked,
     ready: state.ready
   };
+}
+
+function shouldRunRetentionCleanup(lastPurgeAt: string | null | undefined): boolean {
+  if (!lastPurgeAt) {
+    return true;
+  }
+
+  const lastPurgeMs = Date.parse(lastPurgeAt);
+  if (Number.isNaN(lastPurgeMs) || lastPurgeMs > Date.now()) {
+    return true;
+  }
+
+  return (Date.now() - lastPurgeMs) >= RETENTION_PURGE_INTERVAL_MS;
 }
 
 function clearRuntimeWorkspaceMirror() {
@@ -1521,6 +1536,17 @@ function deleteWorkItemArtifacts(workItemId: string) {
   }
 }
 
+function deleteArtifactsForMissingWorkItems() {
+  const paths = getWorkspacePaths();
+  const workItemIds = new Set(storage.listWorkItems().map((item) => item.id));
+  const orphanedArtifacts = storage.listArtifacts().filter((artifact) => !workItemIds.has(artifact.workItemId));
+
+  for (const artifact of orphanedArtifacts) {
+    rmSync(path.join(paths.root, artifact.relativePath), { force: true });
+    storage.deleteArtifact(artifact.id);
+  }
+}
+
 async function openArtifact(artifactId: string) {
   const artifact = requireWorkspaceReady().getArtifact(artifactId);
   if (!artifact) {
@@ -1685,6 +1711,36 @@ async function initializeWorkspaceStorage() {
 
   storage.init();
   recoverInterruptedWork();
+  try {
+    const retention = storage.getRetentionConfig();
+    if (shouldRunRetentionCleanup(retention.lastPurgeAt)) {
+      const auditLogsDeleted = storage.purgeOldAuditLogs(retention.auditLogDays);
+      const taskRunsDeleted = storage.purgeOldTaskRuns(retention.taskRunDays);
+      const chatThreadsDeleted = retention.chatDays === null ? 0 : storage.purgeOldChatThreads(retention.chatDays);
+
+      let workItemsDeleted = 0;
+      if (retention.workDays !== null) {
+        workItemsDeleted = storage.purgeOldWorkItems(retention.workDays);
+        if (workItemsDeleted > 0) {
+          deleteArtifactsForMissingWorkItems();
+        }
+      }
+
+      storage.saveRetentionConfig({ lastPurgeAt: new Date().toISOString() });
+      logger.info('Retention cleanup completed', {
+        area: 'storage',
+        auditLogsDeleted,
+        taskRunsDeleted,
+        chatThreadsDeleted,
+        workItemsDeleted
+      });
+    }
+  } catch (error) {
+    logger.warn('Retention cleanup failed; continuing app startup.', {
+      area: 'storage',
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
   await refreshStoredModels();
   syncStructuredExports();
 
@@ -2268,6 +2324,11 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(channels.prismOverrideGet, async () => {
     return storage.getPrismProviderOverride() as PrismProviderOverrideSettings | null;
+  });
+  ipcMain.handle(channels.retentionConfigGet, async () => requireWorkspaceReady().getRetentionConfig());
+  ipcMain.handle(channels.retentionConfigSave, async (_event, config: RetentionConfigInput) => {
+    requirePermission('manage_settings');
+    return requireWorkspaceReady().saveRetentionConfig(config);
   });
   ipcMain.handle(channels.prismOverrideSave, async (_event, override: PrismProviderOverrideSettings | null) => {
     requirePermission('manage_settings');

@@ -14,6 +14,8 @@ import type {
   ProviderAuthSelection,
   ProviderId,
   ProviderModelPreset,
+  RetentionConfig,
+  RetentionConfigInput,
   TaskSpec,
   UserMapState,
   VoiceConfig,
@@ -177,6 +179,8 @@ export interface SupremeDesktopApi {
     }) => Promise<{ ok: boolean; message: string }>;
     getProviderSelection: (provider: ProviderId) => Promise<ProviderAuthSelection | null>;
     setProviderSelection: (selection: ProviderAuthSelection) => Promise<ProviderAuthSelection>;
+    getRetentionConfig: () => Promise<RetentionConfig>;
+    saveRetentionConfig: (config: RetentionConfigInput) => Promise<RetentionConfig>;
     getPrismOverride: () => Promise<PrismProviderOverrideSettings | null>;
     savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<PrismProviderOverrideSettings | null>;
     getAgentMode: () => Promise<AgentMode>;
