@@ -12,6 +12,8 @@ export const channels = {
   groupDelete: 'group:delete',
   prismSend: 'prism:sendMessage',
   agentChat: 'chat:agent',
+  agentChatStream: 'chat:agent:stream',
+  agentChatStreamToken: 'chat:agent:stream:token',
   groupChat: 'chat:group',
   threadDelete: 'thread:delete',
   taskCreate: 'task:create',

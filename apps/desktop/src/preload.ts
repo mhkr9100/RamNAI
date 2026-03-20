@@ -29,6 +29,13 @@ contextBridge.exposeInMainWorld('supreme', {
   },
   chat: {
     sendAgentMessage: (input: unknown) => ipcRenderer.invoke(channels.agentChat, input),
+    sendAgentMessageStream: (input: unknown) => ipcRenderer.invoke(channels.agentChatStream, input),
+    onStreamToken: (callback: (_event: unknown, data: { streamId: string; token: string; done: boolean; error?: string }) => void) => {
+      ipcRenderer.on(channels.agentChatStreamToken, callback as (...args: unknown[]) => void);
+    },
+    offStreamToken: () => {
+      ipcRenderer.removeAllListeners(channels.agentChatStreamToken);
+    },
     sendGroupMessage: (input: unknown) => ipcRenderer.invoke(channels.groupChat, input),
     deleteThread: (threadId: string) => ipcRenderer.invoke(channels.threadDelete, threadId)
   },

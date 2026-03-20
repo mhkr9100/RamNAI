@@ -1643,6 +1643,74 @@ app.whenReady().then(async () => {
     requirePermission('run_tasks');
     return sendAgentChat(input);
   });
+  ipcMain.handle(channels.agentChatStream, async (event, input: AgentChatInput) => {
+    requirePermission('run_tasks');
+    syncRuntimeConfig();
+    const snapshot = storage.getWorkspaceSnapshot();
+    const agent = snapshot.agents.find((candidate) => candidate.id === input.agentId);
+    if (!agent) {
+      throw new Error('Chatbot not found.');
+    }
+
+    const thread = findOrCreateThread('agent', agent.id, agent.name);
+    const route = buildRouteMetadata({
+      mode: 'direct',
+      targetType: 'agent',
+      targetIds: [agent.id],
+      confidence: 1,
+      reason: 'Direct agent chat'
+    });
+    const userMessage = makeChatMessage({ role: 'user', text: input.message.trim(), authorLabel: 'You', route });
+    const withUser = appendThreadMessages(thread, [userMessage]);
+
+    const streamId = randomUUID();
+    const objective = buildAgentChatObjective(agent, withUser, input.message.trim());
+    const webContents = event.sender;
+
+    try {
+      const result = await runtime.streamAgentChat(
+        { agent, objective, userMap: snapshot.userMap },
+        (token) => {
+          if (!webContents.isDestroyed()) {
+            webContents.send(channels.agentChatStreamToken, { streamId, token, done: false });
+          }
+        }
+      );
+
+      const assistantMessage = makeChatMessage({
+        role: 'assistant',
+        text: result.text,
+        authorId: agent.id,
+        authorLabel: agent.name,
+        provider: result.provider,
+        modelId: result.modelId,
+        route
+      });
+      const nextThread = appendThreadMessages(withUser, [assistantMessage]);
+
+      if (!webContents.isDestroyed()) {
+        webContents.send(channels.agentChatStreamToken, { streamId, token: '', done: true });
+      }
+
+      void extractAndPersistMemories('chat', `agent:${agent.id}:${assistantMessage.id}`, `${input.message}\n\n${result.text}`);
+
+      return {
+        streamId,
+        thread: nextThread,
+        newMessages: [userMessage, assistantMessage]
+      };
+    } catch (error) {
+      if (!webContents.isDestroyed()) {
+        webContents.send(channels.agentChatStreamToken, {
+          streamId,
+          token: '',
+          done: true,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      throw error;
+    }
+  });
   ipcMain.handle(channels.groupChat, async (_event, input: GroupChatInput) => {
     requirePermission('run_tasks');
     return sendGroupChat(input);

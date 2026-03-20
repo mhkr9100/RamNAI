@@ -65,6 +65,15 @@ export interface RuntimeBridgeHooks {
   afterInvoke?: () => Promise<void>;
 }
 
+/** Callback invoked for each streaming token. Return false to abort. */
+export type StreamTokenCallback = (token: string) => void | boolean;
+
+export interface StreamResult {
+  text: string;
+  provider: ProviderId;
+  modelId: string;
+}
+
 export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
@@ -743,6 +752,114 @@ export class LocalRuntimeAdapter {
     }
 
     return text;
+  }
+
+  /**
+   * Stream text from Ollama token-by-token.
+   * Each NDJSON line from the API contains `{ "response": "<token>" }` until `done: true`.
+   */
+  async generateTextStream(
+    input: { modelId: string; system: string; prompt: string },
+    onToken: StreamTokenCallback
+  ): Promise<string> {
+    const response = await fetch(`${OLLAMA_API}/generate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: input.modelId,
+        system: input.system,
+        prompt: input.prompt,
+        stream: true,
+        options: { temperature: 0.35 }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const body = response.body;
+    if (!body) {
+      throw new Error('Ollama returned no response body for streaming request.');
+    }
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          try {
+            const parsed = JSON.parse(trimmed) as { response?: string; done?: boolean };
+            if (parsed.response) {
+              chunks.push(parsed.response);
+              const shouldContinue = onToken(parsed.response);
+              if (shouldContinue === false) {
+                reader.cancel();
+                return chunks.join('');
+              }
+            }
+            if (parsed.done) {
+              return chunks.join('');
+            }
+          } catch {
+            // Skip malformed NDJSON lines
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return chunks.join('');
+  }
+
+  /**
+   * Stream a chat response for an agent, yielding tokens via callback.
+   * Returns the full accumulated text when done.
+   */
+  async streamAgentChat(
+    input: {
+      agent: AgentSpec;
+      objective: string;
+      userMap: UserMapState;
+    },
+    onToken: StreamTokenCallback
+  ): Promise<StreamResult> {
+    const models = await this.listOllamaModels();
+    const modelId = this.pickModelId(models);
+
+    const system = [
+      `You are "${input.agent.name}".`,
+      `Role: ${input.agent.persona.role}`,
+      `Mission: ${input.agent.persona.mission}`,
+      input.agent.persona.systemInstructions
+    ].filter(Boolean).join('\n');
+
+    const prompt = [
+      this.formatUserMapSummary(input.userMap),
+      input.objective
+    ].filter(Boolean).join('\n\n');
+
+    const text = await this.generateTextStream({ modelId, system, prompt }, onToken);
+
+    return {
+      text: text.trim(),
+      provider: 'ollama',
+      modelId
+    };
   }
 
   private async fetchTags(): Promise<string[]> {

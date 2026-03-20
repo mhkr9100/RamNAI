@@ -95,6 +95,13 @@ export interface LocalBundleMetadata {
   includedItems: string[];
 }
 
+export interface StreamTokenEvent {
+  streamId: string;
+  token: string;
+  done: boolean;
+  error?: string;
+}
+
 export interface SupremeDesktopApi {
   profile: {
     get: () => Promise<LocalProfile | null>;
@@ -120,6 +127,9 @@ export interface SupremeDesktopApi {
   };
   chat: {
     sendAgentMessage: (input: AgentChatInput) => Promise<ChatSendResult>;
+    sendAgentMessageStream: (input: AgentChatInput) => Promise<ChatSendResult & { streamId: string }>;
+    onStreamToken: (callback: (event: unknown, data: StreamTokenEvent) => void) => void;
+    offStreamToken: () => void;
     sendGroupMessage: (input: GroupChatInput) => Promise<ChatSendResult>;
     deleteThread: (threadId: string) => Promise<{ ok: true }>;
   };
