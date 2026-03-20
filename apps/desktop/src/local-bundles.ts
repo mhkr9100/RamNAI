@@ -13,7 +13,7 @@ import type {
   ProviderAuthSelection,
   ProviderId
 } from '@supreme/shared';
-import type { WorkspacePaths } from './workspace-sync.js';
+import type { WorkspacePaths, WorkspaceTextEncoder } from './workspace-sync.js';
 
 type ExportKind = 'backup-export' | 'support-bundle';
 
@@ -52,6 +52,7 @@ interface LocalBundleContext {
     arch: string;
     processVersions: NodeJS.ProcessVersions;
   };
+  textEncoder?: WorkspaceTextEncoder;
 }
 
 interface PackageInfo {
@@ -113,13 +114,13 @@ function sanitizeUnknown(value: unknown): unknown {
   return next;
 }
 
-async function writeTextFile(filePath: string, content: string) {
+async function writeTextFile(filePath: string, content: string, encoder?: WorkspaceTextEncoder) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content, 'utf8');
+  await writeFile(filePath, encoder?.enabled ? encoder.encodeText(content) : content, 'utf8');
 }
 
-async function writeJsonFile(filePath: string, value: unknown) {
-  await writeTextFile(filePath, `${JSON.stringify(sanitizeUnknown(value), null, 2)}\n`);
+async function writeJsonFile(filePath: string, value: unknown, encoder?: WorkspaceTextEncoder) {
+  await writeTextFile(filePath, `${JSON.stringify(sanitizeUnknown(value), null, 2)}\n`, encoder);
 }
 
 async function readJsonFileOptional(filePath: string): Promise<Record<string, unknown> | null> {
@@ -143,17 +144,23 @@ async function statOptional(filePath: string): Promise<FileStatSummary> {
   }
 }
 
-async function copySanitizedTextFile(sourcePath: string, destinationPath: string): Promise<boolean> {
+async function copySanitizedTextFile(sourcePath: string, destinationPath: string, encoder?: WorkspaceTextEncoder): Promise<boolean> {
   try {
     const content = await readFile(sourcePath, 'utf8');
-    await writeTextFile(destinationPath, sanitizeText(content));
+    await writeTextFile(destinationPath, sanitizeText(content), encoder);
     return true;
   } catch {
     return false;
   }
 }
 
-async function copySanitizedDirectory(sourceDir: string, destinationDir: string, copiedFiles: string[], rootDir: string) {
+async function copySanitizedDirectory(
+  sourceDir: string,
+  destinationDir: string,
+  copiedFiles: string[],
+  rootDir: string,
+  encoder?: WorkspaceTextEncoder
+) {
   try {
     const entries = await readdir(sourceDir, { encoding: 'utf8', withFileTypes: true });
 
@@ -162,7 +169,7 @@ async function copySanitizedDirectory(sourceDir: string, destinationDir: string,
       const destinationPath = path.join(destinationDir, entry.name);
 
       if (entry.isDirectory()) {
-        await copySanitizedDirectory(sourcePath, destinationPath, copiedFiles, rootDir);
+        await copySanitizedDirectory(sourcePath, destinationPath, copiedFiles, rootDir, encoder);
         continue;
       }
 
@@ -170,7 +177,7 @@ async function copySanitizedDirectory(sourceDir: string, destinationDir: string,
         continue;
       }
 
-      if (await copySanitizedTextFile(sourcePath, destinationPath)) {
+      if (await copySanitizedTextFile(sourcePath, destinationPath, encoder)) {
         copiedFiles.push(path.relative(rootDir, destinationPath));
       }
     }
@@ -227,33 +234,35 @@ async function writeStructuredSnapshot(
   snapshot: WorkspaceSnapshot,
   providerProfiles: ProviderAuthProfile[],
   providerSelections: ProviderAuthSelection[],
-  prismOverride: PrismProviderOverrideSettings | null
+  prismOverride: PrismProviderOverrideSettings | null,
+  encoder?: WorkspaceTextEncoder
 ) {
   const structuredDir = path.join(rootDir, 'structured');
-  await writeJsonFile(path.join(structuredDir, 'profile.json'), snapshot.profile);
-  await writeJsonFile(path.join(structuredDir, 'agents.json'), snapshot.agents);
-  await writeJsonFile(path.join(structuredDir, 'groups.json'), snapshot.groups);
-  await writeJsonFile(path.join(structuredDir, 'chat-threads.json'), snapshot.chatThreads);
-  await writeJsonFile(path.join(structuredDir, 'tasks.json'), snapshot.tasks);
-  await writeJsonFile(path.join(structuredDir, 'task-runs.json'), snapshot.taskRuns);
-  await writeJsonFile(path.join(structuredDir, 'work-items.json'), snapshot.workItems);
-  await writeJsonFile(path.join(structuredDir, 'artifacts.json'), snapshot.artifacts);
-  await writeJsonFile(path.join(structuredDir, 'user-map-state.json'), snapshot.userMap);
-  await writeJsonFile(path.join(structuredDir, 'public-user-map.json'), snapshot.publicUserMap);
-  await writeJsonFile(path.join(structuredDir, 'private-user-map.json'), snapshot.privateUserMap);
-  await writeJsonFile(path.join(structuredDir, 'memory-facts.json'), snapshot.memoryFacts);
-  await writeJsonFile(path.join(structuredDir, 'public-memory-facts.json'), snapshot.publicMemoryFacts);
-  await writeJsonFile(path.join(structuredDir, 'private-memory-facts.json'), snapshot.privateMemoryFacts);
-  await writeJsonFile(path.join(structuredDir, 'models.json'), snapshot.models);
-  await writeJsonFile(path.join(structuredDir, 'provider-profiles.json'), sanitizeProviderProfiles(providerProfiles));
-  await writeJsonFile(path.join(structuredDir, 'provider-selections.json'), makeProviderSelectionSnapshot(providerSelections));
-  await writeJsonFile(path.join(structuredDir, 'prism-provider-override.json'), prismOverride);
+  await writeJsonFile(path.join(structuredDir, 'profile.json'), snapshot.profile, encoder);
+  await writeJsonFile(path.join(structuredDir, 'agents.json'), snapshot.agents, encoder);
+  await writeJsonFile(path.join(structuredDir, 'groups.json'), snapshot.groups, encoder);
+  await writeJsonFile(path.join(structuredDir, 'chat-threads.json'), snapshot.chatThreads, encoder);
+  await writeJsonFile(path.join(structuredDir, 'tasks.json'), snapshot.tasks, encoder);
+  await writeJsonFile(path.join(structuredDir, 'task-runs.json'), snapshot.taskRuns, encoder);
+  await writeJsonFile(path.join(structuredDir, 'work-items.json'), snapshot.workItems, encoder);
+  await writeJsonFile(path.join(structuredDir, 'artifacts.json'), snapshot.artifacts, encoder);
+  await writeJsonFile(path.join(structuredDir, 'user-map-state.json'), snapshot.userMap, encoder);
+  await writeJsonFile(path.join(structuredDir, 'public-user-map.json'), snapshot.publicUserMap, encoder);
+  await writeJsonFile(path.join(structuredDir, 'private-user-map.json'), snapshot.privateUserMap, encoder);
+  await writeJsonFile(path.join(structuredDir, 'memory-facts.json'), snapshot.memoryFacts, encoder);
+  await writeJsonFile(path.join(structuredDir, 'public-memory-facts.json'), snapshot.publicMemoryFacts, encoder);
+  await writeJsonFile(path.join(structuredDir, 'private-memory-facts.json'), snapshot.privateMemoryFacts, encoder);
+  await writeJsonFile(path.join(structuredDir, 'models.json'), snapshot.models, encoder);
+  await writeJsonFile(path.join(structuredDir, 'provider-profiles.json'), sanitizeProviderProfiles(providerProfiles), encoder);
+  await writeJsonFile(path.join(structuredDir, 'provider-selections.json'), makeProviderSelectionSnapshot(providerSelections), encoder);
+  await writeJsonFile(path.join(structuredDir, 'prism-provider-override.json'), prismOverride, encoder);
 }
 
 async function writeRuntimeWorkspaceExport(
   destinationRoot: string,
   snapshot: WorkspaceSnapshot,
-  runtimeWorkspace: RuntimeWorkspaceManager
+  runtimeWorkspace: RuntimeWorkspaceManager,
+  encoder?: WorkspaceTextEncoder
 ) {
   const plan = runtimeWorkspace.buildPlan({
     profile: snapshot.profile,
@@ -267,12 +276,12 @@ async function writeRuntimeWorkspaceExport(
   const runtimeRoot = path.join(destinationRoot, plan.rootDir);
 
   for (const file of plan.files) {
-    await writeTextFile(path.join(runtimeRoot, file.path), sanitizeText(file.content));
+    await writeTextFile(path.join(runtimeRoot, file.path), sanitizeText(file.content), encoder);
   }
 
   const manifestContent = `${JSON.stringify(sanitizeUnknown(plan.manifest), null, 2)}\n`;
-  await writeTextFile(path.join(runtimeRoot, 'runtime.workspace.json'), manifestContent);
-  await writeTextFile(path.join(runtimeRoot, EXTERNAL_WORKSPACE_MANIFEST_FILENAME), manifestContent);
+  await writeTextFile(path.join(runtimeRoot, 'runtime.workspace.json'), manifestContent, encoder);
+  await writeTextFile(path.join(runtimeRoot, EXTERNAL_WORKSPACE_MANIFEST_FILENAME), manifestContent, encoder);
 
   return {
     relativeRoot: path.relative(destinationRoot, runtimeRoot),
@@ -280,7 +289,12 @@ async function writeRuntimeWorkspaceExport(
   };
 }
 
-async function writeArtifactInventory(rootDir: string, snapshot: WorkspaceSnapshot, workspacePaths: WorkspacePaths) {
+async function writeArtifactInventory(
+  rootDir: string,
+  snapshot: WorkspaceSnapshot,
+  workspacePaths: WorkspacePaths,
+  encoder?: WorkspaceTextEncoder
+) {
   const items = await Promise.all(snapshot.artifacts.map(async (artifact) => {
     const absolutePath = path.join(workspacePaths.root, artifact.relativePath);
     const file = await statOptional(absolutePath);
@@ -301,10 +315,10 @@ async function writeArtifactInventory(rootDir: string, snapshot: WorkspaceSnapsh
   await writeJsonFile(path.join(rootDir, 'artifacts', 'manifest.json'), {
     copiedFiles: [],
     items
-  });
+  }, encoder);
 }
 
-async function writePackageDiagnostics(rootDir: string, repoRoot: string, appInfo: LocalBundleContext['appInfo']) {
+async function writePackageDiagnostics(rootDir: string, repoRoot: string, appInfo: LocalBundleContext['appInfo'], encoder?: WorkspaceTextEncoder) {
   const packageInfo = await readPackageInfo(repoRoot);
   await writeJsonFile(path.join(rootDir, 'diagnostics', 'package-info.json'), {
     app: {
@@ -333,7 +347,7 @@ async function writePackageDiagnostics(rootDir: string, repoRoot: string, appInf
           build: packageInfo.desktopPackage.build
         }
       : null
-  });
+  }, encoder);
 }
 
 async function writeSupportDiagnostics(rootDir: string, context: LocalBundleContext, runtimeWorkspaceRoot: string) {
@@ -368,30 +382,35 @@ async function writeSupportDiagnostics(rootDir: string, context: LocalBundleCont
       artifactPayloadsIncluded: false,
       stringRedaction: 'pattern-based'
     }
-  });
-  await writeJsonFile(path.join(rootDir, 'diagnostics', 'provider-profiles.json'), providerProfiles);
+  }, context.textEncoder);
+  await writeJsonFile(path.join(rootDir, 'diagnostics', 'provider-profiles.json'), providerProfiles, context.textEncoder);
   await writeJsonFile(path.join(rootDir, 'diagnostics', 'provider-state.json'), {
     selections,
     prismOverride: context.prismOverride
-  });
+  }, context.textEncoder);
   await writeJsonFile(path.join(rootDir, 'diagnostics', 'runtime-status.json'), {
     runtime: context.runtimeStatus,
     ollama: context.ollamaStatus
-  });
+  }, context.textEncoder);
   if (context.auditLogJson) {
-    await writeFile(path.join(rootDir, 'diagnostics', 'audit-log.json'), context.auditLogJson, 'utf8');
+    await writeTextFile(path.join(rootDir, 'diagnostics', 'audit-log.json'), context.auditLogJson, context.textEncoder);
   }
 }
 
-async function writeSupportLogs(rootDir: string, workspacePaths: WorkspacePaths, mainProcessLogPath: string) {
+async function writeSupportLogs(
+  rootDir: string,
+  workspacePaths: WorkspacePaths,
+  mainProcessLogPath: string,
+  encoder?: WorkspaceTextEncoder
+) {
   const copiedFiles: string[] = [];
   const userDataLogPath = path.join(rootDir, 'logs', 'user-data', 'main-process.log');
 
-  if (await copySanitizedTextFile(mainProcessLogPath, userDataLogPath)) {
+  if (await copySanitizedTextFile(mainProcessLogPath, userDataLogPath, encoder)) {
     copiedFiles.push(path.relative(rootDir, userDataLogPath));
   }
 
-  await copySanitizedDirectory(workspacePaths.logs, path.join(rootDir, 'logs', 'workspace'), copiedFiles, rootDir);
+  await copySanitizedDirectory(workspacePaths.logs, path.join(rootDir, 'logs', 'workspace'), copiedFiles, rootDir, encoder);
   return copiedFiles;
 }
 
@@ -403,7 +422,8 @@ async function writeManifest(
     includedItems: string[];
     counts: ReturnType<typeof makeCounts>;
     runtimeWorkspaceRoot: string;
-  }
+  },
+  encoder?: WorkspaceTextEncoder
 ) {
   await writeJsonFile(path.join(rootDir, 'manifest.json'), {
     kind: input.kind,
@@ -418,7 +438,7 @@ async function writeManifest(
       'Compatibility secret mirrors',
       'Artifact file payloads'
     ]
-  });
+  }, encoder);
 }
 
 async function buildBundle(kind: ExportKind, context: LocalBundleContext): Promise<LocalBundleMetadata> {
@@ -436,23 +456,25 @@ async function buildBundle(kind: ExportKind, context: LocalBundleContext): Promi
     context.snapshot,
     context.providerProfiles,
     context.providerSelections,
-    context.prismOverride
+    context.prismOverride,
+    context.textEncoder
   );
 
   const runtimeWorkspace = await writeRuntimeWorkspaceExport(
     path.join(bundleRoot, 'runtime-workspace'),
     context.snapshot,
-    context.runtimeWorkspace
+    context.runtimeWorkspace,
+    context.textEncoder
   );
   const runtimeWorkspaceRoot = path.join('runtime-workspace', runtimeWorkspace.relativeRoot);
-  await writeArtifactInventory(bundleRoot, context.snapshot, context.workspacePaths);
+  await writeArtifactInventory(bundleRoot, context.snapshot, context.workspacePaths, context.textEncoder);
 
   const includedItems = ['manifest.json', 'structured', 'runtime-workspace', 'artifacts'];
 
   if (kind === 'support-bundle') {
     await writeSupportDiagnostics(bundleRoot, context, runtimeWorkspaceRoot);
-    await writePackageDiagnostics(bundleRoot, context.repoRoot, context.appInfo);
-    await writeSupportLogs(bundleRoot, context.workspacePaths, context.mainProcessLogPath);
+    await writePackageDiagnostics(bundleRoot, context.repoRoot, context.appInfo, context.textEncoder);
+    await writeSupportLogs(bundleRoot, context.workspacePaths, context.mainProcessLogPath, context.textEncoder);
     includedItems.splice(1, 0, 'diagnostics', 'logs');
   }
 
@@ -462,7 +484,7 @@ async function buildBundle(kind: ExportKind, context: LocalBundleContext): Promi
     includedItems,
     counts: makeCounts(context.snapshot, context.providerProfiles),
     runtimeWorkspaceRoot
-  });
+  }, context.textEncoder);
 
   return {
     outputPath: bundleRoot,

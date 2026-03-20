@@ -754,6 +754,7 @@ async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
   const activeStorage = requireWorkspaceReady();
   const workspacePaths = getWorkspacePaths();
   const snapshot = activeStorage.getWorkspaceSnapshot();
+  const textEncoder = getWorkspaceFileEncoder();
   const [providerProfiles, runtimeStatus, ollamaStatus, health] = await Promise.all([
     providerAuthStore.listProfiles(),
     runtime.getStatus(),
@@ -784,7 +785,8 @@ async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
       platform: process.platform,
       arch: process.arch,
       processVersions: process.versions
-    }
+    },
+    ...(textEncoder ? { textEncoder } : {})
   };
 }
 

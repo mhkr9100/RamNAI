@@ -12,5 +12,15 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'framer-motion', 'lucide-react', 'zustand'],
+          markdown: ['react-markdown', 'remark-gfm', 'rehype-highlight', 'highlight.js']
+        }
+      }
+    }
   }
 });
