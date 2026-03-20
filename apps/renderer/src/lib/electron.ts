@@ -107,6 +107,12 @@ export interface StreamTokenEvent {
   routeMode?: string;
 }
 
+export interface WorkspaceSecurityState {
+  enabled: boolean;
+  locked: boolean;
+  ready: boolean;
+}
+
 export interface SupremeDesktopApi {
   profile: {
     get: () => Promise<LocalProfile | null>;
@@ -183,6 +189,12 @@ export interface SupremeDesktopApi {
       storage: { ok: boolean };
       scheduler: { ok: boolean };
     }>;
+  };
+  security: {
+    getState: () => Promise<WorkspaceSecurityState>;
+    unlock: (password: string) => Promise<WorkspaceSecurityState>;
+    enable: (password: string) => Promise<WorkspaceSecurityState>;
+    disable: (password: string) => Promise<WorkspaceSecurityState>;
   };
   support: {
     createBundle: () => Promise<LocalBundleMetadata>;

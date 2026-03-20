@@ -1,5 +1,5 @@
 import { Notification, app, autoUpdater, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -15,15 +15,18 @@ import {
 } from './task-scheduling.js';
 import {
   WorkspacePaths,
+  WorkspaceTextEncoder,
   buildWorkspacePaths,
   syncStructuredExports as syncStructuredExportsToDisk,
-  writeJsonFile
+  writeJsonFile,
+  writeTextFile
 } from './workspace-sync.js';
 import { createBackupExport, createSupportBundle } from './local-bundles.js';
 import { recoverInterruptedWork as recoverInterruptedWorkModule } from './scheduler-recovery.js';
 import { startTaskRunHeartbeat } from './task-run-heartbeat.js';
 import { setupTray, destroyTray } from './tray.js';
 import { logger } from './logger.js';
+import { WorkspaceEncryptionManager } from './workspace-security.js';
 import type {
   AgentMode,
   AgentSpec,
@@ -60,10 +63,14 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const runtime = new LocalRuntimeAdapter();
 const runtimeWorkspace = new RuntimeWorkspaceManager();
 const providerAuthStore = new ProviderAuthStore(createSecretStoreCipher());
+const agentManager = new BridgeAgentManager();
 let mainWindow: BrowserWindow | null = null;
 let storage: SqliteStorage;
+let workspaceSecurity: WorkspaceEncryptionManager;
 let schedulerHandle: NodeJS.Timeout | null = null;
 let processingDueTasks = false;
+let workspaceReady = false;
+let heartbeatService: HeartbeatService | null = null;
 const TASK_RUN_LEASE_MS = 5 * 60 * 1000;
 const TASK_RUN_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const TASK_RUN_HARD_TIMEOUT_MS = TASK_RUN_LEASE_MS * 4;
@@ -126,6 +133,26 @@ interface OllamaModelRuntimeState {
   phase?: string;
   lastError?: string;
 }
+
+interface WorkspaceSecurityIpcState {
+  enabled: boolean;
+  locked: boolean;
+  ready: boolean;
+}
+
+const PLAIN_STORAGE_CIPHER = {
+  id: 'plain',
+  enabled: false,
+  encrypt(value: string) {
+    return value;
+  },
+  decrypt(value: string) {
+    return value;
+  },
+  isEncrypted(_value: string) {
+    return false;
+  }
+};
 
 function createElectronSafeStorageCipher(): SecretStoreCipher {
   const api = safeStorage as unknown as {
@@ -274,9 +301,16 @@ async function withRuntimeBridgeCompatibility<T>(action: () => Promise<T>): Prom
 }
 
 function syncRuntimeConfig() {
-  runtime.setPrismProviderOverride(storage.getPrismProviderOverride());
-  const stored = storage.getAgentMode();
-  runtime.setAgentMode(stored === 'auto' ? resolvedAgentModeForAuto : stored);
+  const activeStorage = requireWorkspaceReady();
+  runtime.setPrismProviderOverride(activeStorage.getPrismProviderOverride());
+  const stored = activeStorage.getAgentMode();
+  runtime.setAgentMode(
+    workspaceSecurity.isEncryptionEnabled()
+      ? 'ollama'
+      : stored === 'auto'
+        ? resolvedAgentModeForAuto
+        : stored
+  );
 }
 
 function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: 'public' | 'private'): UserMapNode {
@@ -466,10 +500,59 @@ function getDatabasePath() {
   return path.join(getWorkspacePaths().root, 'supreme-raman-ai.sqlite');
 }
 
+function getWorkspaceFileEncoder(): WorkspaceTextEncoder | undefined {
+  if (!workspaceSecurity?.isEncryptionEnabled() || !workspaceSecurity.isUnlocked()) {
+    return undefined;
+  }
+
+  return {
+    enabled: true,
+    encodeText(value: string) {
+      return workspaceSecurity.encryptText(value);
+    }
+  };
+}
+
+function requireWorkspaceReady(): SqliteStorage {
+  if (!workspaceReady) {
+    throw new Error('Workspace is locked. Unlock it to continue.');
+  }
+
+  return storage;
+}
+
+function getWorkspaceSecurityState(): WorkspaceSecurityIpcState {
+  const state = workspaceSecurity.getState();
+  return {
+    enabled: state.enabled,
+    locked: state.locked,
+    ready: state.ready
+  };
+}
+
+function clearRuntimeWorkspaceMirror() {
+  if (!workspaceReady) {
+    return;
+  }
+
+  const snapshot = storage.getWorkspaceSnapshot();
+  const plan = runtimeWorkspace.buildPlan({
+    profile: snapshot.profile,
+    userMap: snapshot.userMap,
+    agents: snapshot.agents,
+    groups: snapshot.groups,
+    memoryFacts: snapshot.memoryFacts,
+    publicMemoryFacts: snapshot.publicMemoryFacts,
+    privateMemoryFacts: snapshot.privateMemoryFacts
+  });
+
+  rmSync(path.join(getWorkspacePaths().root, plan.rootDir), { recursive: true, force: true });
+}
+
 async function refreshStoredModels() {
   const models = await runtime.listModels();
   for (const model of models) {
-    storage.updateModel(model);
+    requireWorkspaceReady().updateModel(model);
   }
   return models;
 }
@@ -488,10 +571,11 @@ async function getHealthStatus(agentManager: BridgeAgentManager): Promise<{
   let storageOk = false;
   let metrics: ReturnType<SqliteStorage['getTaskRunMetrics']> | undefined;
   try {
-    storage.getProfile();
-    storage.listTasks();
+    const activeStorage = requireWorkspaceReady();
+    activeStorage.getProfile();
+    activeStorage.listTasks();
     storageOk = true;
-    metrics = storage.getTaskRunMetrics(30);
+    metrics = activeStorage.getTaskRunMetrics(30);
   } catch {
     storageOk = false;
   }
@@ -623,10 +707,11 @@ async function ensureDefaultOllamaModelsInstalled() {
 const DEFAULT_LITE_LIMIT = 100;
 
 async function buildSnapshot(options?: { lite?: boolean }) {
+  const activeStorage = requireWorkspaceReady();
   const limits = options?.lite
     ? { tasksLimit: DEFAULT_LITE_LIMIT, workItemsLimit: DEFAULT_LITE_LIMIT, chatThreadsLimit: DEFAULT_LITE_LIMIT }
     : undefined;
-  const snapshot = storage.getWorkspaceSnapshot(limits);
+  const snapshot = activeStorage.getWorkspaceSnapshot(limits);
   const [runtimeStatus, models] = await Promise.all([runtime.getStatus(), refreshStoredModels()]);
 
   return {
@@ -651,12 +736,24 @@ async function buildSnapshot(options?: { lite?: boolean }) {
 }
 
 function syncStructuredExports() {
-  syncStructuredExportsToDisk(getWorkspacePaths(), storage.getWorkspaceSnapshot(), runtimeWorkspace);
+  if (!workspaceReady) {
+    return;
+  }
+
+  if (workspaceSecurity.isEncryptionEnabled()) {
+    clearRuntimeWorkspaceMirror();
+  }
+
+  syncStructuredExportsToDisk(getWorkspacePaths(), storage.getWorkspaceSnapshot(), runtimeWorkspace, {
+    encoder: getWorkspaceFileEncoder(),
+    disableRuntimeWorkspaceMirror: workspaceSecurity.isEncryptionEnabled()
+  });
 }
 
 async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
+  const activeStorage = requireWorkspaceReady();
   const workspacePaths = getWorkspacePaths();
-  const snapshot = storage.getWorkspaceSnapshot();
+  const snapshot = activeStorage.getWorkspaceSnapshot();
   const [providerProfiles, runtimeStatus, ollamaStatus, health] = await Promise.all([
     providerAuthStore.listProfiles(),
     runtime.getStatus(),
@@ -668,13 +765,13 @@ async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
     workspacePaths,
     snapshot,
     providerProfiles,
-    providerSelections: EXPORT_PROVIDER_IDS.map((provider) => storage.getProviderAuthSelection(provider) ?? { provider, profileId: null }),
-    prismOverride: storage.getPrismProviderOverride(),
+    providerSelections: EXPORT_PROVIDER_IDS.map((provider) => activeStorage.getProviderAuthSelection(provider) ?? { provider, profileId: null }),
+    prismOverride: activeStorage.getPrismProviderOverride(),
     runtimeStatus,
     ollamaStatus,
     health,
-    auditLogJson: storage.exportAuditLog('json', 5000),
-    schemaVersion: storage.getSchemaVersion(),
+    auditLogJson: activeStorage.exportAuditLog('json', 5000),
+    schemaVersion: activeStorage.getSchemaVersion(),
     databasePath: getDatabasePath(),
     userDataPath: app.getPath('userData'),
     mainProcessLogPath: getMainProcessLogPath(),
@@ -1130,6 +1227,7 @@ function makeTaskBase(task: TaskSpec) {
 
 function createArtifactRecords(task: TaskSpec, workItemId: string, result: { text: string; councilTrace?: Array<{ modelId: string; stage: string; output: string }> }, mode: ArtifactMode) {
   const paths = getWorkspacePaths();
+  const encoder = getWorkspaceFileEncoder();
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const runDir = path.join(paths.artifacts, task.id, stamp);
   mkdirSync(runDir, { recursive: true });
@@ -1138,7 +1236,7 @@ function createArtifactRecords(task: TaskSpec, workItemId: string, result: { tex
 
   if (mode === 'markdown' || mode === 'both') {
     const relativePath = path.relative(paths.root, path.join(runDir, 'result.md'));
-    writeFileSync(path.join(runDir, 'result.md'), `${result.text}\n`, 'utf8');
+    writeTextFile(path.join(runDir, 'result.md'), `${result.text}\n`, encoder);
     artifacts.push({
       id: randomUUID(),
       title: `${task.title} Result`,
@@ -1157,7 +1255,7 @@ function createArtifactRecords(task: TaskSpec, workItemId: string, result: { tex
       title: task.title,
       output: result.text,
       councilTrace: result.councilTrace ?? []
-    });
+    }, encoder);
     artifacts.push({
       id: randomUUID(),
       title: `${task.title} Structured Output`,
@@ -1422,14 +1520,25 @@ function deleteWorkItemArtifacts(workItemId: string) {
 }
 
 async function openArtifact(artifactId: string) {
-  const artifact = storage.getArtifact(artifactId);
+  const artifact = requireWorkspaceReady().getArtifact(artifactId);
   if (!artifact) {
     throw new Error('Artifact not found.');
   }
 
   const paths = getWorkspacePaths();
   const targetPath = path.join(paths.root, artifact.relativePath);
-  const result = await shell.openPath(targetPath);
+  let openPathTarget = targetPath;
+  if (workspaceSecurity.isEncryptionEnabled()) {
+    const fileContent = readFileSync(targetPath, 'utf8');
+    if (workspaceSecurity.isEncryptedText(fileContent)) {
+      const decryptedDir = path.join(app.getPath('temp'), 'supreme-raman-ai-decrypted');
+      mkdirSync(decryptedDir, { recursive: true });
+      openPathTarget = path.join(decryptedDir, `${artifact.id}-${path.basename(targetPath)}`);
+      writeFileSync(openPathTarget, workspaceSecurity.decryptText(fileContent), 'utf8');
+    }
+  }
+
+  const result = await shell.openPath(openPathTarget);
   if (result) {
     throw new Error(result);
   }
@@ -1528,25 +1637,59 @@ function recoverInterruptedWork() {
 }
 
 function requirePermission(permission: Permission): void {
-  if (!storage.hasPermission(permission)) {
+  if (!requireWorkspaceReady().hasPermission(permission)) {
     throw new Error(`Permission denied: ${permission}`);
   }
 }
 
-app.whenReady().then(async () => {
-  logger.info('App starting', { version: app.getVersion(), platform: process.platform });
-  const workspacePaths = getWorkspacePaths();
-  runtime.setWorkspaceRoot(workspacePaths.root);
+function rewriteWorkspaceArtifactFiles(encrypt: boolean) {
+  if (!workspaceReady) {
+    return;
+  }
 
-  storage = new SqliteStorage(path.join(workspacePaths.root, 'supreme-raman-ai.sqlite'));
+  const paths = getWorkspacePaths();
+  for (const artifact of storage.listArtifacts()) {
+    const absolutePath = path.join(paths.root, artifact.relativePath);
+    try {
+      const raw = readFileSync(absolutePath, 'utf8');
+      const plaintext = workspaceSecurity.isEncryptedText(raw) ? workspaceSecurity.decryptText(raw) : raw;
+      const next = encrypt ? workspaceSecurity.encryptText(plaintext) : plaintext;
+      writeFileSync(absolutePath, next, 'utf8');
+    } catch {
+      // Best-effort rewrite; missing artifacts should not block workspace unlock/toggle.
+    }
+  }
+}
+
+async function initializeWorkspaceStorage() {
+  storage = new SqliteStorage(getDatabasePath(), {
+    textCipher: workspaceSecurity.getStorageCipher()
+  });
+  workspaceReady = true;
+  runtime.setRemoteProviderAuthResolver(async (provider) => {
+    const selection = storage.getProviderAuthSelection(provider);
+    const resolved = await providerAuthStore.resolveProfile(provider, selection?.profileId ?? null);
+    if (!resolved) {
+      return null;
+    }
+
+    return {
+      apiKey: resolved.apiKey,
+      token: resolved.token,
+      profileId: resolved.profile.id,
+      label: resolved.profile.label
+    };
+  });
+
   storage.init();
   recoverInterruptedWork();
   await refreshStoredModels();
   syncStructuredExports();
 
-  // A5: Resolve 'auto' agent mode at init (in-memory only; does not overwrite user choice)
   const storedMode = storage.getAgentMode();
-  if (storedMode === 'auto') {
+  if (workspaceSecurity.isEncryptionEnabled()) {
+    resolvedAgentModeForAuto = 'ollama';
+  } else if (storedMode === 'auto') {
     try {
       const status = await runtime.getStatus();
       resolvedAgentModeForAuto = status.runtimeBridgeReady ? 'bridge' : 'ollama';
@@ -1554,6 +1697,98 @@ app.whenReady().then(async () => {
       resolvedAgentModeForAuto = 'ollama';
     }
   }
+}
+
+function startBackgroundServices() {
+  if (heartbeatService) {
+    return;
+  }
+
+  heartbeatService = new HeartbeatService();
+  heartbeatService.registerChecklistItem({
+    id: 'due-tasks',
+    description: 'Process scheduled tasks that are overdue',
+    handler: async () => {
+      if (!workspaceReady) {
+        return { acted: false };
+      }
+      const before = storage.listWorkItems().length;
+      await processDueTasks();
+      const after = storage.listWorkItems().length;
+      const acted = after > before;
+      return { acted, message: acted ? `Processed ${after - before} task(s)` : undefined };
+    },
+  });
+  heartbeatService.registerChecklistItem({
+    id: 'bridge-health',
+    description: 'Verify runtime bridge gateway is reachable',
+    handler: async () => {
+      const status = await agentManager.getStatus();
+      return { acted: false, message: status ? `Gateway OK — ${status.agents} agent(s)` : 'Gateway unreachable' };
+    },
+  });
+  heartbeatService.start();
+
+  schedulerHandle = setInterval(() => {
+    if (!workspaceReady) {
+      return;
+    }
+    void processDueTasks();
+  }, 2000);
+}
+
+app.whenReady().then(async () => {
+  logger.info('App starting', { version: app.getVersion(), platform: process.platform });
+  const workspacePaths = getWorkspacePaths();
+  runtime.setWorkspaceRoot(workspacePaths.root);
+  workspaceSecurity = new WorkspaceEncryptionManager(app.getPath('userData'));
+  await workspaceSecurity.load();
+  if (!workspaceSecurity.getState().locked) {
+    await initializeWorkspaceStorage();
+  }
+
+  ipcMain.handle(channels.securityGetState, async () => getWorkspaceSecurityState());
+  ipcMain.handle(channels.securityUnlock, async (_event, password: string) => {
+    if (!workspaceSecurity.isEncryptionEnabled()) {
+      return getWorkspaceSecurityState();
+    }
+
+    await workspaceSecurity.unlock(password);
+    if (!workspaceReady) {
+      await initializeWorkspaceStorage();
+    }
+    syncRuntimeConfig();
+    return getWorkspaceSecurityState();
+  });
+  ipcMain.handle(channels.securityEnable, async (_event, password: string) => {
+    requirePermission('manage_settings');
+    if (!password.trim()) {
+      throw new Error('Workspace password is required.');
+    }
+
+    await workspaceSecurity.enable(password);
+    try {
+      storage.rotateTextCipher(workspaceSecurity.getStorageCipher());
+      rewriteWorkspaceArtifactFiles(true);
+      syncStructuredExports();
+      return getWorkspaceSecurityState();
+    } catch (error) {
+      await workspaceSecurity.disable(password).catch(() => undefined);
+      throw error;
+    }
+  });
+  ipcMain.handle(channels.securityDisable, async (_event, password: string) => {
+    requirePermission('manage_settings');
+    if (!workspaceSecurity.isEncryptionEnabled()) {
+      return getWorkspaceSecurityState();
+    }
+
+    storage.rotateTextCipher(PLAIN_STORAGE_CIPHER);
+    rewriteWorkspaceArtifactFiles(false);
+    await workspaceSecurity.disable(password);
+    syncStructuredExports();
+    return getWorkspaceSecurityState();
+  });
 
   ipcMain.handle(channels.profileGet, async () => storage.getProfile());
   ipcMain.handle(channels.profileSave, async (_event, profile: LocalProfile) => {
@@ -2059,7 +2294,6 @@ app.whenReady().then(async () => {
     return storage.exportAuditLog(format, 5000);
   });
 
-  const agentManager = new BridgeAgentManager();
   ipcMain.handle(channels.healthGet, async () => getHealthStatus(agentManager));
   ipcMain.handle(channels.bridgeAgentsList, async () => agentManager.listAgents());
   ipcMain.handle(channels.bridgeAgentSend, async (_event, agentId: string, message: string) => agentManager.sendMessage(agentId, message));
@@ -2102,31 +2336,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(channels.voiceStop, async () => ({ ok: true }));
 
-  const heartbeat = new HeartbeatService();
-  heartbeat.registerChecklistItem({
-    id: 'due-tasks',
-    description: 'Process scheduled tasks that are overdue',
-    handler: async () => {
-      const before = storage.listWorkItems().length;
-      await processDueTasks();
-      const after = storage.listWorkItems().length;
-      const acted = after > before;
-      return { acted, message: acted ? `Processed ${after - before} task(s)` : undefined };
-    },
-  });
-  heartbeat.registerChecklistItem({
-    id: 'bridge-health',
-    description: 'Verify runtime bridge gateway is reachable',
-    handler: async () => {
-      const status = await agentManager.getStatus();
-      return { acted: false, message: status ? `Gateway OK — ${status.agents} agent(s)` : 'Gateway unreachable' };
-    },
-  });
-  heartbeat.start();
-
-  schedulerHandle = setInterval(() => {
-    void processDueTasks();
-  }, 2000);
+  startBackgroundServices();
 
   await createWindow();
   setupAutoUpdater();
@@ -2144,6 +2354,7 @@ app.on('before-quit', () => {
   if (schedulerHandle) {
     clearInterval(schedulerHandle);
   }
+  heartbeatService?.stop();
   destroyTray();
 });
 

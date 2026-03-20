@@ -69,8 +69,46 @@ export interface GetWorkspaceSnapshotOptions {
   chatThreadsLimit?: number;
 }
 
+export interface StorageTextCipher {
+  id: string;
+  enabled: boolean;
+  encrypt(value: string): string;
+  decrypt(value: string): string;
+  isEncrypted(value: string): boolean;
+}
+
 type VisibilityScope = 'public' | 'private';
 const STORAGE_SCHEMA_VERSION = 3;
+const PASSTHROUGH_TEXT_CIPHER: StorageTextCipher = {
+  id: 'plain',
+  enabled: false,
+  encrypt(value: string) {
+    return value;
+  },
+  decrypt(value: string) {
+    return value;
+  },
+  isEncrypted() {
+    return false;
+  }
+};
+const TEXT_CIPHER_TABLES: Array<{ table: string; columns: string[] }> = [
+  { table: 'profile', columns: ['payload'] },
+  { table: 'agents', columns: ['payload'] },
+  { table: 'groups_table', columns: ['payload'] },
+  { table: 'chat_threads', columns: ['payload'] },
+  { table: 'tasks', columns: ['payload'] },
+  { table: 'work_items', columns: ['payload'] },
+  { table: 'task_runs', columns: ['target', 'summary', 'last_error', 'artifact_ids', 'council_trace', 'payload'] },
+  { table: 'artifacts', columns: ['payload'] },
+  { table: 'usermap', columns: ['payload'] },
+  { table: 'memory_facts', columns: ['payload'] },
+  { table: 'models', columns: ['payload'] },
+  { table: 'provider_auth_state', columns: ['payload'] },
+  { table: 'prism_settings', columns: ['payload'] },
+  { table: 'voice_config', columns: ['payload'] },
+  { table: 'audit_log', columns: ['payload'] }
+];
 
 interface TaskRunRow {
   id: string;
@@ -157,93 +195,194 @@ function memoryVisibility(fact: MemoryFact): VisibilityScope {
   return fact.visibility ?? 'public';
 }
 
-function taskRunPayload(run: TaskRunRecord): string {
-  return JSON.stringify(run);
-}
-
-function taskRunColumns(run: TaskRunRecord) {
-  return {
-    id: run.id,
-    task_id: run.taskId,
-    status: run.status,
-    claimed_at: run.claimedAt ?? null,
-    lease_expires_at: run.leaseExpiresAt ?? null,
-    created_at: run.createdAt ?? null,
-    updated_at: run.updatedAt,
-    started_at: run.startedAt ?? null,
-    completed_at: run.completedAt ?? null,
-    worker_id: run.workerId ?? null,
-    attempt: run.attempt ?? null,
-    run_index: run.runIndex ?? null,
-    target: run.target ? JSON.stringify(run.target) : null,
-    provider: run.provider ?? null,
-    model_id: run.modelId ?? null,
-    summary: run.summary ?? null,
-    last_error: run.lastError ?? null,
-    claim_token: run.claimToken ?? null,
-    artifact_ids: run.artifactIds ? JSON.stringify(run.artifactIds) : null,
-    council_trace: run.councilTrace ? JSON.stringify(run.councilTrace) : null,
-    payload: taskRunPayload(run)
-  };
-}
-
-function taskRunFromRow(row: TaskRunRow): TaskRunRecord {
-  const payload = row.payload ? parseJson<TaskRunRecord | null>(row.payload, null) : null;
-  if (payload) {
-    // Some runtime paths (lease renewal / cancellation) update SQL columns without rewriting the JSON payload.
-    // Prefer column values for the fields we mutate via SQL updates.
-    return {
-      ...payload,
-      ...(row.status ? { status: row.status as TaskRunRecord['status'] } : {}),
-      ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
-      ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
-      ...(row.completed_at ? { completedAt: row.completed_at } : {}),
-      ...(row.last_error ? { lastError: row.last_error } : {})
-    };
-  }
-
-  const target = row.target ? parseJson<TaskRunRecord['target'] | null>(row.target, null) : null;
-  const artifactIds = row.artifact_ids ? parseJson<string[]>(row.artifact_ids, []) : undefined;
-  const councilTrace = row.council_trace
-    ? parseJson<NonNullable<TaskRunRecord['councilTrace']> | null>(row.council_trace, null)
-    : null;
-  const provider = row.provider ? (row.provider as NonNullable<TaskRunRecord['provider']>) : null;
-
-  return {
-    id: row.id,
-    taskId: row.task_id,
-    status: (row.status as TaskRunRecord['status']) ?? 'running',
-    updatedAt: row.updated_at,
-    ...(row.created_at ? { createdAt: row.created_at } : {}),
-    ...(row.claimed_at ? { claimedAt: row.claimed_at } : {}),
-    ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
-    ...(row.started_at ? { startedAt: row.started_at } : {}),
-    ...(row.completed_at ? { completedAt: row.completed_at } : {}),
-    ...(row.worker_id ? { workerId: row.worker_id } : {}),
-    ...(row.attempt !== null && row.attempt !== undefined ? { attempt: row.attempt } : {}),
-    ...(row.run_index !== null && row.run_index !== undefined ? { runIndex: row.run_index } : {}),
-    ...(target ? { target } : {}),
-    ...(provider ? { provider } : {}),
-    ...(row.model_id ? { modelId: row.model_id } : {}),
-    ...(row.summary ? { summary: row.summary } : {}),
-    ...(row.last_error ? { lastError: row.last_error } : {}),
-    ...(row.claim_token ? { claimToken: row.claim_token } : {}),
-    ...(artifactIds ? { artifactIds } : {}),
-    ...(councilTrace ? { councilTrace } : {})
-  };
+function sortWorkItems(items: WorkItem[]) {
+  return items.sort((left, right) => {
+    const leftUpdated = Date.parse(left.updatedAt || left.createdAt || '');
+    const rightUpdated = Date.parse(right.updatedAt || right.createdAt || '');
+    if (!Number.isNaN(leftUpdated) && !Number.isNaN(rightUpdated) && leftUpdated !== rightUpdated) {
+      return rightUpdated - leftUpdated;
+    }
+    return right.id.localeCompare(left.id);
+  });
 }
 
 export class SqliteStorage {
   private readonly db: DatabaseSync;
+  private textCipher: StorageTextCipher;
 
-  constructor(private readonly dbPath: string) {
+  constructor(private readonly dbPath: string, options?: { textCipher?: StorageTextCipher }) {
     this.db = new DatabaseSync(dbPath);
+    this.textCipher = options?.textCipher ?? PASSTHROUGH_TEXT_CIPHER;
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
   }
 
   close() {
     this.db.close();
+  }
+
+  getTextCipherId(): string {
+    return this.textCipher.id;
+  }
+
+  rotateTextCipher(nextCipher: StorageTextCipher): void {
+    const currentCipher = this.textCipher;
+    if (currentCipher.id === nextCipher.id && currentCipher.enabled === nextCipher.enabled) {
+      this.textCipher = nextCipher;
+      return;
+    }
+
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      for (const target of TEXT_CIPHER_TABLES) {
+        const select = this.db.prepare(
+          `SELECT rowid AS __rowid__, ${target.columns.join(', ')} FROM ${target.table}`
+        );
+        const rows = select.all() as Array<Record<string, string | number | null>>;
+        if (rows.length === 0) continue;
+
+        const assignments = target.columns.map((column) => `${column} = ?`).join(', ');
+        const update = this.db.prepare(`UPDATE ${target.table} SET ${assignments} WHERE rowid = ?`);
+
+        for (const row of rows) {
+          const transformed = target.columns.map((column) => {
+            const raw = row[column];
+            if (typeof raw !== 'string') {
+              return raw ?? null;
+            }
+
+            const plain = currentCipher.isEncrypted(raw) ? currentCipher.decrypt(raw) : raw;
+            return nextCipher.enabled ? nextCipher.encrypt(plain) : plain;
+          });
+          update.run(...transformed.map((v) => v ?? null), row.__rowid__ ?? null);
+        }
+      }
+
+      this.db.exec('COMMIT;');
+      this.textCipher = nextCipher;
+    } catch (error) {
+      this.db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  private encodeText(value: string): string {
+    if (!this.textCipher.enabled) {
+      return value;
+    }
+
+    if (this.textCipher.isEncrypted(value)) {
+      return value;
+    }
+
+    return this.textCipher.encrypt(value);
+  }
+
+  private encodeOptionalText(value: string | null | undefined): string | null {
+    if (value == null) {
+      return null;
+    }
+
+    return this.encodeText(value);
+  }
+
+  private decodeText(value: string | null | undefined): string {
+    if (!value) {
+      return '';
+    }
+
+    return this.textCipher.isEncrypted(value) ? this.textCipher.decrypt(value) : value;
+  }
+
+  private decodeOptionalText(value: string | null | undefined): string | null {
+    if (value == null) {
+      return null;
+    }
+
+    return this.decodeText(value);
+  }
+
+  private encodeJson(value: unknown): string {
+    return this.encodeText(JSON.stringify(value));
+  }
+
+  private decodeJson<T>(value: string | null | undefined, fallback: T): T {
+    return parseJson<T>(this.decodeText(value), fallback);
+  }
+
+  private taskRunColumns(run: TaskRunRecord) {
+    return {
+      id: run.id,
+      task_id: run.taskId,
+      status: run.status,
+      claimed_at: run.claimedAt ?? null,
+      lease_expires_at: run.leaseExpiresAt ?? null,
+      created_at: run.createdAt ?? null,
+      updated_at: run.updatedAt,
+      started_at: run.startedAt ?? null,
+      completed_at: run.completedAt ?? null,
+      worker_id: run.workerId ?? null,
+      attempt: run.attempt ?? null,
+      run_index: run.runIndex ?? null,
+      target: this.encodeOptionalText(run.target ? JSON.stringify(run.target) : null),
+      provider: run.provider ?? null,
+      model_id: run.modelId ?? null,
+      summary: this.encodeOptionalText(run.summary ?? null),
+      last_error: this.encodeOptionalText(run.lastError ?? null),
+      claim_token: run.claimToken ?? null,
+      artifact_ids: this.encodeOptionalText(run.artifactIds ? JSON.stringify(run.artifactIds) : null),
+      council_trace: this.encodeOptionalText(run.councilTrace ? JSON.stringify(run.councilTrace) : null),
+      payload: this.encodeJson(run)
+    };
+  }
+
+  private taskRunFromRow(row: TaskRunRow): TaskRunRecord {
+    const payload = row.payload ? this.decodeJson<TaskRunRecord | null>(row.payload, null) : null;
+    const decodedLastError = this.decodeOptionalText(row.last_error) ?? undefined;
+    if (payload) {
+      return {
+        ...payload,
+        ...(row.status ? { status: row.status as TaskRunRecord['status'] } : {}),
+        ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
+        ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
+        ...(row.completed_at ? { completedAt: row.completed_at } : {}),
+        ...(decodedLastError ? { lastError: decodedLastError } : {})
+      };
+    }
+
+    const decodedTarget = this.decodeOptionalText(row.target);
+    const decodedArtifactIds = this.decodeOptionalText(row.artifact_ids);
+    const decodedCouncilTrace = this.decodeOptionalText(row.council_trace);
+    const decodedSummary = this.decodeOptionalText(row.summary) ?? undefined;
+    const target = decodedTarget ? parseJson<TaskRunRecord['target'] | null>(decodedTarget, null) : null;
+    const artifactIds = decodedArtifactIds ? parseJson<string[]>(decodedArtifactIds, []) : undefined;
+    const councilTrace = decodedCouncilTrace
+      ? parseJson<NonNullable<TaskRunRecord['councilTrace']> | null>(decodedCouncilTrace, null)
+      : null;
+    const provider = row.provider ? (row.provider as NonNullable<TaskRunRecord['provider']>) : null;
+
+    return {
+      id: row.id,
+      taskId: row.task_id,
+      status: (row.status as TaskRunRecord['status']) ?? 'running',
+      updatedAt: row.updated_at,
+      ...(row.created_at ? { createdAt: row.created_at } : {}),
+      ...(row.claimed_at ? { claimedAt: row.claimed_at } : {}),
+      ...(row.lease_expires_at ? { leaseExpiresAt: row.lease_expires_at } : {}),
+      ...(row.started_at ? { startedAt: row.started_at } : {}),
+      ...(row.completed_at ? { completedAt: row.completed_at } : {}),
+      ...(row.worker_id ? { workerId: row.worker_id } : {}),
+      ...(row.attempt !== null && row.attempt !== undefined ? { attempt: row.attempt } : {}),
+      ...(row.run_index !== null && row.run_index !== undefined ? { runIndex: row.run_index } : {}),
+      ...(target ? { target } : {}),
+      ...(provider ? { provider } : {}),
+      ...(row.model_id ? { modelId: row.model_id } : {}),
+      ...(decodedSummary ? { summary: decodedSummary } : {}),
+      ...(decodedLastError ? { lastError: decodedLastError } : {}),
+      ...(row.claim_token ? { claimToken: row.claim_token } : {}),
+      ...(artifactIds ? { artifactIds } : {}),
+      ...(councilTrace ? { councilTrace } : {})
+    };
   }
 
   private readSchemaVersion(): number {
@@ -307,8 +446,8 @@ export class SqliteStorage {
     `);
 
     for (const row of rows) {
-      const run = taskRunFromRow(row);
-      const columns = taskRunColumns(run);
+      const run = this.taskRunFromRow(row);
+      const columns = this.taskRunColumns(run);
       update.run(
         columns.status,
         columns.claimed_at,
@@ -427,22 +566,22 @@ export class SqliteStorage {
     if (count.count === 0) {
       const insert = this.db.prepare('INSERT INTO models (id, payload) VALUES (?, ?)');
       for (const model of DEFAULT_MODEL_PRESETS) {
-        insert.run(model.id, JSON.stringify(model));
+        insert.run(model.id, this.encodeJson(model));
       }
     }
 
     const userMapRow = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
     if (!userMapRow) {
-      this.db.prepare('INSERT INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(EMPTY_USERMAP_STATE));
+      this.db.prepare('INSERT INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(EMPTY_USERMAP_STATE));
     } else {
-      const parsed = parseJson<unknown>(userMapRow.payload ?? '', EMPTY_USERMAP_STATE);
+      const parsed = this.decodeJson<unknown>(userMapRow.payload ?? '', EMPTY_USERMAP_STATE);
       const normalized = coerceUserMapState(parsed);
-      this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(normalized));
+      this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
     }
 
     const prismSettingsRow = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
     if (!prismSettingsRow) {
-      this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify({}));
+      this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson({}));
     }
 
     const schemaVersion = this.readSchemaVersion();
@@ -468,7 +607,7 @@ export class SqliteStorage {
       event.kind,
       event.entityId ?? null,
       event.entityType ?? null,
-      event.payload ? JSON.stringify(event.payload) : null,
+      event.payload ? this.encodeJson(event.payload) : null,
       event.createdAt
     );
   }
@@ -483,7 +622,7 @@ export class SqliteStorage {
       kind: row.kind as AuditEventKind,
       ...(row.entity_id ? { entityId: row.entity_id } : {}),
       ...(row.entity_type ? { entityType: row.entity_type } : {}),
-      ...(row.payload ? { payload: parseJson(row.payload, {}) } : {}),
+      ...(row.payload ? { payload: this.decodeJson(row.payload, {}) } : {}),
       createdAt: row.created_at
     }));
   }
@@ -560,23 +699,23 @@ export class SqliteStorage {
 
   getProfile(): LocalProfile | null {
     const row = this.db.prepare('SELECT payload FROM profile WHERE id = 1').get() as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   saveProfile(profile: LocalProfile): LocalProfile {
-    this.db.prepare('INSERT OR REPLACE INTO profile (id, payload) VALUES (1, ?)').run(JSON.stringify(profile));
+    this.db.prepare('INSERT OR REPLACE INTO profile (id, payload) VALUES (1, ?)').run(this.encodeJson(profile));
     this.appendAuditEvent({ kind: 'profile_updated', entityType: 'profile', createdAt: new Date().toISOString() });
     return profile;
   }
 
   getUserMap(): UserMapState {
     const row = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
-    return coerceUserMapState(parseJson(row?.payload, EMPTY_USERMAP_STATE));
+    return coerceUserMapState(this.decodeJson(row?.payload, EMPTY_USERMAP_STATE));
   }
 
   saveUserMap(tree: UserMapState): UserMapState {
     const normalized = normalizeUserMapState(tree);
-    this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(JSON.stringify(normalized));
+    this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
     return normalized;
   }
 
@@ -594,17 +733,17 @@ export class SqliteStorage {
 
   listAgents(): AgentSpec[] {
     const rows = this.db.prepare('SELECT payload FROM agents ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   getAgent(agentId: string): AgentSpec | null {
     const row = this.db.prepare('SELECT payload FROM agents WHERE id = ?').get(agentId) as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   upsertAgent(agent: AgentSpec): AgentSpec {
     const existing = this.getAgent(agent.id);
-    this.db.prepare('INSERT OR REPLACE INTO agents (id, payload) VALUES (?, ?)').run(agent.id, JSON.stringify(agent));
+    this.db.prepare('INSERT OR REPLACE INTO agents (id, payload) VALUES (?, ?)').run(agent.id, this.encodeJson(agent));
     this.appendAuditEvent({
       kind: existing ? 'agent_updated' : 'agent_created',
       entityId: agent.id,
@@ -620,11 +759,11 @@ export class SqliteStorage {
 
   listGroups(): GroupSpec[] {
     const rows = this.db.prepare('SELECT payload FROM groups_table ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   upsertGroup(group: GroupSpec): GroupSpec {
-    this.db.prepare('INSERT OR REPLACE INTO groups_table (id, payload) VALUES (?, ?)').run(group.id, JSON.stringify(group));
+    this.db.prepare('INSERT OR REPLACE INTO groups_table (id, payload) VALUES (?, ?)').run(group.id, this.encodeJson(group));
     return group;
   }
 
@@ -634,12 +773,12 @@ export class SqliteStorage {
 
   listChatThreads(): ChatThread[] {
     const rows = this.db.prepare('SELECT payload FROM chat_threads ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   listChatThreadsPaginated(limit: number, offset: number): ChatThread[] {
     const rows = this.db.prepare('SELECT payload FROM chat_threads ORDER BY id LIMIT ? OFFSET ?').all(limit, offset) as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   getCountChatThreads(): number {
@@ -649,11 +788,11 @@ export class SqliteStorage {
 
   getChatThread(threadId: string): ChatThread | null {
     const row = this.db.prepare('SELECT payload FROM chat_threads WHERE id = ?').get(threadId) as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   upsertChatThread(thread: ChatThread): ChatThread {
-    this.db.prepare('INSERT OR REPLACE INTO chat_threads (id, payload) VALUES (?, ?)').run(thread.id, JSON.stringify(thread));
+    this.db.prepare('INSERT OR REPLACE INTO chat_threads (id, payload) VALUES (?, ?)').run(thread.id, this.encodeJson(thread));
     return thread;
   }
 
@@ -663,12 +802,12 @@ export class SqliteStorage {
 
   listTasks(): TaskSpec[] {
     const rows = this.db.prepare('SELECT payload FROM tasks ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   listTasksPaginated(limit: number, offset: number): TaskSpec[] {
     const rows = this.db.prepare('SELECT payload FROM tasks ORDER BY id LIMIT ? OFFSET ?').all(limit, offset) as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   getCountTasks(): number {
@@ -678,11 +817,11 @@ export class SqliteStorage {
 
   getTask(taskId: string): TaskSpec | null {
     const row = this.db.prepare('SELECT payload FROM tasks WHERE id = ?').get(taskId) as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   upsertTask(task: TaskSpec): TaskSpec {
-    this.db.prepare('INSERT OR REPLACE INTO tasks (id, payload) VALUES (?, ?)').run(task.id, JSON.stringify(task));
+    this.db.prepare('INSERT OR REPLACE INTO tasks (id, payload) VALUES (?, ?)').run(task.id, this.encodeJson(task));
     return task;
   }
 
@@ -694,7 +833,7 @@ export class SqliteStorage {
     const rows = taskId
       ? (this.db.prepare('SELECT * FROM task_runs WHERE task_id = ? ORDER BY updated_at DESC, id DESC').all(taskId) as unknown as TaskRunRow[])
       : (this.db.prepare('SELECT * FROM task_runs ORDER BY updated_at DESC, id DESC').all() as unknown as TaskRunRow[]);
-    return rows.map(taskRunFromRow);
+    return rows.map((row) => this.taskRunFromRow(row));
   }
 
   listActiveTaskRuns(taskId?: string, now = new Date()): TaskRunRecord[] {
@@ -711,7 +850,7 @@ export class SqliteStorage {
             AND (lease_expires_at IS NULL OR lease_expires_at > ?)
           ORDER BY updated_at DESC, id DESC
         `).all(now.toISOString()) as unknown as TaskRunRow[];
-    return rows.map(taskRunFromRow);
+    return rows.map((row) => this.taskRunFromRow(row));
   }
 
   renewTaskRunLease(runId: string, claimToken: string, newLeaseExpiresAt: string, updatedAt: string) {
@@ -749,12 +888,12 @@ export class SqliteStorage {
 
   getTaskRun(runId: string): TaskRunRecord | null {
     const row = this.db.prepare('SELECT * FROM task_runs WHERE id = ?').get(runId) as unknown as TaskRunRow | undefined;
-    return row ? taskRunFromRow(row) : null;
+    return row ? this.taskRunFromRow(row) : null;
   }
 
   upsertTaskRun(run: TaskRunRecord): TaskRunRecord {
     const previous = this.getTaskRun(run.id);
-    const columns = taskRunColumns(run);
+    const columns = this.taskRunColumns(run);
     this.db.prepare(`
       INSERT OR REPLACE INTO task_runs (
         id, task_id, status, claimed_at, lease_expires_at, created_at, updated_at, started_at, completed_at,
@@ -796,28 +935,15 @@ export class SqliteStorage {
 
   listWorkItems(): WorkItem[] {
     const rows = this.db.prepare('SELECT payload FROM work_items').all() as Array<{ payload: string }>;
-    return rows
-      .map((row) => parseJson<WorkItem | null>(row.payload, null))
-      .filter((item): item is WorkItem => item !== null)
-      .sort((left, right) => {
-        const leftUpdated = Date.parse(left.updatedAt || left.createdAt || '');
-        const rightUpdated = Date.parse(right.updatedAt || right.createdAt || '');
-        if (!Number.isNaN(leftUpdated) && !Number.isNaN(rightUpdated) && leftUpdated !== rightUpdated) {
-          return rightUpdated - leftUpdated;
-        }
-        return right.id.localeCompare(left.id);
-      });
+    return sortWorkItems(
+      rows
+        .map((row) => this.decodeJson<WorkItem | null>(row.payload, null))
+        .filter((item): item is WorkItem => item !== null)
+    );
   }
 
   listWorkItemsPaginated(limit: number, offset: number): WorkItem[] {
-    const rows = this.db
-      .prepare(
-        `SELECT payload FROM work_items ORDER BY json_extract(payload, '$.updatedAt') DESC, json_extract(payload, '$.createdAt') DESC, id DESC LIMIT ? OFFSET ?`
-      )
-      .all(limit, offset) as Array<{ payload: string }>;
-    return rows
-      .map((row) => parseJson<WorkItem | null>(row.payload, null))
-      .filter((item): item is WorkItem => item !== null);
+    return this.listWorkItems().slice(offset, offset + limit);
   }
 
   getCountWorkItems(): number {
@@ -827,11 +953,11 @@ export class SqliteStorage {
 
   getWorkItem(workItemId: string): WorkItem | null {
     const row = this.db.prepare('SELECT payload FROM work_items WHERE id = ?').get(workItemId) as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   upsertWorkItem(item: WorkItem): WorkItem {
-    this.db.prepare('INSERT OR REPLACE INTO work_items (id, payload) VALUES (?, ?)').run(item.id, JSON.stringify(item));
+    this.db.prepare('INSERT OR REPLACE INTO work_items (id, payload) VALUES (?, ?)').run(item.id, this.encodeJson(item));
     return item;
   }
 
@@ -841,16 +967,16 @@ export class SqliteStorage {
 
   listArtifacts(): ArtifactRecord[] {
     const rows = this.db.prepare('SELECT payload FROM artifacts ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   getArtifact(artifactId: string): ArtifactRecord | null {
     const row = this.db.prepare('SELECT payload FROM artifacts WHERE id = ?').get(artifactId) as { payload?: string } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   upsertArtifact(artifact: ArtifactRecord): ArtifactRecord {
-    this.db.prepare('INSERT OR REPLACE INTO artifacts (id, payload) VALUES (?, ?)').run(artifact.id, JSON.stringify(artifact));
+    this.db.prepare('INSERT OR REPLACE INTO artifacts (id, payload) VALUES (?, ?)').run(artifact.id, this.encodeJson(artifact));
     return artifact;
   }
 
@@ -861,7 +987,7 @@ export class SqliteStorage {
   listMemoryFacts(visibility?: VisibilityScope): MemoryFact[] {
     const rows = this.db.prepare('SELECT payload FROM memory_facts ORDER BY id').all() as Array<{ payload: string }>;
     return rows
-      .map((row) => parseJson<MemoryFact>(row.payload, null as never))
+      .map((row) => this.decodeJson<MemoryFact>(row.payload, null as never))
       .filter((fact) => fact !== null)
       .filter((fact) => (visibility ? memoryVisibility(fact) === visibility : true));
   }
@@ -869,7 +995,7 @@ export class SqliteStorage {
   upsertMemoryFacts(facts: MemoryFact[]): MemoryFact[] {
     const insert = this.db.prepare('INSERT OR REPLACE INTO memory_facts (id, payload) VALUES (?, ?)');
     for (const fact of facts) {
-      insert.run(fact.id, JSON.stringify(fact));
+      insert.run(fact.id, this.encodeJson(fact));
     }
     return facts;
   }
@@ -887,11 +1013,11 @@ export class SqliteStorage {
 
   listModels(): ProviderModelPreset[] {
     const rows = this.db.prepare('SELECT payload FROM models ORDER BY id').all() as Array<{ payload: string }>;
-    return rows.map((row) => parseJson(row.payload, null as never));
+    return rows.map((row) => this.decodeJson(row.payload, null as never));
   }
 
   updateModel(model: ProviderModelPreset): ProviderModelPreset {
-    this.db.prepare('INSERT OR REPLACE INTO models (id, payload) VALUES (?, ?)').run(model.id, JSON.stringify(model));
+    this.db.prepare('INSERT OR REPLACE INTO models (id, payload) VALUES (?, ?)').run(model.id, this.encodeJson(model));
     return model;
   }
 
@@ -899,13 +1025,13 @@ export class SqliteStorage {
     const row = this.db.prepare('SELECT payload FROM provider_auth_state WHERE provider = ?').get(provider) as {
       payload?: string;
     } | undefined;
-    return row?.payload ? parseJson(row.payload, null) : null;
+    return row?.payload ? this.decodeJson(row.payload, null) : null;
   }
 
   upsertProviderAuthSelection(selection: ProviderAuthSelection): ProviderAuthSelection {
     this.db.prepare('INSERT OR REPLACE INTO provider_auth_state (provider, payload) VALUES (?, ?)').run(
       selection.provider,
-      JSON.stringify(selection)
+      this.encodeJson(selection)
     );
     this.appendAuditEvent({
       kind: 'provider_selection_changed',
@@ -918,7 +1044,7 @@ export class SqliteStorage {
 
   getPrismProviderOverride(): PrismProviderOverrideSettings | null {
     const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const override = parsed.providerOverride;
     if (!override || typeof override !== 'object') {
       return null;
@@ -932,12 +1058,12 @@ export class SqliteStorage {
 
   savePrismProviderOverride(override: PrismProviderOverrideSettings | null): PrismProviderOverrideSettings | null {
     const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = {
       ...parsed,
       providerOverride: override ?? null
     };
-    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     this.appendAuditEvent({
       kind: 'prism_override_changed',
       entityType: 'prism_settings',
@@ -949,7 +1075,7 @@ export class SqliteStorage {
 
   getAgentMode(): AgentMode {
     const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const raw = parsed.agentMode;
     if (raw === 'ollama' || raw === 'bridge' || raw === 'auto') return raw;
     if (raw === 'openclaw') return 'bridge'; // migration from legacy
@@ -958,18 +1084,18 @@ export class SqliteStorage {
 
   saveAgentMode(mode: AgentMode): AgentMode {
     const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = {
       ...parsed,
       agentMode: mode
     };
-    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     return mode;
   }
 
   getWorkspaceRole(): WorkspaceRole {
     const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const raw = parsed.workspaceRole;
     if (raw === 'owner' || raw === 'admin' || raw === 'member' || raw === 'viewer') return raw;
     return 'owner';
@@ -977,9 +1103,9 @@ export class SqliteStorage {
 
   saveWorkspaceRole(role: WorkspaceRole): WorkspaceRole {
     const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    const parsed = row?.payload ? parseJson<Record<string, unknown>>(row.payload, {}) : {};
+    const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = { ...parsed, workspaceRole: role };
-    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(JSON.stringify(next));
+    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     return role;
   }
 
@@ -992,13 +1118,13 @@ export class SqliteStorage {
   getVoiceConfig(): VoiceConfig {
     const row = this.db.prepare('SELECT payload FROM voice_config WHERE id = 1').get() as { payload?: string } | undefined;
     if (row?.payload) {
-      return parseJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
+      return this.decodeJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
     }
     return { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' };
   }
 
   saveVoiceConfig(config: VoiceConfig): VoiceConfig {
-    this.db.prepare('INSERT OR REPLACE INTO voice_config (id, payload) VALUES (1, ?)').run(JSON.stringify(config));
+    this.db.prepare('INSERT OR REPLACE INTO voice_config (id, payload) VALUES (1, ?)').run(this.encodeJson(config));
     return config;
   }
 

@@ -1,6 +1,7 @@
 // Supreme Raman AI — Zustand Store
 import { create } from 'zustand';
 import { getDesktopApi } from '@/lib/electron';
+import type { WorkspaceSecurityState } from '@/lib/electron';
 import type {
   AgentMode,
   OllamaRuntimeStatus,
@@ -31,10 +32,12 @@ export interface SettingsStoreState {
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
   prismOverride: PrismProviderOverrideSettings | null;
+  workspaceSecurity: WorkspaceSecurityState | null;
   agentMode: AgentMode;
   ollamaStatus: OllamaRuntimeStatus | null;
   loading: boolean;
   activeSection: SettingsSection;
+  refreshSecurityState: () => Promise<WorkspaceSecurityState>;
   refreshSettings: () => Promise<void>;
   setActiveSection: (section: SettingsSection) => void;
   saveProviderProfile: (input: SaveProviderProfileInput) => Promise<void>;
@@ -44,6 +47,8 @@ export interface SettingsStoreState {
   savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
   saveAgentMode: (mode: AgentMode) => Promise<void>;
   setProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
+  enableWorkspaceEncryption: (password: string) => Promise<void>;
+  disableWorkspaceEncryption: (password: string) => Promise<void>;
 }
 
 const EMPTY_PROVIDER_SELECTIONS: Record<RemoteProviderId, string | null> = {
@@ -56,10 +61,16 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   providerProfiles: [],
   providerSelections: { ...EMPTY_PROVIDER_SELECTIONS },
   prismOverride: null,
+  workspaceSecurity: null,
   agentMode: 'auto',
   ollamaStatus: null,
   loading: false,
   activeSection: 'runtime',
+  async refreshSecurityState() {
+    const security = await getDesktopApi().security.getState();
+    set({ workspaceSecurity: security });
+    return security;
+  },
   async refreshSettings() {
     const workspaceStore = useWorkspaceStore.getState();
 
@@ -68,7 +79,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
 
     try {
       const api = getDesktopApi();
-      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, prismOverride, agentMode] =
+      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, prismOverride, agentMode, workspaceSecurity] =
         await Promise.all([
           api.settings.listProviderProfiles(),
           api.settings.getOllamaStatus(),
@@ -76,7 +87,8 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           api.settings.getProviderSelection('anthropic'),
           api.settings.getProviderSelection('google'),
           api.settings.getPrismOverride(),
-          api.settings.getAgentMode()
+          api.settings.getAgentMode(),
+          api.security.getState()
         ]);
 
       set({
@@ -87,6 +99,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           google: googleSelection?.profileId ?? null
         },
         prismOverride,
+        workspaceSecurity,
         agentMode: agentMode ?? 'auto',
         ollamaStatus,
         loading: false
@@ -249,6 +262,38 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           profileId ? `Selected active ${provider} profile.` : `Cleared ${provider} profile selection.`
         );
       }
+    } catch (error) {
+      workspaceStore.setError(getErrorMessage(error));
+      set({ loading: false });
+    }
+  },
+  async enableWorkspaceEncryption(password) {
+    const workspaceStore = useWorkspaceStore.getState();
+
+    set({ loading: true });
+    workspaceStore.clearError();
+
+    try {
+      const security = await getDesktopApi().security.enable(password);
+      set({ workspaceSecurity: security, loading: false });
+      await workspaceStore.refreshSnapshot();
+      workspaceStore.setNotice('Workspace encryption enabled.');
+    } catch (error) {
+      workspaceStore.setError(getErrorMessage(error));
+      set({ loading: false });
+    }
+  },
+  async disableWorkspaceEncryption(password) {
+    const workspaceStore = useWorkspaceStore.getState();
+
+    set({ loading: true });
+    workspaceStore.clearError();
+
+    try {
+      const security = await getDesktopApi().security.disable(password);
+      set({ workspaceSecurity: security, loading: false });
+      await workspaceStore.refreshSnapshot();
+      workspaceStore.setNotice('Workspace encryption disabled.');
     } catch (error) {
       workspaceStore.setError(getErrorMessage(error));
       set({ loading: false });

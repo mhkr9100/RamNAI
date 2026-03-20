@@ -32,6 +32,12 @@ interface SecretsFile {
   }>>;
 }
 
+export interface ResolvedProviderCredentials {
+  profile: ProviderAuthProfile;
+  apiKey?: string;
+  token?: string;
+}
+
 const APP_AUTH_DIR = path.join(os.homedir(), '.supreme-raman-ai', 'runtime-auth');
 const APP_AUTH_PROFILES_PATH = path.join(APP_AUTH_DIR, 'auth-profiles.json');
 const APP_SECRETS_PATH = path.join(APP_AUTH_DIR, 'secrets.enc.json');
@@ -250,6 +256,38 @@ export class ProviderAuthStore {
     }
 
     return { ok: true };
+  }
+
+  async resolveProfile(
+    provider: Exclude<ProviderId, 'ollama'>,
+    profileId?: string | null
+  ): Promise<ResolvedProviderCredentials | null> {
+    const profiles = (await this.listProfiles()).filter((profile) => profile.provider === provider);
+    const selected = profileId
+      ? profiles.find((profile) => profile.id === profileId) ?? null
+      : profiles.find((profile) => profile.isDefault) ?? profiles[0] ?? null;
+    if (!selected) {
+      return null;
+    }
+
+    const secrets = await this.readSecretState();
+    const resolved: ResolvedProviderCredentials = { profile: selected };
+
+    if (selected.keyRef?.source === 'file') {
+      const apiKey = getJsonPointerValue(secrets, selected.keyRef.id);
+      if (typeof apiKey === 'string' && apiKey.trim()) {
+        resolved.apiKey = apiKey.trim();
+      }
+    }
+
+    if (selected.tokenRef?.source === 'file') {
+      const token = getJsonPointerValue(secrets, selected.tokenRef.id);
+      if (typeof token === 'string' && token.trim()) {
+        resolved.token = token.trim();
+      }
+    }
+
+    return resolved;
   }
 
   async testProfile(input: {

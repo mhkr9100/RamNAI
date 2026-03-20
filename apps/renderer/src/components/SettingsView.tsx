@@ -9,6 +9,7 @@ import type {
   ProviderId,
   ProviderModelPreset,
 } from '@supreme/shared';
+import type { WorkspaceSecurityState } from '@/lib/electron';
 import {
   Badge,
   Button,
@@ -36,6 +37,7 @@ interface SettingsViewProps {
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
   prismOverride: PrismProviderOverrideSettings | null;
+  workspaceSecurity: WorkspaceSecurityState | null;
   agentMode: AgentMode;
   onSaveAgentMode: (mode: AgentMode) => Promise<void>;
   ollamaStatus: OllamaRuntimeStatus | null;
@@ -58,6 +60,8 @@ interface SettingsViewProps {
   onTestProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   onSetProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
   onSavePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  onEnableWorkspaceEncryption: (password: string) => Promise<void>;
+  onDisableWorkspaceEncryption: (password: string) => Promise<void>;
   onSaveScheduleTimezone: (timezone: string) => Promise<void>;
   onCreateAgentTask: (input: TaskCreateInput) => Promise<void>;
   onUpsertGroup: (group: { id?: string; name: string; description?: string; memberAgentIds: string[]; routingMode: 'auto' | 'manual'; autoRouteThreshold: number; defaultResponderAgentId?: string }) => Promise<void>;
@@ -93,6 +97,7 @@ export function SettingsView({
   providerProfiles,
   providerSelections,
   prismOverride,
+  workspaceSecurity,
   agentMode,
   onSaveAgentMode,
   ollamaStatus,
@@ -107,6 +112,8 @@ export function SettingsView({
   onTestProfile,
   onSetProviderSelection,
   onSavePrismOverride,
+  onEnableWorkspaceEncryption,
+  onDisableWorkspaceEncryption,
   onSaveScheduleTimezone,
   onCreateAgentTask,
   onUpsertGroup,
@@ -120,6 +127,10 @@ export function SettingsView({
   const tokenRef = useRef<HTMLInputElement | null>(null);
   const defaultRef = useRef<HTMLInputElement | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [encryptionPassword, setEncryptionPassword] = useState('');
+  const [encryptionConfirm, setEncryptionConfirm] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
+  const [securityError, setSecurityError] = useState<string | null>(null);
 
   const installedModelCount = useMemo(
     () => models.filter((model) => model.installed).length,
@@ -169,6 +180,35 @@ export function SettingsView({
 
     if (apiKeyRef.current) apiKeyRef.current.value = '';
     if (tokenRef.current) tokenRef.current.value = '';
+  };
+
+  const handleEnableEncryption = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!encryptionPassword.trim()) {
+      setSecurityError('Enter a workspace password.');
+      return;
+    }
+    if (encryptionPassword !== encryptionConfirm) {
+      setSecurityError('Passwords do not match.');
+      return;
+    }
+
+    setSecurityError(null);
+    await onEnableWorkspaceEncryption(encryptionPassword);
+    setEncryptionPassword('');
+    setEncryptionConfirm('');
+  };
+
+  const handleDisableEncryption = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!disablePassword.trim()) {
+      setSecurityError('Enter the current workspace password.');
+      return;
+    }
+
+    setSecurityError(null);
+    await onDisableWorkspaceEncryption(disablePassword);
+    setDisablePassword('');
   };
 
   return (
@@ -246,6 +286,11 @@ export function SettingsView({
               {agentMode === 'bridge' && !snapshot.runtime.runtimeBridgeReady ? (
                 <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
                   Runtime bridge is not available. Install the CLI or switch to Ollama.
+                </div>
+              ) : null}
+              {workspaceSecurity?.enabled ? (
+                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  Workspace encryption disables the plaintext runtime-workspace mirror, so direct local/cloud execution stays on and bridge execution is bypassed.
                 </div>
               ) : null}
             </CardSection>
@@ -398,6 +443,70 @@ export function SettingsView({
             >
               {busy ? 'Installing...' : 'Install Starter Models'}
             </Button>
+
+            <Divider className="my-5" />
+
+            <CardSection label="Workspace Encryption">
+              <Card variant="default" padding="md" animate={false} className="bg-surface-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">
+                      {workspaceSecurity?.enabled ? 'Enabled' : 'Disabled'}
+                    </div>
+                    <div className="mt-1 text-xs leading-6 text-white/55">
+                      AES-256-GCM with Argon2id. Lost password means lost data.
+                    </div>
+                  </div>
+                  <Badge variant={workspaceSecurity?.enabled ? 'warning' : 'default'}>
+                    {workspaceSecurity?.enabled ? 'Locked on startup' : 'Off'}
+                  </Badge>
+                </div>
+
+                {workspaceSecurity?.enabled ? (
+                  <form onSubmit={handleDisableEncryption} className="mt-4 space-y-3">
+                    <Input
+                      type="password"
+                      autoComplete="off"
+                      label="Current Password"
+                      value={disablePassword}
+                      onChange={(event) => setDisablePassword(event.target.value)}
+                      className="bg-surface-1"
+                    />
+                    <Button type="submit" variant="danger" size="md" fullWidth loading={loading || busy}>
+                      Disable Encryption
+                    </Button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleEnableEncryption} className="mt-4 space-y-3">
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="New Password"
+                      value={encryptionPassword}
+                      onChange={(event) => setEncryptionPassword(event.target.value)}
+                      className="bg-surface-1"
+                    />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      label="Confirm Password"
+                      value={encryptionConfirm}
+                      onChange={(event) => setEncryptionConfirm(event.target.value)}
+                      className="bg-surface-1"
+                    />
+                    <Button type="submit" variant="brand" size="md" fullWidth loading={loading || busy}>
+                      Enable Encryption
+                    </Button>
+                  </form>
+                )}
+
+                {securityError ? (
+                  <div className="mt-3 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                    {securityError}
+                  </div>
+                ) : null}
+              </Card>
+            </CardSection>
           </Card>
         </section>
       ) : null}

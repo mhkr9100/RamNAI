@@ -14,7 +14,7 @@ import { WorkView } from './components/WorkView';
 import { CanvasWorkspace } from './components/CanvasWorkspace';
 import { VoicePanel } from './components/VoicePanel';
 import { RamanIcon } from './components/RamanIcon';
-import { useToast } from './components/ui';
+import { Button, Card, Input, useToast } from './components/ui';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useWorkspaceStore } from './stores/workspace-store';
 import { useNavigationStore } from './stores/navigation-store';
@@ -28,6 +28,7 @@ import type {
   UserMapState,
   WorkItem,
 } from '@supreme/shared';
+import type { WorkspaceSecurityState } from './lib/electron';
 
 function getErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -52,6 +53,9 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [voicePanelOpen, setVoicePanelOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [workspaceSecurity, setWorkspaceSecurity] = useState<WorkspaceSecurityState | null>(null);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockingWorkspace, setUnlockingWorkspace] = useState(false);
   const [chatStream, setChatStream] = useState<ActiveChatStreamState | null>(null);
 
   // -- Command palette --
@@ -78,6 +82,12 @@ export default function App() {
     }
     void (async () => {
       try {
+        const security = await api.security.getState();
+        setWorkspaceSecurity(security);
+        if (security.locked) {
+          return;
+        }
+
         await Promise.all([refreshSnapshot(), settingsStore.refreshSettings()]);
       } catch (e) {
         logger.error('Bootstrap failed', { error: getErrorMessage(e) });
@@ -94,10 +104,10 @@ export default function App() {
 
   // Detect first-run
   useEffect(() => {
-    if (!loading && api && !snapshot?.profile) {
+    if (!loading && api && !workspaceSecurity?.locked && !snapshot?.profile) {
       setShowOnboarding(true);
     }
-  }, [loading, api, snapshot?.profile]);
+  }, [loading, api, snapshot?.profile, workspaceSecurity?.locked]);
 
   // -- Wrapped API helpers --
   const withBusy = useCallback(
@@ -357,6 +367,76 @@ export default function App() {
     [snapshot?.agents, chatStore, prismStore, navigate, toast],
   );
 
+  const handleUnlockWorkspace = useCallback(async () => {
+    if (!api) throw new Error('Desktop bridge unavailable.');
+    setUnlockingWorkspace(true);
+    clearError();
+    try {
+      const security = await api.security.unlock(unlockPassword);
+      setWorkspaceSecurity(security);
+      setUnlockPassword('');
+      await Promise.all([refreshSnapshot(), settingsStore.refreshSettings()]);
+      toast.success('Workspace unlocked.');
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setUnlockingWorkspace(false);
+    }
+  }, [api, clearError, refreshSnapshot, setError, settingsStore, toast, unlockPassword]);
+
+  if (api && workspaceSecurity === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-6 text-white">
+        <div className="flex items-center gap-3 text-sm text-white/70">
+          <LoaderCircle className="animate-spin" size={18} />
+          Preparing workspace
+        </div>
+      </div>
+    );
+  }
+
+  if (workspaceSecurity?.locked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#08090a] px-6">
+        <Card variant="elevated" padding="lg" animate={false} className="w-full max-w-md bg-surface-2">
+          <div className="flex items-center gap-3">
+            <RamanIcon size={30} />
+            <div>
+              <div className="text-lg font-semibold text-white">Workspace Locked</div>
+              <div className="text-sm text-white/60">Enter the workspace password to continue.</div>
+            </div>
+          </div>
+          <div className="mt-5 space-y-4">
+            <Input
+              type="password"
+              autoComplete="current-password"
+              label="Workspace Password"
+              value={unlockPassword}
+              onChange={(event) => setUnlockPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleUnlockWorkspace();
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="brand"
+              fullWidth
+              loading={unlockingWorkspace}
+              onClick={() => void handleUnlockWorkspace()}
+            >
+              Unlock Workspace
+            </Button>
+            <div className="text-xs leading-6 text-white/45">
+              This password is never auto-recoverable. If it’s lost, the encrypted workspace data is lost too.
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const handleOpenChatTarget = useCallback(
     (target: ChatTarget) => { chatStore.selectTarget(target); chatStore.clearDraftSeed(); navigate('chats'); },
     [chatStore, navigate],
@@ -531,6 +611,7 @@ export default function App() {
                     activeSection={settingsStore.activeSection} onSelectSection={settingsStore.setActiveSection}
                     runtimeReady={snapshot.runtime.available} providerProfiles={settingsStore.providerProfiles}
                     providerSelections={settingsStore.providerSelections} prismOverride={settingsStore.prismOverride}
+                    workspaceSecurity={settingsStore.workspaceSecurity}
                     agentMode={settingsStore.agentMode} onSaveAgentMode={settingsStore.saveAgentMode}
                     ollamaStatus={settingsStore.ollamaStatus} models={snapshot.models} snapshot={snapshot}
                     busy={busy} loading={settingsStore.loading}
@@ -538,6 +619,8 @@ export default function App() {
                     onSaveProfile={settingsStore.saveProviderProfile} onDeleteProfile={settingsStore.deleteProviderProfile}
                     onTestProfile={settingsStore.testProviderProfile} onSetProviderSelection={settingsStore.setProviderSelection}
                     onSavePrismOverride={settingsStore.savePrismOverride}
+                    onEnableWorkspaceEncryption={settingsStore.enableWorkspaceEncryption}
+                    onDisableWorkspaceEncryption={settingsStore.disableWorkspaceEncryption}
                     onSaveScheduleTimezone={handleSaveScheduleTimezone}
                     onCreateAgentTask={handleTaskCreate} onUpsertGroup={handleUpsertGroup} onDeleteGroup={handleDeleteGroup} onOpenChat={handleOpenChatTarget}
                   />

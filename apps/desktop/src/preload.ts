@@ -65,6 +65,12 @@ contextBridge.exposeInMainWorld('supreme', {
     installDefaultModels: () => ipcRenderer.invoke(channels.ollamaInstallDefaults),
     getHealth: () => ipcRenderer.invoke(channels.healthGet)
   },
+  security: {
+    getState: () => ipcRenderer.invoke(channels.securityGetState),
+    unlock: (password: string) => ipcRenderer.invoke(channels.securityUnlock, password),
+    enable: (password: string) => ipcRenderer.invoke(channels.securityEnable, password),
+    disable: (password: string) => ipcRenderer.invoke(channels.securityDisable, password)
+  },
   app: {
     checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates)
   },

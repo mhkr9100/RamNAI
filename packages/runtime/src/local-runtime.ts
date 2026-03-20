@@ -18,6 +18,11 @@ import {
 import { RuntimeBridge, type BridgePromptResult } from './runtime-bridge.js';
 
 const OLLAMA_API = 'http://127.0.0.1:11434/api';
+const DEFAULT_REMOTE_MODEL_IDS: Record<Exclude<ProviderId, 'ollama'>, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-sonnet-latest',
+  google: 'gemini-2.0-flash'
+};
 const ALLOWED_MEMORY_CATEGORIES: MemoryCategory[] = [
   'Identity',
   'Preferences',
@@ -38,6 +43,19 @@ interface OllamaTagResponse {
 
 interface OllamaGenerateResponse {
   response?: string;
+}
+
+interface RemoteProviderAuth {
+  apiKey?: string | undefined;
+  token?: string | undefined;
+  profileId?: string | undefined;
+  label?: string | undefined;
+}
+
+interface ExecutionModelRef {
+  provider: ProviderId;
+  modelId: string;
+  fallbackOllamaModelId?: string | undefined;
 }
 
 export interface RuntimeStatus {
@@ -65,6 +83,10 @@ export interface RuntimeBridgeHooks {
   afterInvoke?: () => Promise<void>;
 }
 
+export type RemoteProviderAuthResolver = (
+  provider: Exclude<ProviderId, 'ollama'>
+) => Promise<RemoteProviderAuth | null>;
+
 /** Callback invoked for each streaming token. Return false to abort. */
 export type StreamTokenCallback = (token: string) => void | boolean;
 
@@ -79,6 +101,7 @@ export class LocalRuntimeAdapter {
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
   private prismOverride: PrismProviderOverrideSettings | null = null;
   private agentMode: AgentMode = 'auto';
+  private remoteProviderAuthResolver: RemoteProviderAuthResolver | null = null;
   private readonly runtimeBridge = new RuntimeBridge();
 
   setWorkspaceRoot(rootDir: string) {
@@ -95,6 +118,10 @@ export class LocalRuntimeAdapter {
 
   setAgentMode(mode: AgentMode) {
     this.agentMode = mode;
+  }
+
+  setRemoteProviderAuthResolver(resolver: RemoteProviderAuthResolver | null) {
+    this.remoteProviderAuthResolver = resolver;
   }
 
   async getBridgeVersion(): Promise<string | null> {
@@ -138,18 +165,59 @@ export class LocalRuntimeAdapter {
   }
 
   async sendPrismRequest(input: PrismRequest): Promise<PrismReply> {
-    if (this.agentMode !== 'ollama') {
+    const ollamaModels = await this.listOllamaModels();
+    const prismExecution = this.resolvePrismExecutionModel(ollamaModels);
+    if (prismExecution.provider !== 'ollama') {
+      try {
+        if (input.mode === 'create') {
+          const response = await this.generateWithFallback({
+            execution: prismExecution,
+            system: this.buildPrismCreateSystemPrompt(),
+            prompt: this.buildPrismCreatePrompt(input),
+            format: 'json'
+          });
+          const parsed = this.parseJsonObject<Record<string, unknown>>(response.text);
+          const createdAgent = this.normalizeAgentSpec(parsed, input.message, ollamaModels);
+
+          return {
+            id: randomUUID(),
+            text: `Created ${createdAgent.name}. Prism designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+            provider: response.provider,
+            modelId: response.modelId,
+            createdAgent
+          };
+        }
+
+        const response = await this.generateWithFallback({
+          execution: prismExecution,
+          system: this.buildPrismAskSystemPrompt(),
+          prompt: this.buildPrismAskPrompt(input)
+        });
+
+        return {
+          id: randomUUID(),
+          text: response.text,
+          provider: response.provider,
+          modelId: response.modelId
+        };
+      } catch (error) {
+        console.warn(
+          `[runtime] ${prismExecution.provider} Prism execution failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
+        );
+      }
+    }
+
+    if (prismExecution.provider === 'ollama' && this.agentMode !== 'ollama') {
       const bridgeReply = await this.tryBridgePrism(input);
       if (bridgeReply) {
         return bridgeReply;
       }
     }
 
-    const models = await this.listOllamaModels();
     const overrideModelId = this.prismOverride?.provider === 'ollama' ? this.prismOverride.modelId : null;
-    const modelId = overrideModelId && models.some((model) => model.installed && model.id === overrideModelId)
+    const modelId = overrideModelId && ollamaModels.some((model) => model.installed && model.id === overrideModelId)
       ? overrideModelId
-      : this.pickModelId(models);
+      : this.pickModelId(ollamaModels);
 
     if (input.mode === 'create') {
       const jsonText = await this.generateText({
@@ -160,7 +228,7 @@ export class LocalRuntimeAdapter {
       });
 
       const parsed = this.parseJsonObject<Record<string, unknown>>(jsonText);
-      const createdAgent = this.normalizeAgentSpec(parsed, input.message, models);
+      const createdAgent = this.normalizeAgentSpec(parsed, input.message, ollamaModels);
 
       return {
         id: randomUUID(),
@@ -186,19 +254,11 @@ export class LocalRuntimeAdapter {
   }
 
   async executeTask(task: TaskSpec, context: TaskExecutionContext): Promise<TaskExecutionResult> {
-    if (this.agentMode !== 'ollama') {
-      const bridgeResult = await this.tryBridgeTask(task, context);
-      if (bridgeResult) {
-        return bridgeResult;
-      }
-    }
-
+    const ollamaModels = await this.listOllamaModels();
     if (task.mode === 'council') {
-      return this.executeCouncil(task, context, 'ollama');
+      return this.executeCouncilDirect(task, context, ollamaModels);
     }
 
-    const models = await this.listOllamaModels();
-    const modelId = this.pickTaskModel(task, models);
     let targetAgent: AgentSpec | null = null;
     const taskTarget = task.target;
     if (taskTarget.type === 'agent') {
@@ -214,8 +274,38 @@ export class LocalRuntimeAdapter {
       `Task Objective:\n${task.objective}`
     ].filter(Boolean).join('\n\n');
 
+    const execution = this.resolveTaskExecutionModel(task, context, ollamaModels);
+    if (execution.provider !== 'ollama') {
+      try {
+        const response = await this.generateWithFallback({
+          execution,
+          system: 'Complete the scheduled task thoroughly. Return the finished output directly with no preamble.',
+          prompt
+        });
+
+        return {
+          text: response.text,
+          provider: response.provider,
+          modelId: response.modelId
+        };
+      } catch (error) {
+        console.warn(
+          `[runtime] ${execution.provider} task execution failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
+        );
+      }
+    }
+
+    if (execution.provider === 'ollama' && this.agentMode !== 'ollama') {
+      const bridgeResult = await this.tryBridgeTask(task, context);
+      if (bridgeResult) {
+        return bridgeResult;
+      }
+    }
+
     const text = await this.generateText({
-      modelId,
+      modelId: execution.provider === 'ollama'
+        ? execution.modelId
+        : (execution.fallbackOllamaModelId ?? this.pickTaskModel(task, ollamaModels)),
       system: 'Complete the scheduled task thoroughly. Return the finished output directly with no preamble.',
       prompt
     });
@@ -223,8 +313,442 @@ export class LocalRuntimeAdapter {
     return {
       text,
       provider: 'ollama',
-      modelId
+      modelId: execution.provider === 'ollama'
+        ? execution.modelId
+        : (execution.fallbackOllamaModelId ?? this.pickTaskModel(task, ollamaModels))
     };
+  }
+
+  private resolvePrismExecutionModel(ollamaModels: ProviderModelPreset[]): ExecutionModelRef {
+    if (this.prismOverride) {
+      if (this.prismOverride.provider === 'ollama') {
+        return {
+          provider: 'ollama',
+          modelId: this.resolveSupportedModel(
+            'ollama',
+            this.stripProviderPrefix('ollama', this.prismOverride.modelId),
+            ollamaModels.filter((model) => model.installed).map((model) => model.id)
+          )
+        };
+      }
+
+      return {
+        provider: this.prismOverride.provider,
+        modelId: this.stripProviderPrefix(this.prismOverride.provider, this.prismOverride.modelId),
+        ...(this.safePickOllamaModelId(ollamaModels) ? { fallbackOllamaModelId: this.safePickOllamaModelId(ollamaModels) } : {})
+      };
+    }
+
+    return {
+      provider: 'ollama',
+      modelId: this.pickModelId(ollamaModels)
+    };
+  }
+
+  private resolveTaskExecutionModel(
+    task: TaskSpec,
+    context: TaskExecutionContext,
+    ollamaModels: ProviderModelPreset[]
+  ): ExecutionModelRef {
+    const target = task.target;
+    const targetAgent = target.type === 'agent'
+      ? context.agents.find((agent) => agent.id === target.agentId) ?? null
+      : null;
+    const fallbackOllamaModelId = this.pickFallbackOllamaModelId(targetAgent, ollamaModels);
+    const installedOllamaIds = ollamaModels.filter((model) => model.installed).map((model) => model.id);
+
+    if (task.providerOverride) {
+      if (task.providerOverride.provider === 'ollama') {
+        return {
+          provider: 'ollama',
+          modelId: this.resolveSupportedModel(
+            'ollama',
+            this.stripProviderPrefix('ollama', task.providerOverride.modelId),
+            installedOllamaIds
+          )
+        };
+      }
+
+      return {
+        provider: task.providerOverride.provider,
+        modelId: this.stripProviderPrefix(task.providerOverride.provider, task.providerOverride.modelId),
+        ...(fallbackOllamaModelId ? { fallbackOllamaModelId } : {})
+      };
+    }
+
+    if (targetAgent) {
+      return this.resolveAgentExecutionModel(targetAgent, ollamaModels, fallbackOllamaModelId);
+    }
+
+    return {
+      provider: 'ollama',
+      modelId: this.pickTaskModel(task, ollamaModels)
+    };
+  }
+
+  private resolveAgentExecutionModel(
+    agent: AgentSpec,
+    ollamaModels: ProviderModelPreset[],
+    fallbackOllamaModelId?: string
+  ): ExecutionModelRef {
+    const installedOllamaIds = ollamaModels.filter((model) => model.installed).map((model) => model.id);
+    if (agent.providerStrategy.mode === 'fixed') {
+      if (agent.providerStrategy.provider === 'ollama') {
+        return {
+          provider: 'ollama',
+          modelId: this.resolveSupportedModel(
+            'ollama',
+            this.stripProviderPrefix('ollama', agent.providerStrategy.modelId),
+            installedOllamaIds
+          )
+        };
+      }
+
+      return {
+        provider: agent.providerStrategy.provider,
+        modelId: this.stripProviderPrefix(agent.providerStrategy.provider, agent.providerStrategy.modelId),
+        ...(fallbackOllamaModelId ? { fallbackOllamaModelId } : {})
+      };
+    }
+
+    if (agent.providerStrategy.mode === 'user_override') {
+      if (agent.providerStrategy.defaultProvider === 'ollama') {
+        return {
+          provider: 'ollama',
+          modelId: this.resolveSupportedModel(
+            'ollama',
+            this.stripProviderPrefix('ollama', agent.providerStrategy.defaultModelId),
+            installedOllamaIds
+          )
+        };
+      }
+
+      return {
+        provider: agent.providerStrategy.defaultProvider,
+        modelId: this.stripProviderPrefix(agent.providerStrategy.defaultProvider, agent.providerStrategy.defaultModelId),
+        ...(fallbackOllamaModelId ? { fallbackOllamaModelId } : {})
+      };
+    }
+
+    const localModelId = agent.providerStrategy.preferredLocalModelIds
+      .map((modelId) => this.stripProviderPrefix('ollama', modelId))
+      .find((modelId) => installedOllamaIds.includes(modelId));
+    if (localModelId) {
+      return {
+        provider: 'ollama',
+        modelId: localModelId
+      };
+    }
+
+    const remoteFallbackProvider = agent.providerStrategy.fallbackProviders.find((provider) => provider !== 'ollama');
+    if (remoteFallbackProvider) {
+      return {
+        provider: remoteFallbackProvider,
+        modelId: DEFAULT_REMOTE_MODEL_IDS[remoteFallbackProvider],
+        ...(fallbackOllamaModelId ? { fallbackOllamaModelId } : {})
+      };
+    }
+
+    return {
+      provider: 'ollama',
+      modelId: this.pickModelId(ollamaModels)
+    };
+  }
+
+  private pickFallbackOllamaModelId(agent: AgentSpec | null, ollamaModels: ProviderModelPreset[]): string | undefined {
+    const installedOllamaIds = ollamaModels.filter((model) => model.installed).map((model) => model.id);
+    if (agent?.providerStrategy.mode === 'local_first') {
+      const preferred = agent.providerStrategy.preferredLocalModelIds
+        .map((modelId) => this.stripProviderPrefix('ollama', modelId))
+        .find((modelId) => installedOllamaIds.includes(modelId));
+      if (preferred) {
+        return preferred;
+      }
+    }
+
+    return this.safePickOllamaModelId(ollamaModels);
+  }
+
+  private safePickOllamaModelId(ollamaModels: ProviderModelPreset[]): string | undefined {
+    try {
+      return this.pickModelId(ollamaModels);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private stripProviderPrefix(provider: ProviderId, modelId: string): string {
+    return modelId.startsWith(`${provider}/`) ? modelId.slice(provider.length + 1) : modelId;
+  }
+
+  private async generateWithFallback(input: {
+    execution: ExecutionModelRef;
+    system: string;
+    prompt: string;
+    format?: 'json';
+  }): Promise<{ text: string; provider: ProviderId; modelId: string }> {
+    if (input.execution.provider === 'ollama') {
+      return {
+        text: await this.generateText({
+          modelId: input.execution.modelId,
+          system: input.system,
+          prompt: input.prompt,
+          ...(input.format ? { format: input.format } : {})
+        }),
+        provider: 'ollama',
+        modelId: input.execution.modelId
+      };
+    }
+
+    try {
+      return {
+        text: await this.generateByProvider({
+          provider: input.execution.provider,
+          modelId: input.execution.modelId,
+          system: input.system,
+          prompt: input.prompt,
+          ...(input.format ? { format: input.format } : {})
+        }),
+        provider: input.execution.provider,
+        modelId: input.execution.modelId
+      };
+    } catch (error) {
+      if (!input.execution.fallbackOllamaModelId) {
+        throw error;
+      }
+
+      console.warn(
+        `[runtime] ${input.execution.provider} request failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
+      );
+
+      return {
+        text: await this.generateText({
+          modelId: input.execution.fallbackOllamaModelId,
+          system: input.system,
+          prompt: input.prompt,
+          ...(input.format ? { format: input.format } : {})
+        }),
+        provider: 'ollama',
+        modelId: input.execution.fallbackOllamaModelId
+      };
+    }
+  }
+
+  private async generateByProvider(input: {
+    provider: Exclude<ProviderId, 'ollama'>;
+    modelId: string;
+    system: string;
+    prompt: string;
+    format?: 'json';
+  }): Promise<string> {
+    if (input.provider === 'openai') {
+      return this.generateOpenAIText(input);
+    }
+
+    if (input.provider === 'anthropic') {
+      return this.generateAnthropicText(input);
+    }
+
+    return this.generateGoogleText(input);
+  }
+
+  private async resolveRemoteProviderAuth(provider: Exclude<ProviderId, 'ollama'>): Promise<RemoteProviderAuth> {
+    const resolved = await this.remoteProviderAuthResolver?.(provider);
+    if (!resolved || (!resolved.apiKey && !resolved.token)) {
+      throw new Error(`No active ${provider} credential profile is available.`);
+    }
+
+    return resolved;
+  }
+
+  private async generateOpenAIText(input: {
+    modelId: string;
+    system: string;
+    prompt: string;
+    format?: 'json';
+  }): Promise<string> {
+    const auth = await this.resolveRemoteProviderAuth('openai');
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${auth.apiKey ?? auth.token}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: input.modelId,
+        messages: [
+          { role: 'system', content: input.system },
+          { role: 'user', content: input.prompt }
+        ],
+        temperature: input.format === 'json' ? 0.15 : 0.35,
+        ...(input.format === 'json' ? { response_format: { type: 'json_object' } } : {})
+      })
+    });
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok) {
+      throw new Error(this.extractProviderErrorMessage('openai', response.status, response.statusText, payload));
+    }
+
+    const choice = Array.isArray(payload?.choices) ? payload?.choices[0] as Record<string, unknown> | undefined : undefined;
+    const message = choice?.message as Record<string, unknown> | undefined;
+    const text = this.extractMessageText(message?.content);
+    if (!text) {
+      throw new Error('OpenAI returned an empty response.');
+    }
+
+    return text;
+  }
+
+  private async generateAnthropicText(input: {
+    modelId: string;
+    system: string;
+    prompt: string;
+    format?: 'json';
+  }): Promise<string> {
+    const auth = await this.resolveRemoteProviderAuth('anthropic');
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': auth.apiKey ?? auth.token ?? '',
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: input.modelId,
+        system: input.system,
+        max_tokens: 4096,
+        temperature: input.format === 'json' ? 0.15 : 0.35,
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: input.prompt }]
+          }
+        ]
+      })
+    });
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok) {
+      throw new Error(this.extractProviderErrorMessage('anthropic', response.status, response.statusText, payload));
+    }
+
+    const content = Array.isArray(payload?.content) ? payload.content as Array<Record<string, unknown>> : [];
+    const text = content
+      .filter((entry) => entry?.type === 'text' && typeof entry.text === 'string')
+      .map((entry) => entry.text as string)
+      .join('')
+      .trim();
+    if (!text) {
+      throw new Error('Anthropic returned an empty response.');
+    }
+
+    return text;
+  }
+
+  private async generateGoogleText(input: {
+    modelId: string;
+    system: string;
+    prompt: string;
+    format?: 'json';
+  }): Promise<string> {
+    const auth = await this.resolveRemoteProviderAuth('google');
+    const headers: Record<string, string> = {
+      'content-type': 'application/json'
+    };
+    const search = new URLSearchParams();
+    if (auth.apiKey) {
+      search.set('key', auth.apiKey);
+    } else if (auth.token) {
+      headers.authorization = `Bearer ${auth.token}`;
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.modelId)}:generateContent?${search.toString()}`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          systemInstruction: {
+            role: 'system',
+            parts: [{ text: input.system }]
+          },
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: input.prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: input.format === 'json' ? 0.15 : 0.35,
+            ...(input.format === 'json' ? { responseMimeType: 'application/json' } : {})
+          }
+        })
+      }
+    );
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok) {
+      throw new Error(this.extractProviderErrorMessage('google', response.status, response.statusText, payload));
+    }
+
+    const candidates = Array.isArray(payload?.candidates) ? payload.candidates as Array<Record<string, unknown>> : [];
+    const first = candidates[0];
+    const content = first?.content as Record<string, unknown> | undefined;
+    const parts = Array.isArray(content?.parts) ? content.parts as Array<Record<string, unknown>> : [];
+    const text = parts
+      .map((part) => (typeof part.text === 'string' ? part.text : ''))
+      .join('')
+      .trim();
+    if (!text) {
+      throw new Error('Google Gemini returned an empty response.');
+    }
+
+    return text;
+  }
+
+  private extractMessageText(content: unknown): string {
+    if (typeof content === 'string') {
+      return content.trim();
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map((entry) => {
+          if (typeof entry === 'string') return entry;
+          if (entry && typeof entry === 'object' && typeof (entry as { text?: unknown }).text === 'string') {
+            return (entry as { text: string }).text;
+          }
+          return '';
+        })
+        .join('')
+        .trim();
+    }
+
+    return '';
+  }
+
+  private extractProviderErrorMessage(
+    provider: Exclude<ProviderId, 'ollama'>,
+    status: number,
+    statusText: string,
+    payload: Record<string, unknown> | null
+  ): string {
+    let detail = '';
+    if (provider === 'openai') {
+      const error = payload?.error as Record<string, unknown> | undefined;
+      detail = typeof error?.message === 'string' ? error.message : '';
+    } else if (provider === 'anthropic') {
+      const error = payload?.error as Record<string, unknown> | undefined;
+      detail = typeof error?.message === 'string' ? error.message : '';
+    } else {
+      const error = payload?.error as Record<string, unknown> | undefined;
+      detail = typeof error?.message === 'string'
+        ? error.message
+        : typeof payload?.message === 'string'
+          ? payload.message
+          : '';
+    }
+
+    const base = `${provider} request failed: ${status} ${statusText}`.trim();
+    return this.redactSensitiveText(detail ? `${base} - ${detail}` : base);
   }
 
   private async listOllamaModels(): Promise<ProviderModelPreset[]> {
@@ -433,6 +957,96 @@ export class LocalRuntimeAdapter {
     }
 
     return [...merged.values()].sort((left, right) => left.category.localeCompare(right.category) || left.label.localeCompare(right.label));
+  }
+
+  private resolveCouncilExecutionModel(
+    model: { provider: ProviderId; modelId: string },
+    ollamaModels: ProviderModelPreset[]
+  ): ExecutionModelRef {
+    if (model.provider === 'ollama') {
+      return {
+        provider: 'ollama',
+        modelId: this.resolveSupportedModel(
+          'ollama',
+          this.stripProviderPrefix('ollama', model.modelId),
+          ollamaModels.filter((candidate) => candidate.installed).map((candidate) => candidate.id)
+        )
+      };
+    }
+
+    return {
+      provider: model.provider,
+      modelId: this.stripProviderPrefix(model.provider, model.modelId),
+      ...(this.safePickOllamaModelId(ollamaModels) ? { fallbackOllamaModelId: this.safePickOllamaModelId(ollamaModels) } : {})
+    };
+  }
+
+  private async executeCouncilDirect(
+    task: TaskSpec,
+    context: TaskExecutionContext,
+    ollamaModels: ProviderModelPreset[]
+  ): Promise<TaskExecutionResult> {
+    const defaultExecution = this.resolveTaskExecutionModel(task, context, ollamaModels);
+    const workers = task.council?.workerModels.length
+      ? task.council.workerModels.map((worker) => this.resolveCouncilExecutionModel(worker, ollamaModels))
+      : [defaultExecution];
+    const judge = task.council?.judgeModel
+      ? this.resolveCouncilExecutionModel(task.council.judgeModel, ollamaModels)
+      : (workers[0] ?? defaultExecution);
+
+    const sharedBrief = [
+      'You are part of a council run in Supreme Raman AI.',
+      'Produce a strong answer to the task objective using the supplied context.',
+      this.formatUserMapSummary(context.userMap),
+      `Objective:\n${task.objective}`
+    ].join('\n\n');
+
+    const trace: Array<{ modelId: string; stage: 'worker' | 'revision' | 'judge'; output: string }> = [];
+    const workerDrafts: Array<{ execution: ExecutionModelRef; output: string }> = [];
+
+    for (const worker of workers) {
+      const result = await this.generateWithFallback({
+        execution: worker,
+        system: 'You are a council worker. Produce a concrete first-pass answer.',
+        prompt: sharedBrief
+      });
+      trace.push({ modelId: this.toProviderModelId(result.provider, result.modelId), stage: 'worker', output: result.text });
+      workerDrafts.push({ execution: worker, output: result.text });
+    }
+
+    const revisedDrafts: Array<{ execution: ExecutionModelRef; output: string }> = [];
+    for (const draft of workerDrafts) {
+      const peerOutputs = workerDrafts
+        .filter((candidate) => candidate !== draft)
+        .map((candidate) => `Peer:\n${candidate.output}`)
+        .join('\n\n');
+
+      const result = await this.generateWithFallback({
+        execution: draft.execution,
+        system: 'Revise your answer after considering peer outputs. Keep the best parts and improve weaknesses.',
+        prompt: `${sharedBrief}\n\nYour original draft:\n${draft.output}\n\nPeer outputs:\n${peerOutputs}`
+      });
+      trace.push({ modelId: this.toProviderModelId(result.provider, result.modelId), stage: 'revision', output: result.text });
+      revisedDrafts.push({ execution: draft.execution, output: result.text });
+    }
+
+    const judgePrompt = revisedDrafts
+      .map((draft, index) => `Revised worker output (${index + 1}):\n${draft.output}`)
+      .join('\n\n');
+    const judgeResult = await this.generateWithFallback({
+      execution: judge,
+      system: 'You are the council judge. Synthesize the strongest final answer from the revised worker outputs.',
+      prompt: `${sharedBrief}\n\n${judgePrompt}`
+    });
+
+    trace.push({ modelId: this.toProviderModelId(judgeResult.provider, judgeResult.modelId), stage: 'judge', output: judgeResult.text });
+
+    return {
+      text: judgeResult.text,
+      provider: judgeResult.provider,
+      modelId: judgeResult.modelId,
+      councilTrace: trace
+    };
   }
 
   private async executeCouncil(
@@ -1105,6 +1719,14 @@ export class LocalRuntimeAdapter {
 
   private makeStableId(input: string) {
     return createHash('sha1').update(input).digest('hex');
+  }
+
+  private redactSensitiveText(value: string) {
+    return value
+      .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_OPENAI_KEY]')
+      .replace(/\bAIza[0-9A-Za-z\-_]{12,}\b/g, '[REDACTED_GOOGLE_KEY]')
+      .replace(/\bBearer\s+[A-Za-z0-9._\-+/=]+\b/gi, 'Bearer [REDACTED]')
+      .replace(/((?:api[_-]?key|token|secret|password|authorization)\s*[:=]\s*["']?)[^"',\s}]+/gi, '$1[REDACTED]');
   }
 
   private looksSensitive(value: string) {
