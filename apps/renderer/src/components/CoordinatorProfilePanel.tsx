@@ -14,10 +14,10 @@ import {
   Send,
 } from 'lucide-react';
 import type {
-  PrismProviderOverrideSettings,
+  CoordinatorProviderOverrideSettings,
   ProviderId,
   ProviderModelPreset,
-} from '@supreme/shared';
+} from '@workspace/shared';
 import { getDesktopApi } from '@/lib/electron';
 import { Badge, Button, Card, Divider, SectionLabel, Select, Input } from './ui';
 
@@ -28,12 +28,12 @@ interface ChannelEntry {
   accountName: string;
 }
 
-interface PrismProfilePanelProps {
+interface CoordinatorProfilePanelProps {
   open: boolean;
   onClose: () => void;
-  prismOverride: PrismProviderOverrideSettings | null;
+  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
   models: ProviderModelPreset[];
-  onSavePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  onSaveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
   busy: boolean;
   /** Whether runtime bridge is available for channels */
   bridgeAvailable?: boolean;
@@ -57,15 +57,15 @@ const PROVIDER_OPTIONS = [
 
 const TELEGRAM_CHANNEL_ID = 'telegram';
 
-export function PrismProfilePanel({
+export function CoordinatorProfilePanel({
   open,
   onClose,
-  prismOverride,
+  coordinatorOverride,
   models,
-  onSavePrismOverride,
+  onSaveCoordinatorOverride,
   busy,
   bridgeAvailable = false,
-}: PrismProfilePanelProps) {
+}: CoordinatorProfilePanelProps) {
   const [overrideProvider, setOverrideProvider] = useState<ProviderId>('ollama');
   const [overrideModelId, setOverrideModelId] = useState('');
   const [channels, setChannels] = useState<ChannelEntry[]>([]);
@@ -91,14 +91,14 @@ export function PrismProfilePanel({
   }, [open, refreshChannels]);
 
   useEffect(() => {
-    if (prismOverride) {
-      setOverrideProvider(prismOverride.provider);
-      setOverrideModelId(prismOverride.modelId);
+    if (coordinatorOverride) {
+      setOverrideProvider(coordinatorOverride.provider);
+      setOverrideModelId(coordinatorOverride.modelId);
       return;
     }
     setOverrideProvider('ollama');
     setOverrideModelId(installedModels[0]?.id ?? '');
-  }, [prismOverride, installedModels]);
+  }, [coordinatorOverride, installedModels]);
 
   const localModelOptions = installedModels.length === 0
     ? [{ value: '', label: 'No local models installed' }]
@@ -107,7 +107,7 @@ export function PrismProfilePanel({
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!overrideModelId.trim()) return;
-    await onSavePrismOverride({ provider: overrideProvider, modelId: overrideModelId.trim() });
+    await onSaveCoordinatorOverride({ provider: overrideProvider, modelId: overrideModelId.trim() });
   };
 
   const handleAddTelegram = async (event: React.FormEvent) => {
@@ -159,15 +159,15 @@ export function PrismProfilePanel({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col border-l border-white/[0.08] bg-surface-1 shadow-2xl"
+            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col border-l border-black/8 bg-surface-1 shadow-2xl dark:border-white/[0.08]"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
-              <h2 className="text-[15px] font-semibold text-white">Prism Profile</h2>
+            <div className="flex items-center justify-between border-b border-black/8 px-5 py-4 dark:border-white/[0.06]">
+              <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white">Coordinator Profile</h2>
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 hover:bg-white/[0.06] hover:text-white/70 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-black/[0.05] hover:text-slate-700 dark:text-white/40 dark:hover:bg-white/[0.06] dark:hover:text-white/70"
                 aria-label="Close profile"
               >
                 <X size={16} />
@@ -185,7 +185,7 @@ export function PrismProfilePanel({
                   <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-brand-light">
                     META ARCHITECT
                   </div>
-                  <h3 className="text-lg font-semibold text-white">Prism</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Coordinator</h3>
                 </div>
               </div>
 
@@ -195,10 +195,10 @@ export function PrismProfilePanel({
               <div>
                 <SectionLabel className="mb-2">SYSTEM INSTRUCTIONS</SectionLabel>
                 <Card className="bg-surface-3 p-4">
-                  <p className="text-sm leading-relaxed text-white/70">
-                    Prism is the meta-architect of RamN AI. It designs agent blueprints, orchestrates
+                  <p className="text-sm leading-relaxed text-slate-600 dark:text-white/70">
+                    Coordinator is the meta-architect of Workspace. It designs agent blueprints, orchestrates
                     multi-agent workflows, analyzes UserMap context, and provides strategy for building
-                    focused AI assistants. Prism has full access to the workspace state and can create
+                    focused AI assistants. Coordinator has full access to the workspace state and can create
                     agents, schedule tasks, and run council sessions.
                   </p>
                 </Card>
@@ -212,11 +212,11 @@ export function PrismProfilePanel({
                 <form onSubmit={handleSave} className="space-y-4">
                   <Card className="bg-surface-3 p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/40">
                         Current
                       </span>
-                      <Badge variant={prismOverride ? 'brand' : 'default'}>
-                        {prismOverride ? `${prismOverride.provider} / ${prismOverride.modelId}` : 'Automatic'}
+                      <Badge variant={coordinatorOverride ? 'brand' : 'default'}>
+                        {coordinatorOverride ? `${coordinatorOverride.provider} / ${coordinatorOverride.modelId}` : 'Automatic'}
                       </Badge>
                     </div>
                   </Card>
@@ -258,7 +258,7 @@ export function PrismProfilePanel({
                     <Button type="submit" variant="brand" size="md" loading={busy} className="flex-1">
                       Save
                     </Button>
-                    <Button type="button" variant="secondary" size="md" disabled={busy} onClick={() => void onSavePrismOverride(null)}>
+                    <Button type="button" variant="secondary" size="md" disabled={busy} onClick={() => void onSaveCoordinatorOverride(null)}>
                       Auto
                     </Button>
                   </div>
@@ -291,8 +291,8 @@ export function PrismProfilePanel({
               {/* Multi-channel messaging */}
               <div>
                 <SectionLabel className="mb-3">CHANNELS</SectionLabel>
-                <p className="text-[12px] text-white/35 mb-3">
-                  Prism can communicate through Telegram and other platforms via the runtime bridge.
+                <p className="mb-3 text-[12px] text-slate-500 dark:text-white/35">
+                  Coordinator can communicate through Telegram and other platforms via the runtime bridge.
                 </p>
                 {!bridgeAvailable && (
                   <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
@@ -327,13 +327,13 @@ export function PrismProfilePanel({
                   </div>
                 )}
                 {channelsLoading ? (
-                  <div className="flex items-center gap-2 py-4 justify-center text-white/30">
+                  <div className="flex items-center justify-center gap-2 py-4 text-slate-500 dark:text-white/30">
                     <Loader2 size={14} className="animate-spin" />
                     <span className="text-[12px]">Loading channels...</span>
                   </div>
                 ) : channels.length === 0 ? (
                   <Card className="bg-surface-3 p-4">
-                    <p className="text-[12px] text-white/35 text-center">
+                    <p className="text-center text-[12px] text-slate-500 dark:text-white/35">
                       {bridgeAvailable
                         ? 'Add your Telegram bot token above to connect.'
                         : 'Install the runtime bridge to connect messaging platforms.'}
@@ -344,13 +344,13 @@ export function PrismProfilePanel({
                     {channels.map((channel) => (
                       <div
                         key={channel.id}
-                        className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-2.5"
+                        className="flex items-center justify-between rounded-xl border border-black/8 bg-surface-3 px-4 py-2.5 dark:border-white/[0.06]"
                       >
                         <div className="flex items-center gap-2.5">
-                          <MessageSquare size={14} className="text-white/35" />
-                          <span className="text-sm text-white/60">{channel.provider}</span>
+                          <MessageSquare size={14} className="text-slate-400 dark:text-white/35" />
+                          <span className="text-sm text-slate-600 dark:text-white/60">{channel.provider}</span>
                           {channel.accountName && (
-                            <span className="text-[11px] text-white/25">{channel.accountName}</span>
+                            <span className="text-[11px] text-slate-400 dark:text-white/25">{channel.accountName}</span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
@@ -361,7 +361,7 @@ export function PrismProfilePanel({
                             <button
                               type="button"
                               onClick={() => void handleRemoveChannel(channel.id)}
-                              className="rounded p-1.5 text-white/35 hover:bg-white/10 hover:text-white/70 transition-colors"
+                              className="rounded p-1.5 text-slate-400 transition-colors hover:bg-black/5 hover:text-slate-700 dark:text-white/35 dark:hover:bg-white/10 dark:hover:text-white/70"
                               aria-label={`Remove ${channel.provider}`}
                             >
                               <Trash2 size={14} />

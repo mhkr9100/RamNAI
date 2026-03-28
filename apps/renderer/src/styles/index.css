@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  --surface-0: 248 249 250;
+  --surface-1: 255 255 255;
+  --surface-2: 244 247 250;
+  --surface-3: 236 240 244;
+  --surface-4: 226 232 240;
+  --surface-elevated: 255 255 255;
+  --shell-50: 248 249 250;
+  --shell-100: 238 242 245;
+  --shell-900: 15 17 19;
+  --shell-950: 8 9 10;
+  --text-primary: 15 23 42;
+  --text-muted: 71 85 105;
+  --placeholder-color: 100 116 139;
+  --selection-color: 16 185 129;
+}
+
+.dark {
+  color-scheme: dark;
+  --surface-0: 26 26 26;
+  --surface-1: 17 19 21;
+  --surface-2: 20 22 25;
+  --surface-3: 21 23 26;
+  --surface-4: 15 17 19;
+  --surface-elevated: 30 35 48;
+  --shell-50: 248 249 250;
+  --shell-100: 238 242 245;
+  --shell-900: 15 17 19;
+  --shell-950: 8 9 10;
+  --text-primary: 241 245 249;
+  --text-muted: 148 163 184;
+  --placeholder-color: 148 163 184;
+  --selection-color: 52 211 153;
+}
+
 html,
 body,
 #root {
@@ -13,6 +49,9 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: rgb(var(--surface-0));
+  color: rgb(var(--text-primary));
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 * {
@@ -20,16 +59,12 @@ body {
 }
 
 ::selection {
-  background: rgba(16, 185, 129, 0.2);
-}
-
-.dark ::selection {
-  background: rgba(16, 185, 129, 0.25);
+  background: rgb(var(--selection-color) / 0.22);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: rgb(var(--placeholder-color) / 0.55);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -42,7 +77,7 @@ textarea::placeholder {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.5);
+  background: rgb(148 163 184 / 0.45);
   border-radius: 10px;
 }
 

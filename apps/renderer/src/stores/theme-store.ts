@@ -9,10 +9,11 @@ interface ThemeState {
   setPreference: (preference: ThemePreference) => void;
 }
 
-const STORAGE_KEY = 'supreme-raman-theme';
+const STORAGE_KEY = 'workspace-theme';
+const LEGACY_STORAGE_KEY = 'theme';
 
 function getSystemTheme(): ResolvedTheme {
-  if (typeof window === 'undefined') return 'dark';
+  if (typeof window === 'undefined') return 'light';
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
@@ -26,6 +27,11 @@ function loadPreference(): ThemePreference {
     if (stored === 'light' || stored === 'dark' || stored === 'system') {
       return stored;
     }
+
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy === 'light' || legacy === 'dark') {
+      return legacy;
+    }
   } catch {
     // localStorage unavailable
   }
@@ -34,11 +40,9 @@ function loadPreference(): ThemePreference {
 
 function applyThemeToDOM(theme: ResolvedTheme) {
   const root = document.documentElement;
-  if (theme === 'dark') {
-    root.classList.add('dark');
-  } else {
-    root.classList.remove('dark');
-  }
+  root.classList.toggle('dark', theme === 'dark');
+  root.dataset.theme = theme;
+  root.style.colorScheme = theme;
 }
 
 export const useThemeStore = create<ThemeState>((set) => {
@@ -50,14 +54,21 @@ export const useThemeStore = create<ThemeState>((set) => {
     applyThemeToDOM(resolved);
 
     // Listen for system theme changes
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemThemeChange = () => {
       set((state) => {
         if (state.preference !== 'system') return state;
         const next = getSystemTheme();
         applyThemeToDOM(next);
         return { resolved: next };
       });
-    });
+    };
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleSystemThemeChange);
+    } else {
+      mediaQuery.addListener(handleSystemThemeChange);
+    }
   }
 
   return {
@@ -68,6 +79,7 @@ export const useThemeStore = create<ThemeState>((set) => {
       applyThemeToDOM(resolved);
       try {
         localStorage.setItem(STORAGE_KEY, preference);
+        localStorage.setItem(LEGACY_STORAGE_KEY, resolved);
       } catch {
         // localStorage unavailable
       }

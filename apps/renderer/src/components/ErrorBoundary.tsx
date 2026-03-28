@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
-import { RamanIcon } from './RamanIcon';
+import { AppLogo } from './AppLogo';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -70,9 +70,9 @@ export function AppCrashScreen({ error, onRetry }: { error: Error; onRetry: () =
     <div className="flex min-h-screen items-center justify-center bg-[#06070a] text-white">
       <div className="max-w-md text-center">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-          <RamanIcon size={28} />
+          <AppLogo size={28} />
         </div>
-        <h1 className="text-xl font-semibold">RamN AI encountered an error</h1>
+        <h1 className="text-xl font-semibold">Workspace encountered an error</h1>
         <p className="mt-3 text-sm leading-relaxed text-white/45">{error.message}</p>
         <button
           type="button"

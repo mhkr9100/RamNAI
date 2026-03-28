@@ -4,11 +4,11 @@ import { Download, FlaskConical, KeyRound, Trash2 } from 'lucide-react';
 import type {
   AgentMode,
   OllamaRuntimeStatus,
-  PrismProviderOverrideSettings,
+  CoordinatorProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderId,
   ProviderModelPreset,
-} from '@supreme/shared';
+} from '@workspace/shared';
 import type { WorkspaceSecurityState } from '@/lib/electron';
 import {
   Badge,
@@ -25,9 +25,9 @@ import {
 
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTarget } from './ChatsWorkspace';
-import { SpectrumView } from './SpectrumView';
+import { DirectoryView } from './DirectoryView';
 
-type SettingsSection = 'runtime' | 'providers' | 'agents' | 'prism';
+type SettingsSection = 'runtime' | 'providers' | 'agents' | 'coordinator';
 type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
 
 interface SettingsViewProps {
@@ -36,7 +36,7 @@ interface SettingsViewProps {
   runtimeReady: boolean;
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
-  prismOverride: PrismProviderOverrideSettings | null;
+  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
   workspaceSecurity: WorkspaceSecurityState | null;
   agentMode: AgentMode;
   onSaveAgentMode: (mode: AgentMode) => Promise<void>;
@@ -59,13 +59,12 @@ interface SettingsViewProps {
   onDeleteProfile: (profile: ProviderAuthProfile) => Promise<void>;
   onTestProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   onSetProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
-  onSavePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  onSaveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
   onEnableWorkspaceEncryption: (password: string) => Promise<void>;
   onDisableWorkspaceEncryption: (password: string) => Promise<void>;
   onSaveScheduleTimezone: (timezone: string) => Promise<void>;
   onCreateAgentTask: (input: TaskCreateInput) => Promise<void>;
-  onUpsertGroup: (group: { id?: string; name: string; description?: string; memberAgentIds: string[]; routingMode: 'auto' | 'manual'; autoRouteThreshold: number; defaultResponderAgentId?: string }) => Promise<void>;
-  onDeleteGroup: (groupId: string) => Promise<void>;
+  onDeleteAgent?: (agentId: string) => Promise<void>;
   onOpenChat: (target: ChatTarget) => void;
 }
 
@@ -73,7 +72,7 @@ const sections: Array<{ id: SettingsSection; label: string }> = [
   { id: 'runtime', label: 'Local' },
   { id: 'providers', label: 'Accounts' },
   { id: 'agents', label: 'Agents' },
-  { id: 'prism', label: 'Prism' },
+  { id: 'coordinator', label: 'Coordinator' },
 ];
 
 const listVariants = {
@@ -96,7 +95,7 @@ export function SettingsView({
   runtimeReady,
   providerProfiles,
   providerSelections,
-  prismOverride,
+  coordinatorOverride,
   workspaceSecurity,
   agentMode,
   onSaveAgentMode,
@@ -111,13 +110,12 @@ export function SettingsView({
   onDeleteProfile,
   onTestProfile,
   onSetProviderSelection,
-  onSavePrismOverride,
+  onSaveCoordinatorOverride,
   onEnableWorkspaceEncryption,
   onDisableWorkspaceEncryption,
   onSaveScheduleTimezone,
   onCreateAgentTask,
-  onUpsertGroup,
-  onDeleteGroup,
+  onDeleteAgent,
   onOpenChat,
 }: SettingsViewProps) {
   const providerRef = useRef<HTMLSelectElement | null>(null);
@@ -137,19 +135,19 @@ export function SettingsView({
     [models],
   );
 
-  const [prismOverrideProvider, setPrismOverrideProvider] = useState<ProviderId>(prismOverride?.provider ?? 'ollama');
-  const [prismOverrideModelId, setPrismOverrideModelId] = useState<string>(prismOverride?.modelId ?? '');
+  const [coordinatorOverrideProvider, setCoordinatorOverrideProvider] = useState<ProviderId>(coordinatorOverride?.provider ?? 'ollama');
+  const [coordinatorOverrideModelId, setCoordinatorOverrideModelId] = useState<string>(coordinatorOverride?.modelId ?? '');
 
   useEffect(() => {
-    if (prismOverride) {
-      setPrismOverrideProvider(prismOverride.provider);
-      setPrismOverrideModelId(prismOverride.modelId);
+    if (coordinatorOverride) {
+      setCoordinatorOverrideProvider(coordinatorOverride.provider);
+      setCoordinatorOverrideModelId(coordinatorOverride.modelId);
       return;
     }
 
-    setPrismOverrideProvider('ollama');
-    setPrismOverrideModelId(installedOllamaModels[0]?.id ?? '');
-  }, [prismOverride, installedOllamaModels]);
+    setCoordinatorOverrideProvider('ollama');
+    setCoordinatorOverrideModelId(installedOllamaModels[0]?.id ?? '');
+  }, [coordinatorOverride, installedOllamaModels]);
 
   const installedModelCount = useMemo(
     () => models.filter((model) => model.installed).length,
@@ -303,12 +301,12 @@ export function SettingsView({
                 ]}
               />
               {agentMode === 'bridge' && !snapshot.runtime.runtimeBridgeReady ? (
-                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
                   Runtime bridge is not available. Install the CLI or switch to Ollama.
                 </div>
               ) : null}
               {workspaceSecurity?.enabled ? (
-                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
                   Workspace encryption disables the plaintext runtime-workspace mirror, so direct local/cloud execution stays on and bridge execution is bypassed.
                 </div>
               ) : null}
@@ -360,8 +358,8 @@ export function SettingsView({
                         <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-semibold text-white">{model.label}</div>
-                              <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">{model.label}</div>
+                              <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
                                 {model.id}
                               </div>
                             </div>
@@ -373,7 +371,7 @@ export function SettingsView({
                           {model.phase || model.progress !== undefined || model.lastError ? (
                             <div className="mt-4 space-y-2">
                               {model.phase ? (
-                                <div className="text-xs text-white/55">{model.phase}</div>
+                                <div className="text-xs text-slate-500 dark:text-white/55">{model.phase}</div>
                               ) : null}
                               {model.progress !== undefined ? (
                                 <div className="h-2 overflow-hidden rounded-full bg-surface-1">
@@ -386,7 +384,7 @@ export function SettingsView({
                                 </div>
                               ) : null}
                               {model.lastError ? (
-                                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">
+                                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-600 dark:text-red-200">
                                   {model.lastError}
                                 </div>
                               ) : null}
@@ -400,8 +398,8 @@ export function SettingsView({
                         <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-sm font-semibold text-white">{model.label}</div>
-                              <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-white">{model.label}</div>
+                              <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
                                 {model.id}
                               </div>
                             </div>
@@ -435,7 +433,7 @@ export function SettingsView({
                     <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-white">{model.label}</div>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">{model.label}</div>
                           <div className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
                             {model.id}
                           </div>
@@ -469,7 +467,7 @@ export function SettingsView({
               <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white">
                       {workspaceSecurity?.enabled ? 'Enabled' : 'Disabled'}
                     </div>
                     <div className="mt-1 text-xs leading-6 text-white/55">
@@ -520,7 +518,7 @@ export function SettingsView({
                 )}
 
                 {securityError ? (
-                  <div className="mt-3 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                  <div className="mt-3 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-600 dark:text-red-200">
                     {securityError}
                   </div>
                 ) : null}
@@ -538,7 +536,7 @@ export function SettingsView({
 
             {providerProfiles.length === 0 ? (
               <Card variant="default" padding="lg" animate={false} className="bg-surface-3">
-                <div className="text-center text-sm leading-7 text-white/48">No accounts yet.</div>
+                <div className="text-center text-sm leading-7 text-slate-400 dark:text-white/48">No accounts yet.</div>
               </Card>
             ) : (
               <motion.div
@@ -638,12 +636,12 @@ export function SettingsView({
               />
 
               <label className="block space-y-1.5">
-                <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50">
                   Notes
                 </span>
                 <textarea
                   ref={descriptionRef}
-                  className="min-h-[112px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
+                  className="min-h-[112px] w-full rounded-xl border border-black/10 dark:border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-900 dark:text-white/90 outline-none transition-all duration-150 placeholder:text-slate-400 dark:placeholder:text-white/25 hover:border-black/20 dark:hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
                   placeholder="Optional"
                 />
               </label>
@@ -666,17 +664,17 @@ export function SettingsView({
                 className="bg-surface-1"
               />
 
-              <label className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-surface-3 px-4 py-4 text-sm text-white/70">
+              <label className="flex items-center gap-3 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-3 px-4 py-4 text-sm text-slate-600 dark:text-white/70">
                 <input
                   ref={defaultRef}
                   type="checkbox"
-                  className="h-4 w-4 rounded border-white/20 bg-transparent"
+                  className="h-4 w-4 rounded border-black/20 dark:border-white/20 bg-transparent"
                 />
                 Make this the default for this service
               </label>
 
               {formError ? (
-                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-600 dark:text-red-200">
                   {formError}
                 </div>
               ) : null}
@@ -697,23 +695,22 @@ export function SettingsView({
       ) : null}
 
       {activeSection === 'agents' ? (
-        <SpectrumView
+        <DirectoryView
           snapshot={snapshot}
           busy={busy}
           onCreateAgentTask={onCreateAgentTask}
-          onUpsertGroup={onUpsertGroup}
-          onDeleteGroup={onDeleteGroup}
+          {...(onDeleteAgent ? { onDeleteAgent } : {})}
           onOpenChat={onOpenChat}
         />
       ) : null}
 
-      {activeSection === 'prism' ? (
+      {activeSection === 'coordinator' ? (
         <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
           <CardHeader
-            title="Prism"
+            title="Coordinator"
             action={
-              <Badge variant={prismOverride ? 'brand' : 'default'}>
-                {prismOverride ? `${prismOverride.provider} / ${prismOverride.modelId}` : 'Automatic'}
+              <Badge variant={coordinatorOverride ? 'brand' : 'default'}>
+                {coordinatorOverride ? `${coordinatorOverride.provider} / ${coordinatorOverride.modelId}` : 'Automatic'}
               </Badge>
             }
           />
@@ -724,27 +721,27 @@ export function SettingsView({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                const modelId = prismOverrideModelId.trim();
+                const modelId = coordinatorOverrideModelId.trim();
                 if (!modelId) return;
-                await onSavePrismOverride({ provider: prismOverrideProvider, modelId });
+                await onSaveCoordinatorOverride({ provider: coordinatorOverrideProvider, modelId });
               }}
               className="space-y-4"
             >
               <Select
                 label="Provider"
-                value={prismOverrideProvider}
+                value={coordinatorOverrideProvider}
                 onChange={(e) => {
                   const nextProvider = e.target.value as ProviderId;
-                  setPrismOverrideProvider(nextProvider);
+                  setCoordinatorOverrideProvider(nextProvider);
 
                   const installedForProvider = models.filter((m) => m.provider === nextProvider && m.installed);
-                  const isCurrentStillValid = prismOverrideModelId
-                    ? installedForProvider.some((m) => m.id === prismOverrideModelId)
+                  const isCurrentStillValid = coordinatorOverrideModelId
+                    ? installedForProvider.some((m) => m.id === coordinatorOverrideModelId)
                     : false;
                   if (isCurrentStillValid) return;
 
-                  const nextModelId = nextProvider === prismOverride?.provider ? prismOverride?.modelId : installedForProvider[0]?.id;
-                  setPrismOverrideModelId(nextModelId ?? '');
+                  const nextModelId = nextProvider === coordinatorOverride?.provider ? coordinatorOverride?.modelId : installedForProvider[0]?.id;
+                  setCoordinatorOverrideModelId(nextModelId ?? '');
                 }}
                 disabled={busy || loading}
                 options={[
@@ -757,7 +754,7 @@ export function SettingsView({
 
               {(() => {
                 const installedForProvider = models.filter(
-                  (m) => m.provider === prismOverrideProvider && m.installed,
+                  (m) => m.provider === coordinatorOverrideProvider && m.installed,
                 );
                 const options: Array<{ value: string; label: string; disabled?: boolean }> = installedForProvider.map((m) => ({
                   value: m.id,
@@ -766,8 +763,8 @@ export function SettingsView({
                 }));
 
                 // Keep the currently selected model visible even if it's not installed.
-                if (prismOverrideModelId && !options.some((opt) => opt.value === prismOverrideModelId)) {
-                  options.unshift({ value: prismOverrideModelId, label: `${prismOverrideModelId} (not installed)`, disabled: true });
+                if (coordinatorOverrideModelId && !options.some((opt) => opt.value === coordinatorOverrideModelId)) {
+                  options.unshift({ value: coordinatorOverrideModelId, label: `${coordinatorOverrideModelId} (not installed)`, disabled: true });
                 }
 
                 const resolvedOptions =
@@ -775,12 +772,12 @@ export function SettingsView({
                     ? options
                     : [{ value: '', label: 'No installed models', disabled: true }];
 
-                if (prismOverrideProvider === 'ollama') {
+                if (coordinatorOverrideProvider === 'ollama') {
                   return (
                     <Select
                       label="Local Model"
-                      value={prismOverrideModelId}
-                      onChange={(e) => setPrismOverrideModelId(e.target.value)}
+                      value={coordinatorOverrideModelId}
+                      onChange={(e) => setCoordinatorOverrideModelId(e.target.value)}
                       disabled={busy || loading}
                       options={resolvedOptions}
                       hint="Shows installed local Ollama models."
@@ -791,8 +788,8 @@ export function SettingsView({
                 return (
                   <Select
                     label="Model"
-                    value={prismOverrideModelId}
-                    onChange={(e) => setPrismOverrideModelId(e.target.value)}
+                    value={coordinatorOverrideModelId}
+                    onChange={(e) => setCoordinatorOverrideModelId(e.target.value)}
                     disabled={busy || loading}
                     options={resolvedOptions}
                   />
@@ -805,7 +802,7 @@ export function SettingsView({
                   variant="brand"
                   size="md"
                   loading={busy || loading}
-                  disabled={!prismOverrideModelId.trim() || busy || loading}
+                  disabled={!coordinatorOverrideModelId.trim() || busy || loading}
                   className="flex-1"
                 >
                   Save
@@ -814,16 +811,16 @@ export function SettingsView({
                   type="button"
                   variant="secondary"
                   size="md"
-                  disabled={busy || loading || prismOverride === null}
-                  onClick={() => void onSavePrismOverride(null)}
+                  disabled={busy || loading || coordinatorOverride === null}
+                  onClick={() => void onSaveCoordinatorOverride(null)}
                 >
                   Reset to default
                 </Button>
               </div>
             </form>
 
-            {prismOverrideProvider === 'ollama' && installedOllamaModels.length === 0 ? (
-              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            {coordinatorOverrideProvider === 'ollama' && installedOllamaModels.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
                 No local Ollama models installed. Install a model under the Local section first.
               </div>
             ) : null}
@@ -877,10 +874,10 @@ function resolveModelVariant(
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
     <Card variant="default" padding="md" animate={false} className="bg-surface-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
         {label}
       </div>
-      <div className="mt-2 text-sm leading-6 text-white/72">{value}</div>
+      <div className="mt-2 text-sm leading-6 text-slate-600 dark:text-white/72">{value}</div>
     </Card>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import type { LocalProfile } from '@/lib/electron';
-import { RamanIcon } from './RamanIcon';
+import { AppLogo } from './AppLogo';
 import { Button, Card, Input } from './ui';
 
 export function LocalProfileScreen({
@@ -44,11 +44,11 @@ export function LocalProfileScreen({
             <div className="flex flex-col items-center text-center">
               <div className="shadow-glow rounded-3xl bg-surface-2 p-4">
                 <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-white/[0.08] bg-surface-3 text-brand-light">
-                  <RamanIcon size={44} />
+                  <AppLogo size={44} />
                 </div>
               </div>
               <div className="mt-6">
-                <h1 className="font-display text-2xl font-bold text-white">RamN AI</h1>
+                <h1 className="font-display text-2xl font-bold text-white">Workspace</h1>
                 <p className="mt-2 text-sm text-white/60">AI agents made simple.</p>
               </div>
             </div>
@@ -78,7 +78,7 @@ export function LocalProfileScreen({
             ) : null}
 
             <Button type="submit" variant="brand" size="lg" fullWidth loading={isSaving}>
-              {isSaving ? 'Entering Raman AI...' : 'Enter Raman AI'}
+              {isSaving ? 'Entering Workspace...' : 'Enter Workspace'}
             </Button>
           </form>
         </Card>

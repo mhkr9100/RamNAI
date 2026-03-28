@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bot, BrainCircuit } from 'lucide-react';
 import { ChatIcon } from './icons/ChatIcon';
-import type { AgentSpec, ChatThread, GroupSpec, GroupRouteMetadata } from '@supreme/shared';
+import type { AgentSpec, ChatThread, GroupSpec, GroupRouteMetadata } from '@workspace/shared';
 import type { AgentChatInput, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTranscriptMessage } from './chat/types';
 import { TaskComposerCard } from './TaskComposerCard';
 import { GroupChatView, PersistentChatbotChatView } from './chat';
+import { AgentProfilePanel } from './AgentProfilePanel';
 import { SectionLabel, EmptyState } from './ui';
 import { motion } from 'framer-motion';
 
@@ -56,8 +57,9 @@ export function ChatsWorkspace({
   onDeleteThread
 }: ChatsWorkspaceProps) {
   const [showTaskComposer, setShowTaskComposer] = useState(false);
+  const [showAgentProfile, setShowAgentProfile] = useState(false);
   const chatAgents = useMemo(
-    () => snapshot.agents.filter((a) => a.slug !== 'prism' && a.id !== 'prism'),
+    () => snapshot.agents.filter((a) => a.slug !== 'coordinator' && a.id !== 'coordinator'),
     [snapshot.agents]
   );
 
@@ -89,6 +91,12 @@ export function ChatsWorkspace({
   useEffect(() => {
     setShowTaskComposer(false);
   }, [selectedTarget?.id, selectedTarget?.type]);
+
+  useEffect(() => {
+    if (selectedTarget?.type !== 'agent') {
+      setShowAgentProfile(false);
+    }
+  }, [selectedTarget?.type]);
 
   const selectedAgent = useMemo(
     () => selectedTarget?.type === 'agent' ? chatAgents.find((agent) => agent.id === selectedTarget.id) ?? null : null,
@@ -193,20 +201,20 @@ export function ChatsWorkspace({
 
   return (
     <div className="flex min-h-full gap-3">
-        <aside className="w-64 shrink-0 overflow-hidden rounded-2xl border-r border-black/10 dark:border-white/5 bg-[#F8F9FA] dark:bg-[#111315] flex flex-col">
-        <div className="h-14 border-b border-white/[0.06] px-4 shrink-0">
+      <aside className="flex w-64 shrink-0 flex-col overflow-hidden rounded-2xl border border-black/8 bg-surface-1 dark:border-white/5">
+        <div className="h-14 shrink-0 border-b border-black/8 px-4 dark:border-white/[0.06]">
           <div className="flex h-full items-center">
-            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 dark:text-white/60">Chats</div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/60">Chats</div>
           </div>
         </div>
-        <div className="space-y-6 p-3 overflow-y-auto custom-scrollbar flex-1">
+        <div className="custom-scrollbar flex-1 space-y-6 overflow-y-auto p-3">
           <EntityListSection<AgentSpec>
             title="Agents"
             items={chatAgents}
             selectedId={selectedTarget?.type === 'agent' ? selectedTarget.id : null}
             emptyText="No agents."
             getLabel={(agent) => agent.name}
-            getBody={() => ''}
+            getBody={(agent) => agent.description || agent.persona.role}
             icon={<Bot size={16} />}
             onSelect={(agent) => {
               onSelectTarget({ type: 'agent', id: agent.id });
@@ -219,7 +227,7 @@ export function ChatsWorkspace({
             selectedId={selectedTarget?.type === 'group' ? selectedTarget.id : null}
             emptyText="No groups."
             getLabel={(group) => group.name}
-            getBody={(group) => `${group.memberAgentIds.length}`}
+            getBody={(group) => group.description || `${group.memberAgentIds.length} members`}
             icon={<BrainCircuit size={16} />}
             onSelect={(group) => {
               onSelectTarget({ type: 'group', id: group.id });
@@ -245,6 +253,7 @@ export function ChatsWorkspace({
                 id: selectedAgent.id,
                 name: selectedAgent.name,
                 role: selectedAgent.persona.role,
+                ...(selectedAgent.description ? { description: selectedAgent.description } : {}),
                 modelLabel: describeProviderStrategy(selectedAgent),
                 providerLabel: selectedAgent.providerStrategy.mode.replaceAll('_', ' '),
                 runtimeStatus,
@@ -255,6 +264,7 @@ export function ChatsWorkspace({
               streamingMessageId={streamingAssistantId}
               onSendMessage={(message) => onSendAgentMessage({ agentId: selectedAgent.id, message })}
               onTaskClick={() => setShowTaskComposer((current) => !current)}
+              onProfileClick={() => setShowAgentProfile(true)}
               {...(selectedThread ? { onResetThread: () => onDeleteThread(selectedThread.id) } : {})}
               {...(draftSeed && draftSeed.target.type === 'agent' && draftSeed.target.id === selectedAgent.id ? { draftSeed } : {})}
               emptyState=""
@@ -276,6 +286,7 @@ export function ChatsWorkspace({
             group={{
               id: selectedGroup.id,
               name: selectedGroup.name,
+              ...(selectedGroup.description ? { description: selectedGroup.description } : {}),
               memberCount: selectedGroup.memberAgentIds.length,
               runtimeStatus,
               threadStatus: groupThreadStatus,
@@ -292,6 +303,11 @@ export function ChatsWorkspace({
           />
         ) : null}
       </div>
+      <AgentProfilePanel
+        agent={selectedAgent}
+        open={showAgentProfile && Boolean(selectedAgent)}
+        onClose={() => setShowAgentProfile(false)}
+      />
     </div>
   );
 }
@@ -341,7 +357,7 @@ function EntityListSection<T extends { id: string }>({
     <div>
       <SectionLabel className="mb-3 px-1.5">{title}</SectionLabel>
       {items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-white/[0.08] bg-surface-3 px-3 py-4 text-xs leading-5 text-white/45">
+        <div className="rounded-xl border border-dashed border-black/10 bg-surface-2 px-3 py-4 text-xs leading-5 text-slate-500 dark:border-white/[0.08] dark:bg-surface-3 dark:text-white/45">
           {emptyText}
         </div>
       ) : (
@@ -358,8 +374,8 @@ function EntityListSection<T extends { id: string }>({
                 onClick={() => onSelect(item)}
                 className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
                   active 
-                    ? 'border-white/[0.12] bg-white/[0.04] text-white' 
-                    : 'border-transparent bg-surface-3 text-white hover:border-white/[0.08] hover:bg-surface-4'
+                    ? 'border-black/10 bg-black/[0.04] text-slate-900 dark:border-white/[0.12] dark:bg-white/[0.04] dark:text-white' 
+                    : 'border-transparent bg-surface-2 text-slate-900 hover:border-black/8 hover:bg-surface-3 dark:bg-surface-3 dark:text-white dark:hover:border-white/[0.08] dark:hover:bg-surface-4'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -367,8 +383,8 @@ function EntityListSection<T extends { id: string }>({
                     {icon}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/90">{getLabel(item)}</div>
-                    {getBody(item) ? <div className={`mt-0.5 line-clamp-2 text-[11px] leading-4 ${active ? 'text-white/70' : 'text-white/40'}`}>{getBody(item)}</div> : null}
+                    <div className="truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-900 dark:text-white/90">{getLabel(item)}</div>
+                    {getBody(item) ? <div className={`mt-0.5 line-clamp-2 text-[11px] leading-4 ${active ? 'text-slate-600 dark:text-white/70' : 'text-slate-500 dark:text-white/40'}`}>{getBody(item)}</div> : null}
                   </div>
                 </div>
               </motion.button>

@@ -8,8 +8,8 @@ import type {
   LocalProfile,
   MemoryFact,
   OllamaRuntimeStatus,
-  PrismReply,
-  PrismProviderOverrideSettings,
+  CoordinatorReply,
+  CoordinatorProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderAuthSelection,
   ProviderId,
@@ -21,7 +21,7 @@ import type {
   VoiceConfig,
   VoiceEvent,
   WorkItem
-} from '@supreme/shared';
+} from '@workspace/shared';
 
 export type { LocalProfile };
 
@@ -115,7 +115,7 @@ export interface WorkspaceSecurityState {
   ready: boolean;
 }
 
-export interface SupremeDesktopApi {
+export interface WorkspaceDesktopApi {
   profile: {
     get: () => Promise<LocalProfile | null>;
     save: (profile: LocalProfile) => Promise<LocalProfile>;
@@ -135,8 +135,11 @@ export interface SupremeDesktopApi {
     upsert: (group: GroupSpec) => Promise<GroupSpec>;
     delete: (groupId: string) => Promise<{ ok: true }>;
   };
-  prism: {
-    sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapState; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<PrismReply>;
+  agents: {
+    delete: (agentId: string) => Promise<{ ok: true }>;
+  };
+  coordinator: {
+    sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapState; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<CoordinatorReply>;
   };
   chat: {
     sendAgentMessage: (input: AgentChatInput) => Promise<ChatSendResult>;
@@ -181,8 +184,8 @@ export interface SupremeDesktopApi {
     setProviderSelection: (selection: ProviderAuthSelection) => Promise<ProviderAuthSelection>;
     getRetentionConfig: () => Promise<RetentionConfig>;
     saveRetentionConfig: (config: RetentionConfigInput) => Promise<RetentionConfig>;
-    getPrismOverride: () => Promise<PrismProviderOverrideSettings | null>;
-    savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<PrismProviderOverrideSettings | null>;
+    getCoordinatorOverride: () => Promise<CoordinatorProviderOverrideSettings | null>;
+    saveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<CoordinatorProviderOverrideSettings | null>;
     getAgentMode: () => Promise<AgentMode>;
     saveAgentMode: (mode: AgentMode) => Promise<AgentMode>;
     getOllamaStatus: () => Promise<OllamaRuntimeStatus>;
@@ -224,14 +227,14 @@ export interface SupremeDesktopApi {
 
 declare global {
   interface Window {
-    supreme?: SupremeDesktopApi;
+    workspaceApp?: WorkspaceDesktopApi;
   }
 }
 
-export function getDesktopApi(): SupremeDesktopApi {
-  if (!window.supreme) {
-    throw new Error('Supreme Raman AI desktop bridge is unavailable.');
+export function getDesktopApi(): WorkspaceDesktopApi {
+  if (!window.workspaceApp) {
+    throw new Error('Workspace desktop bridge is unavailable.');
   }
 
-  return window.supreme;
+  return window.workspaceApp;
 }

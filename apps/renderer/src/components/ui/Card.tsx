@@ -10,10 +10,10 @@ interface CardProps extends HTMLMotionProps<'div'> {
 }
 
 const variantClasses: Record<CardVariant, string> = {
-  default: 'bg-[#141720] border border-white/[0.08]',
-  elevated: 'bg-[#1a1e28] border border-white/[0.10] shadow-[0_4px_12px_rgba(0,0,0,0.4)]',
-  outline: 'bg-transparent border border-white/[0.10] hover:border-white/[0.16]',
-  ghost: 'bg-white/[0.03] border border-transparent',
+  default: 'bg-surface-2 border border-black/6 dark:border-white/[0.08]',
+  elevated: 'bg-surface-elevated border border-black/8 dark:border-white/[0.10] shadow-[0_4px_18px_rgba(15,23,42,0.10)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)]',
+  outline: 'bg-transparent border border-black/10 hover:border-black/15 dark:border-white/[0.10] dark:hover:border-white/[0.16]',
+  ghost: 'bg-black/[0.02] border border-transparent dark:bg-white/[0.03]',
   brand: 'bg-emerald-500/10 border border-emerald-500/20',
 };
 
@@ -71,14 +71,14 @@ export function CardHeader({ title, subtitle, icon, action, className = '' }: Ca
     <div className={`flex items-start justify-between gap-3 ${className}`}>
       <div className="flex items-start gap-3 min-w-0">
         {icon && (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04]">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/8 bg-black/[0.03] dark:border-white/[0.08] dark:bg-white/[0.04]">
             {icon}
           </div>
         )}
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-white/90 truncate">{title}</h3>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white/90 truncate">{title}</h3>
           {subtitle && (
-            <p className="mt-0.5 text-xs text-white/45 truncate">{subtitle}</p>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-white/45 truncate">{subtitle}</p>
           )}
         </div>
       </div>
@@ -97,7 +97,7 @@ export function CardSection({ label, children, className = '' }: CardSectionProp
   return (
     <div className={className}>
       {label && (
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-white/38">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/38">
           {label}
         </div>
       )}

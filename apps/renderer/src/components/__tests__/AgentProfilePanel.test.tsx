@@ -2,14 +2,14 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentProfilePanel } from '../AgentProfilePanel';
-import type { AgentSpec } from '@supreme/shared';
+import type { AgentSpec } from '@workspace/shared';
 
 const mockAgent: AgentSpec = {
   id: 'test-agent-1',
   slug: 'test-agent',
   name: 'Test Agent',
   description: 'A test agent for unit tests',
-  createdBy: 'prism',
+  createdBy: 'coordinator',
   originObjective: 'Test objective',
   persona: {
     role: 'AI Assistant',
@@ -48,7 +48,7 @@ const mockAgent: AgentSpec = {
     createdAt: '2026-03-01T00:00:00Z',
     updatedAt: '2026-03-18T00:00:00Z',
     version: 1,
-    source: 'prism-create' as const,
+    source: 'coordinator-create' as const,
   },
 };
 

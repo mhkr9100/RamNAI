@@ -8,7 +8,7 @@
     "types": ["vite/client"],
     "paths": {
       "@/*": ["src/*"],
-      "@supreme/shared": ["../../packages/shared/src/index.ts"]
+      "@workspace/shared": ["../../packages/shared/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]

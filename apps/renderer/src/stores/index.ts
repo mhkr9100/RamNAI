@@ -1,6 +1,6 @@
-// Supreme Raman AI — Zustand Store
+// Workspace — Zustand Store
 export * from './workspace-store';
-export * from './prism-store';
+export * from './coordinator-store';
 export * from './chat-store';
 export * from './settings-store';
 export * from './navigation-store';

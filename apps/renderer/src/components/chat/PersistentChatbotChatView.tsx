@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { FolderKanban, Send, Trash2 } from 'lucide-react';
+import { FolderKanban, Info, Send, Trash2 } from 'lucide-react';
 import type { ChatTranscriptMessage, PersistentChatbotIdentity } from './types';
 import { ChatMessage } from './ChatMessage';
 import { TypingIndicator } from './TypingIndicator';
@@ -19,6 +19,7 @@ export interface PersistentChatbotChatViewProps {
   taskLabel?: string;
   onSendMessage: (message: string) => Promise<void> | void;
   onTaskClick?: () => void;
+  onProfileClick?: () => void;
   onResetThread?: () => Promise<void> | void;
   draftSeed?: { token: string; text: string } | null;
 }
@@ -34,6 +35,7 @@ export function PersistentChatbotChatView({
   taskLabel = 'Task',
   onSendMessage,
   onTaskClick,
+  onProfileClick,
   onResetThread,
   draftSeed
 }: PersistentChatbotChatViewProps) {
@@ -67,21 +69,46 @@ export function PersistentChatbotChatView({
   };
 
   return (
-    <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-surface-2">
-      <header className="h-14 border-b border-white/[0.06] bg-surface-1 px-4 shrink-0">
+    <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border border-black/8 bg-surface-2 dark:border-white/[0.08]">
+      <header className="shrink-0 border-b border-black/8 bg-surface-1 px-4 py-3 dark:border-white/[0.06]">
         <div className="flex h-full flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-surface-3 text-sm">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/8 bg-surface-3 text-sm dark:border-white/[0.08]">
               🤖
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/40">{chatbot.role}</div>
-              <h1 className="mt-0.5 truncate text-sm font-semibold text-white/90">{chatbot.name}</h1>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/40">{chatbot.role}</div>
+              <h1 className="mt-0.5 truncate text-sm font-semibold text-slate-900 dark:text-white/90">{chatbot.name}</h1>
+              {(chatbot.description || chatbot.providerLabel || chatbot.modelLabel) ? (
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {chatbot.description ? (
+                    <span className="max-w-[20rem] truncate text-xs text-slate-500 dark:text-white/45">
+                      {chatbot.description}
+                    </span>
+                  ) : null}
+                  {chatbot.providerLabel ? (
+                    <Badge variant="outline" size="xs">{chatbot.providerLabel}</Badge>
+                  ) : null}
+                  {chatbot.modelLabel ? (
+                    <Badge variant="default" size="xs">{chatbot.modelLabel}</Badge>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {chatbot.runtimeStatus ? <StatusBadge {...chatbot.runtimeStatus} /> : null}
             {chatbot.threadStatus ? <StatusBadge {...chatbot.threadStatus} /> : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={onProfileClick}
+              disabled={!onProfileClick}
+              icon={<Info size={12} />}
+            >
+              Profile
+            </Button>
             <Button
               variant="secondary"
               size="xs"
@@ -105,14 +132,18 @@ export function PersistentChatbotChatView({
         ) : (
           <motion.div layout className="space-y-2">
             {transcript.map((message) => (
-              <ChatMessage
-                key={message.id}
-                role={message.role as any}
-                text={message.text}
-                agentName={message.label || (message.role !== 'user' ? chatbot.name : undefined)}
-                timestamp={message.timestamp}
-                isStreaming={Boolean(streamingMessageId && message.id === streamingMessageId && busy)}
-              />
+              streamingMessageId && message.id === streamingMessageId && busy && message.role === 'assistant' && !message.text.trim() ? (
+                <TypingIndicator key={message.id} agentName={message.label || chatbot.name} />
+              ) : (
+                <ChatMessage
+                  key={message.id}
+                  role={message.role as any}
+                  text={message.text}
+                  agentName={message.label || (message.role !== 'user' ? chatbot.name : undefined)}
+                  timestamp={message.timestamp}
+                  isStreaming={Boolean(streamingMessageId && message.id === streamingMessageId && busy)}
+                />
+              )
             ))}
             {busy && !streamingMessageId ? (
               <TypingIndicator agentName={chatbot.name} />
@@ -121,9 +152,9 @@ export function PersistentChatbotChatView({
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t border-white/[0.06] bg-surface-2 px-6 pb-6 pt-4 shrink-0">
+      <form onSubmit={handleSubmit} className="shrink-0 border-t border-black/8 bg-surface-2 px-6 pb-6 pt-4 dark:border-white/[0.06]">
         <div className="mx-auto max-w-[46rem]">
-          <div className="flex items-end gap-3 rounded-2xl border border-white/[0.08] bg-surface-3 px-3 py-2.5 shadow-sm transition-colors focus-within:border-brand/50 focus-within:bg-surface-4">
+          <div className="flex items-end gap-3 rounded-2xl border border-black/8 bg-surface-3 px-3 py-2.5 shadow-sm transition-colors focus-within:border-brand/50 focus-within:bg-surface-4 dark:border-white/[0.08]">
             <Button
               type="button"
               variant="ghost"
@@ -147,7 +178,7 @@ export function PersistentChatbotChatView({
                 }
               }}
               rows={1}
-              className="max-h-[160px] min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-relaxed text-white/90 outline-none placeholder:text-white/30"
+              className="max-h-[160px] min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 dark:text-white/90 dark:placeholder:text-white/30"
               placeholder={placeholder}
             />
             <Button

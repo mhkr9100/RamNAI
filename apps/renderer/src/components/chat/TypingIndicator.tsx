@@ -29,33 +29,33 @@ export const TypingIndicator: React.FC<TypingIndicatorProps> = ({
       className={`flex flex-col items-start my-4 w-full ${className}`}
     >
       <div className="flex items-baseline gap-2 mb-1.5 px-1">
-        <span className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">
           {agentName}
         </span>
       </div>
-      <div className="bg-[#141720] rounded-2xl rounded-tl-sm shadow-sm px-4 py-3 flex items-center gap-1.5 h-11">
+      <div className="bg-surface-3 dark:bg-[#141720] rounded-2xl rounded-tl-sm shadow-sm px-4 py-3 flex items-center gap-1.5 h-11">
         <motion.div
-          className="w-1.5 h-1.5 bg-white/40 rounded-full"
+          className="w-1.5 h-1.5 bg-slate-400 dark:bg-white/40 rounded-full"
           variants={dotVariants}
           initial="initial"
           animate="animate"
           transition={{ ...transition, delay: 0 }}
         />
         <motion.div
-          className="w-1.5 h-1.5 bg-white/40 rounded-full"
+          className="w-1.5 h-1.5 bg-slate-400 dark:bg-white/40 rounded-full"
           variants={dotVariants}
           initial="initial"
           animate="animate"
           transition={{ ...transition, delay: 0.15 }}
         />
         <motion.div
-          className="w-1.5 h-1.5 bg-white/40 rounded-full"
+          className="w-1.5 h-1.5 bg-slate-400 dark:bg-white/40 rounded-full"
           variants={dotVariants}
           initial="initial"
           animate="animate"
           transition={{ ...transition, delay: 0.3 }}
         />
-        <span className="text-xs text-white/40 ml-2">{agentName} is thinking...</span>
+        <span className="ml-2 text-xs text-slate-400 dark:text-white/40">{agentName} is thinking...</span>
       </div>
     </motion.div>
   );

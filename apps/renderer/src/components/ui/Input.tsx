@@ -34,14 +34,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50"
+            className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50"
           >
             {label}
           </label>
         )}
         <div className="relative">
           {icon && (
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/28">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/28">
               {icon}
             </span>
           )}
@@ -51,10 +51,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             aria-invalid={hasError}
             aria-describedby={(hint || error) ? descriptionId : undefined}
             className={[
-              'w-full bg-[#0a0c10] text-white/90 placeholder:text-white/25 outline-none border transition-all duration-150',
+              'w-full bg-white dark:bg-[#0a0c10] text-slate-900 dark:text-white/90 placeholder:text-slate-400 dark:placeholder:text-white/25 outline-none border transition-all duration-150',
               hasError
                 ? 'border-[#f87171]/40 focus:border-[#f87171]/60 focus:ring-2 focus:ring-[#f87171]/20'
-                : 'border-white/[0.10] hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20',
+                : 'border-black/10 hover:border-black/18 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 dark:border-white/[0.10] dark:hover:border-white/[0.16]',
               sizeClasses[inputSize],
               icon ? iconPadding[inputSize] : '',
               iconRight ? 'pr-9' : '',
@@ -65,7 +65,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...rest}
           />
           {iconRight && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35">
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/35">
               {iconRight}
             </span>
           )}
@@ -73,7 +73,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {(hint || error) && (
           <p
             id={descriptionId}
-            className={`text-[11px] ${hasError ? 'text-[#fca5a5]' : 'text-white/35'}`}
+            className={`text-[11px] ${hasError ? 'text-[#ef4444] dark:text-[#fca5a5]' : 'text-slate-500 dark:text-white/35'}`}
             {...(hasError ? { role: 'alert' } : {})}
           >
             {error ?? hint}
@@ -103,7 +103,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={textareaId}
-            className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50"
+            className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50"
           >
             {label}
           </label>
@@ -114,11 +114,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           aria-invalid={hasError}
           aria-describedby={(hint || error) ? descriptionId : undefined}
           className={[
-            'w-full bg-[#0a0c10] text-white/90 placeholder:text-white/25 outline-none border transition-all duration-150',
+            'w-full bg-white dark:bg-[#0a0c10] text-slate-900 dark:text-white/90 placeholder:text-slate-400 dark:placeholder:text-white/25 outline-none border transition-all duration-150',
             'min-h-[80px] resize-none rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed',
             hasError
               ? 'border-[#f87171]/40 focus:border-[#f87171]/60 focus:ring-2 focus:ring-[#f87171]/20'
-              : 'border-white/[0.10] hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20',
+              : 'border-black/10 hover:border-black/18 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 dark:border-white/[0.10] dark:hover:border-white/[0.16]',
             className,
           ]
             .filter(Boolean)
@@ -128,7 +128,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {(hint || error) && (
           <p
             id={descriptionId}
-            className={`text-[11px] ${hasError ? 'text-[#fca5a5]' : 'text-white/35'}`}
+            className={`text-[11px] ${hasError ? 'text-[#ef4444] dark:text-[#fca5a5]' : 'text-slate-500 dark:text-white/35'}`}
             {...(hasError ? { role: 'alert' } : {})}
           >
             {error ?? hint}
@@ -158,7 +158,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50"
+            className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50"
           >
             {label}
           </label>
@@ -168,8 +168,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           id={selectId}
           aria-describedby={hint ? descriptionId : undefined}
           className={[
-            'w-full bg-[#0a0c10] text-white/90 outline-none border transition-all duration-150',
-            'border-white/[0.10] hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20',
+            'w-full bg-white dark:bg-[#0a0c10] text-slate-900 dark:text-white/90 outline-none border transition-all duration-150',
+            'border-black/10 hover:border-black/18 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 dark:border-white/[0.10] dark:hover:border-white/[0.16]',
             sizeClasses[inputSize],
             className,
           ]
@@ -183,7 +183,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {hint && <p id={descriptionId} className="text-[11px] text-white/35">{hint}</p>}
+        {hint && <p id={descriptionId} className="text-[11px] text-slate-500 dark:text-white/35">{hint}</p>}
       </div>
     );
   },

@@ -14,17 +14,17 @@ interface BadgeProps {
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-white/[0.06] text-white/65 border-white/[0.10]',
+  default: 'bg-black/[0.04] text-slate-600 border-black/10 dark:bg-white/[0.06] dark:text-white/65 dark:border-white/[0.10]',
   brand: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/20',
-  success: 'bg-[#34d399]/[0.12] text-[#6ee7b7] border-[#34d399]/[0.20]',
-  warning: 'bg-[#fbbf24]/[0.12] text-[#fde68a] border-[#fbbf24]/[0.20]',
-  error: 'bg-[#f87171]/[0.12] text-[#fca5a5] border-[#f87171]/[0.20]',
-  info: 'bg-[#38bdf8]/[0.12] text-[#7dd3fc] border-[#38bdf8]/[0.20]',
-  outline: 'bg-transparent text-white/55 border-white/[0.12]',
+  success: 'bg-[#34d399]/[0.12] text-[#047857] border-[#34d399]/[0.20] dark:text-[#6ee7b7]',
+  warning: 'bg-[#fbbf24]/[0.12] text-[#92400e] border-[#fbbf24]/[0.20] dark:text-[#fde68a]',
+  error: 'bg-[#f87171]/[0.12] text-[#b91c1c] border-[#f87171]/[0.20] dark:text-[#fca5a5]',
+  info: 'bg-[#38bdf8]/[0.12] text-[#0369a1] border-[#38bdf8]/[0.20] dark:text-[#7dd3fc]',
+  outline: 'bg-transparent text-slate-500 border-black/12 dark:text-white/55 dark:border-white/[0.12]',
 };
 
 const dotColors: Record<BadgeVariant, string> = {
-  default: 'bg-white/40',
+  default: 'bg-slate-400 dark:bg-white/40',
   brand: 'bg-emerald-500',
   success: 'bg-[#34d399]',
   warning: 'bg-[#fbbf24]',
@@ -99,7 +99,7 @@ export function StatusDot({ status, label, className = '' }: StatusDotProps) {
         <span className={`relative inline-flex h-2 w-2 rounded-full ${statusColors[status]}`} />
       </span>
       {label && (
-        <span className="text-[11px] font-medium text-white/55">{label}</span>
+        <span className="text-[11px] font-medium text-slate-500 dark:text-white/55">{label}</span>
       )}
     </span>
   );

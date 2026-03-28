@@ -8,7 +8,7 @@ import type {
   MemoryFact,
   UserMapNode,
   UserMapState
-} from '@supreme/shared';
+} from '@workspace/shared';
 import { EXTERNAL_WORKSPACE_MANIFEST_FILENAME } from './runtime-compat.js';
 
 export interface RuntimeWorkspaceSource {
@@ -24,7 +24,7 @@ export interface RuntimeWorkspaceSource {
 
 export interface RuntimeWorkspaceManagerOptions {
   workspaceName?: string;
-  prismWorkspaceName?: string;
+  coordinatorWorkspaceName?: string;
 }
 
 export interface RuntimeWorkspaceFile {
@@ -33,7 +33,7 @@ export interface RuntimeWorkspaceFile {
 }
 
 export interface RuntimeWorkspaceSubjectManifest {
-  kind: 'prism' | 'agent';
+  kind: 'coordinator' | 'agent';
   name: string;
   slug: string;
   workspacePath: string;
@@ -48,7 +48,7 @@ export interface RuntimeWorkspaceManifest {
   workspaceName: string;
   generatedAt: string;
   profile: LocalProfile | null;
-  prism: RuntimeWorkspaceSubjectManifest;
+  coordinator: RuntimeWorkspaceSubjectManifest;
   agents: RuntimeWorkspaceSubjectManifest[];
     groups: Array<{
       id: string;
@@ -225,9 +225,9 @@ export class RuntimeWorkspaceManager {
 
   buildPlan(source: RuntimeWorkspaceSource): RuntimeWorkspacePlan {
     const generatedAt = source.generatedAt ?? new Date().toISOString();
-    const workspaceName = this.options.workspaceName ?? source.profile?.name ?? 'Supreme Raman AI';
-    const rootSlug = slugify(workspaceName, 'supreme-raman-ai');
-    const prismSlug = slugify(this.options.prismWorkspaceName ?? 'Prism', 'prism');
+    const workspaceName = this.options.workspaceName ?? source.profile?.name ?? 'Workspace';
+    const rootSlug = slugify(workspaceName, 'workspace-app');
+    const coordinatorSlug = slugify(this.options.coordinatorWorkspaceName ?? 'Coordinator', 'coordinator');
     const agentSubjects = source.agents
       .slice()
       .sort((left, right) => left.slug.localeCompare(right.slug) || left.id.localeCompare(right.id))
@@ -237,11 +237,11 @@ export class RuntimeWorkspaceManager {
     const memorySplit = partitionMemoryFacts(source.memoryFacts);
     const memoryDays = [...new Set([...memorySplit.publicMemoryDays, ...memorySplit.privateMemoryDays])].sort((left, right) => left.localeCompare(right));
 
-    const prismSubject: RuntimeWorkspaceSubjectManifest = {
-      kind: 'prism',
-      name: this.options.prismWorkspaceName ?? 'Prism',
-      slug: prismSlug,
-      workspacePath: 'prism',
+    const coordinatorSubject: RuntimeWorkspaceSubjectManifest = {
+      kind: 'coordinator',
+      name: this.options.coordinatorWorkspaceName ?? 'Coordinator',
+      slug: coordinatorSlug,
+      workspacePath: 'coordinator',
       skillsPaths: allSkills.map(renderSkillPath),
       tools: this.collectTools(source.agents),
       workspacePaths: this.collectWorkspacePaths(source.agents),
@@ -253,7 +253,7 @@ export class RuntimeWorkspaceManager {
       workspaceName,
       generatedAt,
       profile: source.profile,
-      prism: prismSubject,
+      coordinator: coordinatorSubject,
       agents: agentSubjects,
       groups: source.groups
         .slice()
@@ -298,7 +298,7 @@ export class RuntimeWorkspaceManager {
 
     const files = this.renderFiles({
       workspaceRoot: rootSlug,
-      prismWorkspacePath: prismSubject.workspacePath,
+      coordinatorWorkspacePath: coordinatorSubject.workspacePath,
       agents: agentSubjects,
       source,
       manifest
@@ -314,7 +314,7 @@ export class RuntimeWorkspaceManager {
 
   renderFiles(source: {
     workspaceRoot: string;
-    prismWorkspacePath: string;
+    coordinatorWorkspacePath: string;
     agents: RuntimeWorkspaceSubjectManifest[];
     source: RuntimeWorkspaceSource;
     manifest: RuntimeWorkspaceManifest;
@@ -331,13 +331,13 @@ export class RuntimeWorkspaceManager {
         `Workspace: \`${manifest.workspaceName}\``,
         `Generated: \`${manifest.generatedAt}\``,
         '',
-        '## Prism',
-        `- \`${source.prismWorkspacePath}/AGENTS.md\``,
-        `- \`${source.prismWorkspacePath}/SOUL.md\``,
-        `- \`${source.prismWorkspacePath}/TOOLS.md\``,
-        `- \`${source.prismWorkspacePath}/IDENTITY.md\``,
-        `- \`${source.prismWorkspacePath}/USER.md\``,
-        `- \`${source.prismWorkspacePath}/MEMORY.md\``,
+        '## Coordinator',
+        `- \`${source.coordinatorWorkspacePath}/AGENTS.md\``,
+        `- \`${source.coordinatorWorkspacePath}/SOUL.md\``,
+        `- \`${source.coordinatorWorkspacePath}/TOOLS.md\``,
+        `- \`${source.coordinatorWorkspacePath}/IDENTITY.md\``,
+        `- \`${source.coordinatorWorkspacePath}/USER.md\``,
+        `- \`${source.coordinatorWorkspacePath}/MEMORY.md\``,
         '',
         '## Memory Mirrors',
         '- Public memory is mirrored in `MEMORY.md` and `memory/public/`.',
@@ -365,28 +365,28 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'SOUL.md',
       content: renderWorkspaceDocHeader('SOUL', [
-        `This workspace is the local Supreme Raman AI execution surface for \`${manifest.workspaceName}\`.`,
+        `This workspace is the local Workspace execution surface for \`${manifest.workspaceName}\`.`,
         '',
-        'Prism is the architect. It should stay local-first, deterministic, and explicit about workspace state.',
+        'Coordinator is the architect. It should stay local-first, deterministic, and explicit about workspace state.',
         '',
-        `Prism workspace: \`${source.prismWorkspacePath}\``,
+        `Coordinator workspace: \`${source.coordinatorWorkspacePath}\``,
         `Profile: ${input.profile ? `${input.profile.name} <${input.profile.email}>` : 'unassigned local profile'}`,
         '',
         'The runtime bridge should preserve the existing Ollama execution path while mirroring durable state into filesystem workspace files.',
-        'Public memory is shared with agents and groups. Private memory remains Prism-only.'
+        'Public memory is shared with agents and groups. Private memory remains Coordinator-only.'
       ])
     });
 
     files.push({
       path: 'TOOLS.md',
       content: renderWorkspaceDocHeader('TOOLS', [
-        'This file lists the runtime-relevant tool and skill paths available to Prism and persistent chatbots.',
+        'This file lists the runtime-relevant tool and skill paths available to Coordinator and persistent chatbots.',
         '',
         `Skill workspace root: \`${manifest.skillsWorkspaceRoot}\``,
         '',
-        ...(manifest.prism.skillsPaths.length
-          ? ['## Prism Skills', ...manifest.prism.skillsPaths.map((skillPath) => `- \`${skillPath}\``)]
-          : ['## Prism Skills', '- none yet']),
+        ...(manifest.coordinator.skillsPaths.length
+          ? ['## Coordinator Skills', ...manifest.coordinator.skillsPaths.map((skillPath) => `- \`${skillPath}\``)]
+          : ['## Coordinator Skills', '- none yet']),
         '',
         ...(agents.length
           ? agents.flatMap((agent) => [
@@ -411,10 +411,10 @@ export class RuntimeWorkspaceManager {
             ])
           : '- No local profile yet.',
         '',
-        '## Prism Identity',
+        '## Coordinator Identity',
         renderBullets([
-          `Name: ${manifest.prism.name}`,
-          `Workspace Path: ${manifest.prism.workspacePath}`
+          `Name: ${manifest.coordinator.name}`,
+          `Workspace Path: ${manifest.coordinator.workspacePath}`
         ]),
         '',
         '## Agents',
@@ -427,7 +427,7 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'USER.md',
       content: renderWorkspaceDocHeader('USER', [
-        'This file mirrors the local human context that Prism and chatbots should respect.',
+        'This file mirrors the local human context that Coordinator and chatbots should respect.',
         '',
         input.profile
           ? renderBullets([
@@ -481,7 +481,7 @@ export class RuntimeWorkspaceManager {
       content: JSON.stringify(manifest, null, 2) + '\n'
     });
 
-    files.push(...this.renderSubjectFiles(source.prismWorkspacePath, manifest.prism, {
+    files.push(...this.renderSubjectFiles(source.coordinatorWorkspacePath, manifest.coordinator, {
       profile: input.profile,
       userMap: input.userMap,
       memoryFacts: input.memoryFacts,
@@ -541,7 +541,7 @@ export class RuntimeWorkspaceManager {
     const rootDir = join(targetDir, plan.rootDir);
     const writtenFiles: string[] = [];
     const skillDirs = new Set<string>([
-      ...plan.manifest.prism.skillsPaths,
+      ...plan.manifest.coordinator.skillsPaths,
       ...plan.manifest.agents.flatMap((agent) => agent.skillsPaths)
     ]);
 
@@ -611,7 +611,7 @@ export class RuntimeWorkspaceManager {
           `Kind: \`${subject.kind}\``,
           '',
           'This workspace belongs to one persistent execution subject.',
-          'Prism and the local runtime should read this folder as the canonical filesystem mirror for the subject.',
+          'Coordinator and the local runtime should read this folder as the canonical filesystem mirror for the subject.',
           '',
           `Skills workspace root: \`skills\``,
           ...(subject.skillsPaths.length ? ['## Skills', ...subject.skillsPaths.map((skillPath) => `- \`${skillPath}\``)] : ['## Skills', '- none yet']),
@@ -625,15 +625,15 @@ export class RuntimeWorkspaceManager {
           `Identity: ${subject.name}`,
           `Workspace path: \`${subjectPath}\``,
           '',
-          subject.kind === 'prism'
-            ? 'Prism is the architect and should remain the deterministic local coordinator.'
+          subject.kind === 'coordinator'
+            ? 'Coordinator is the architect and should remain the deterministic local coordinator.'
             : `Role: ${agent?.persona.role ?? 'Specialist chatbot'}`,
           '',
-          subject.kind === 'prism'
+          subject.kind === 'coordinator'
             ? 'Mission: turn local user intent into durable workspace state and controlled execution.'
             : `Mission: ${agent?.persona.mission ?? ''}`,
           '',
-          subject.kind === 'prism'
+          subject.kind === 'coordinator'
             ? 'Operating stance: local-first, filesystem-backed, and compatible with the existing Ollama execution path.'
             : `Operating stance: ${agent?.persona.systemInstructions ?? ''}`
         ])
@@ -682,12 +682,12 @@ export class RuntimeWorkspaceManager {
             : '- No local profile available.',
           '',
           userMap
-            ? ['## UserMap', '```text', subject.kind === 'prism' ? renderUserMapState(userMap) : renderUserMapTree(userMap.publicTree), '```'].join('\n')
+            ? ['## UserMap', '```text', subject.kind === 'coordinator' ? renderUserMapState(userMap) : renderUserMapTree(userMap.publicTree), '```'].join('\n')
             : '## UserMap\n- unavailable',
           '',
           ['## Public Memory', ...(publicMemoryFacts.length ? publicMemoryFacts.map(renderMemoryFact) : ['- no public memory facts yet.'])].join('\n'),
           '',
-          ...(subject.kind === 'prism'
+          ...(subject.kind === 'coordinator'
             ? ['## Private Memory', ...(privateMemoryFacts.length ? privateMemoryFacts.map(renderMemoryFact) : ['- no private memory facts yet.'])]
             : []),
           '',
@@ -699,7 +699,7 @@ export class RuntimeWorkspaceManager {
         content: renderWorkspaceDocHeader(`${subject.name} MEMORY`, [
           'Durable memory facts mirrored for this subject.',
           '',
-          ...(subject.kind === 'prism'
+          ...(subject.kind === 'coordinator'
             ? [
                 '## Public Memory',
                 ...renderMemoryFactList(publicMemoryFacts),
@@ -713,7 +713,7 @@ export class RuntimeWorkspaceManager {
               ]),
           '',
           ...(context
-            ? subject.kind === 'prism'
+            ? subject.kind === 'coordinator'
               ? [
                   '## Public Dated Logs',
                   ...(publicMemoryDays.length ? publicMemoryDays.map((day) => `- \`memory/public/${day}.md\``) : ['- none yet']),

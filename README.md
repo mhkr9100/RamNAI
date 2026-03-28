@@ -1,6 +1,6 @@
-# Supreme Raman AI
+# Workspace
 
-Desktop-first, privacy-first AI workspace combining RamN AI's product layer with a local execution engine.
+Desktop-first, privacy-first AI workspace combining Workspace's product layer with a local execution engine.
 
 ## Workspace Layout
 
@@ -19,7 +19,7 @@ This repo already contains a working local foundation:
 - SQLite persistence
 - filesystem workspace export
 - local Ollama runtime adapter
-- Prism ask and create flows
+- Coordinator ask and create flows
 - scheduled tasks and council runs
 - Work surface
 - tree-first UserMap editor

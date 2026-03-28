@@ -7,7 +7,7 @@
     "composite": true,
     "lib": ["ES2022"],
     "paths": {
-      "@supreme/shared": ["../shared/src/index.ts"]
+      "@workspace/shared": ["../shared/src/index.ts"]
     }
   },
   "references": [{ "path": "../shared" }],

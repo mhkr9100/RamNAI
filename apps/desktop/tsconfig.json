@@ -7,9 +7,9 @@
     "composite": true,
     "lib": ["ES2022", "DOM"],
     "paths": {
-      "@supreme/shared": ["../../packages/shared/src/index.ts"],
-      "@supreme/storage": ["../../packages/storage/src/index.ts"],
-      "@supreme/runtime": ["../../packages/runtime/src/index.ts"]
+      "@workspace/shared": ["../../packages/shared/src/index.ts"],
+      "@workspace/storage": ["../../packages/storage/src/index.ts"],
+      "@workspace/runtime": ["../../packages/runtime/src/index.ts"]
     }
   },
   "references": [

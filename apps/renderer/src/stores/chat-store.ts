@@ -1,4 +1,4 @@
-// Supreme Raman AI — Zustand Store
+// Workspace — Zustand Store
 import { create } from 'zustand';
 
 export interface ChatTarget {

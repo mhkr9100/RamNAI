@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bot, MessageSquare, Send } from 'lucide-react';
-import type { AgentSpec } from '@supreme/shared';
+import type { AgentSpec } from '@workspace/shared';
 import { Badge, Button, Card, Divider, SectionLabel } from './ui';
 
 interface AgentProfilePanelProps {
@@ -14,6 +14,7 @@ interface AgentProfilePanelProps {
     systemPrompt?: string;
     capabilities?: string[];
   }) => Promise<void>;
+  onDeleteAgent?: (agentId: string) => Promise<void>;
 }
 
 const CAPABILITY_LABELS: Record<string, { label: string; color: string }> = {
@@ -31,7 +32,7 @@ function getCapabilityStyle(cap: string) {
   const normalized = cap.toLowerCase().replace(/[\s-]+/g, '_');
   return CAPABILITY_LABELS[normalized] ?? {
     label: cap.toUpperCase(),
-    color: 'bg-white/[0.06] text-white/60 border-white/[0.08]',
+    color: 'bg-black/[0.04] text-slate-600 border-black/8 dark:bg-white/[0.06] dark:text-white/60 dark:border-white/[0.08]',
   };
 }
 
@@ -41,6 +42,7 @@ export function AgentProfilePanel({
   onClose,
   onOpenChat,
   onUpdateProfile,
+  onDeleteAgent,
 }: AgentProfilePanelProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -84,15 +86,15 @@ export function AgentProfilePanel({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col border-l border-white/[0.08] bg-surface-1 shadow-2xl"
+            className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-md flex-col border-l border-black/8 bg-surface-1 shadow-2xl dark:border-white/[0.08]"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
-              <h2 className="text-[15px] font-semibold text-white">Profile</h2>
+            <div className="flex items-center justify-between border-b border-black/8 px-5 py-4 dark:border-white/[0.06]">
+              <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white">Profile</h2>
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 hover:bg-white/[0.06] hover:text-white/70 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-black/[0.05] hover:text-slate-700 dark:text-white/40 dark:hover:bg-white/[0.06] dark:hover:text-white/70"
                 aria-label="Close profile"
               >
                 <X size={16} />
@@ -103,14 +105,14 @@ export function AgentProfilePanel({
             <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-5 space-y-5">
               {/* Agent identity */}
               <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/[0.08] bg-surface-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-black/8 bg-surface-3 dark:border-white/[0.08]">
                   <Bot size={22} className="text-brand-light" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-brand-light">
                     {agent.persona.role.toUpperCase()}
                   </div>
-                  <p className="text-sm text-white/50 mt-0.5 truncate">{agent.description || 'No description'}</p>
+                  <p className="mt-0.5 truncate text-sm text-slate-500 dark:text-white/50">{agent.description || 'No description'}</p>
                 </div>
               </div>
 
@@ -122,10 +124,10 @@ export function AgentProfilePanel({
                     <input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="w-full bg-transparent text-[15px] font-semibold text-white outline-none"
+                      className="w-full bg-transparent text-[15px] font-semibold text-slate-900 outline-none dark:text-white"
                     />
                   ) : (
-                    <p className="text-[15px] font-semibold text-white">{agent.name}</p>
+                    <p className="text-[15px] font-semibold text-slate-900 dark:text-white">{agent.name}</p>
                   )}
                 </Card>
               </div>
@@ -135,7 +137,7 @@ export function AgentProfilePanel({
                 <div>
                   <SectionLabel className="mb-2">RUNTIME MODEL</SectionLabel>
                   <Card className="bg-surface-3 p-4">
-                    <p className="text-sm text-white/70">
+                    <p className="text-sm text-slate-600 dark:text-white/70">
                       {agent.providerStrategy.mode === 'fixed'
                         ? `${agent.providerStrategy.provider}:${agent.providerStrategy.modelId}`
                         : agent.providerStrategy.mode === 'user_override'
@@ -146,8 +148,8 @@ export function AgentProfilePanel({
                 </div>
                 <div>
                   <SectionLabel className="mb-2">CAPABILITIES</SectionLabel>
-                  <Card className="bg-surface-3 p-4">
-                    <p className="text-sm text-white/70">{allCapabilities.length}</p>
+                <Card className="bg-surface-3 p-4">
+                    <p className="text-sm text-slate-600 dark:text-white/70">{allCapabilities.length}</p>
                   </Card>
                 </div>
               </div>
@@ -163,12 +165,12 @@ export function AgentProfilePanel({
                       value={editSystemPrompt}
                       onChange={(e) => setEditSystemPrompt(e.target.value)}
                       rows={8}
-                      className="w-full resize-none bg-transparent text-sm leading-relaxed text-white/80 outline-none placeholder:text-white/25"
+                      className="w-full resize-none bg-transparent text-sm leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 dark:text-white/80 dark:placeholder:text-white/25"
                       placeholder="Enter system instructions..."
                     />
                   ) : (
                     <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/70">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-white/70">
                         {agent.persona.systemInstructions || agent.persona.role || 'No system instructions configured.'}
                       </p>
                     </div>
@@ -182,7 +184,7 @@ export function AgentProfilePanel({
               <div>
                 <SectionLabel className="mb-3">AGENT CAPABILITIES</SectionLabel>
                 {allCapabilities.length === 0 ? (
-                  <p className="text-sm text-white/40">No capabilities configured.</p>
+                  <p className="text-sm text-slate-500 dark:text-white/40">No capabilities configured.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {allCapabilities.map((cap) => {
@@ -220,17 +222,17 @@ export function AgentProfilePanel({
               </div>
 
               {/* Channels placeholder */}
-              {agent.persona.role?.toLowerCase().includes('prism') && (
+              {agent.persona.role?.toLowerCase().includes('coordinator') && (
                 <>
                   <Divider />
                   <div>
                     <SectionLabel className="mb-3">CHANNELS</SectionLabel>
                     <div className="space-y-2">
                       {['WhatsApp', 'Telegram', 'Discord', 'Slack', 'iMessage'].map((channel) => (
-                        <div key={channel} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-2.5">
+                        <div key={channel} className="flex items-center justify-between rounded-xl border border-black/8 bg-surface-3 px-4 py-2.5 dark:border-white/[0.06]">
                           <div className="flex items-center gap-2.5">
-                            <MessageSquare size={14} className="text-white/35" />
-                            <span className="text-sm text-white/60">{channel}</span>
+                            <MessageSquare size={14} className="text-slate-400 dark:text-white/35" />
+                            <span className="text-sm text-slate-600 dark:text-white/60">{channel}</span>
                           </div>
                           <Badge variant="outline" size="xs">Configure</Badge>
                         </div>
@@ -242,7 +244,7 @@ export function AgentProfilePanel({
             </div>
 
             {/* Footer actions */}
-            <div className="border-t border-white/[0.06] px-5 py-4 space-y-2">
+            <div className="space-y-2 border-t border-black/8 px-5 py-4 dark:border-white/[0.06]">
               {editing ? (
                 <div className="flex gap-2">
                   <Button variant="brand" size="lg" fullWidth onClick={() => void handleSave()}>
@@ -257,6 +259,18 @@ export function AgentProfilePanel({
                   {onUpdateProfile && (
                     <Button variant="secondary" size="lg" fullWidth onClick={handleStartEdit}>
                       UPDATE PROFILE
+                    </Button>
+                  )}
+                  {onDeleteAgent && (
+                    <Button
+                      variant="danger"
+                      size="lg"
+                      onClick={async () => {
+                        await onDeleteAgent(agent.id);
+                        onClose();
+                      }}
+                    >
+                      Delete Agent
                     </Button>
                   )}
                   {onOpenChat && (
@@ -282,9 +296,9 @@ export function AgentProfilePanel({
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-surface-3 px-4 py-2.5">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">{label}</span>
-      <span className="text-sm text-white/70">{value}</span>
+    <div className="flex items-center justify-between rounded-xl border border-black/8 bg-surface-3 px-4 py-2.5 dark:border-white/[0.06]">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/40">{label}</span>
+      <span className="text-sm text-slate-600 dark:text-white/70">{value}</span>
     </div>
   );
 }

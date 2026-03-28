@@ -1,9 +1,9 @@
-// Supreme Raman AI — Zustand Store
+// Workspace — Zustand Store
 import { create } from 'zustand';
 import { getDesktopApi } from '@/lib/electron';
 import type { WorkspaceSnapshot } from '@/lib/electron';
 
-const POLLING_INTERVAL_MS = 3000;
+const POLLING_INTERVAL_MS = 10000;
 const LOAD_MORE_PAGE_SIZE = 100;
 
 let pollingIntervalId: number | null = null;
@@ -95,6 +95,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     }
 
     pollingIntervalId = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') {
+        return;
+      }
       void get().refreshSnapshot();
     }, POLLING_INTERVAL_MS);
   },

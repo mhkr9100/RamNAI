@@ -41,8 +41,8 @@ import type {
   OllamaRuntimeStatus,
   OllamaModelInstallStatus,
   Permission,
-  PrismRequest,
-  PrismProviderOverrideSettings,
+  CoordinatorRequest,
+  CoordinatorProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderAuthSelection,
   ProviderId,
@@ -54,9 +54,9 @@ import type {
   VoiceConfig,
   VoiceEvent,
   WorkItem
-} from '@supreme/shared';
-import { SqliteStorage } from '@supreme/storage';
-import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, BridgeAgentManager, HeartbeatService, type SecretStoreCipher } from '@supreme/runtime';
+} from '@workspace/shared';
+import { SqliteStorage } from '@workspace/storage';
+import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, BridgeAgentManager, HeartbeatService, type SecretStoreCipher } from '@workspace/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -187,7 +187,7 @@ function createElectronSafeStorageCipher(): SecretStoreCipher {
 
 function createFallbackSecretCipher(): SecretStoreCipher {
   const key = createHash('sha256')
-    .update([os.homedir(), os.hostname(), process.platform, 'supreme-raman-ai'].join('|'))
+    .update([os.homedir(), os.hostname(), process.platform, 'workspace-app'].join('|'))
     .digest();
 
   return {
@@ -304,7 +304,7 @@ async function withRuntimeBridgeCompatibility<T>(action: () => Promise<T>): Prom
 
 function syncRuntimeConfig() {
   const activeStorage = requireWorkspaceReady();
-  runtime.setPrismProviderOverride(activeStorage.getPrismProviderOverride());
+  runtime.setCoordinatorProviderOverride(activeStorage.getCoordinatorProviderOverride());
   const stored = activeStorage.getAgentMode();
   runtime.setAgentMode(
     workspaceSecurity.isEncryptionEnabled()
@@ -499,7 +499,7 @@ function getWorkspacePaths(): WorkspacePaths {
 }
 
 function getDatabasePath() {
-  return path.join(getWorkspacePaths().root, 'supreme-raman-ai.sqlite');
+  return path.join(getWorkspacePaths().root, 'workspace-app.sqlite');
 }
 
 function getWorkspaceFileEncoder(): WorkspaceTextEncoder | undefined {
@@ -782,7 +782,7 @@ async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
     snapshot,
     providerProfiles,
     providerSelections: EXPORT_PROVIDER_IDS.map((provider) => activeStorage.getProviderAuthSelection(provider) ?? { provider, profileId: null }),
-    prismOverride: activeStorage.getPrismProviderOverride(),
+    coordinatorOverride: activeStorage.getCoordinatorProviderOverride(),
     runtimeStatus,
     ollamaStatus,
     health,
@@ -1559,7 +1559,7 @@ async function openArtifact(artifactId: string) {
   if (workspaceSecurity.isEncryptionEnabled()) {
     const fileContent = readFileSync(targetPath, 'utf8');
     if (workspaceSecurity.isEncryptedText(fileContent)) {
-      const decryptedDir = path.join(app.getPath('temp'), 'supreme-raman-ai-decrypted');
+      const decryptedDir = path.join(app.getPath('temp'), 'workspace-app-decrypted');
       mkdirSync(decryptedDir, { recursive: true });
       openPathTarget = path.join(decryptedDir, `${artifact.id}-${path.basename(targetPath)}`);
       writeFileSync(openPathTarget, workspaceSecurity.decryptText(fileContent), 'utf8');
@@ -1597,7 +1597,10 @@ function setupAutoUpdater() {
 
   try {
     const server = 'https://update.electronjs.org';
-    const feed = `${server}/mhkr9100/RamN-AI---Supreme/${process.platform}-${process.arch}/${app.getVersion()}`;
+    // Read owner/repo from package.json build.publish config to avoid hardcoding personal identifiers.
+    const owner = process.env.WORKSPACE_UPDATE_OWNER ?? 'YOUR_GITHUB_USERNAME';
+    const repo = process.env.WORKSPACE_UPDATE_REPO ?? 'workspace-app';
+    const feed = `${server}/${owner}/${repo}/${process.platform}-${process.arch}/${app.getVersion()}`;
     autoUpdater.setFeedURL({ url: feed });
 
     autoUpdater.on('update-available', () => {
@@ -1611,7 +1614,7 @@ function setupAutoUpdater() {
     autoUpdater.on('update-downloaded', (_event, releaseNotes, releaseName) => {
       const notification = new Notification({
         title: 'Update Ready',
-        body: `RamN AI ${releaseName ?? 'update'} is ready. Click to restart and install.`
+        body: `Workspace ${releaseName ?? 'update'} is ready. Click to restart and install.`
       });
 
       notification.on('click', () => {
@@ -1641,7 +1644,7 @@ async function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: '#08090a',
-    title: 'RamN AI',
+    title: 'Workspace',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1650,7 +1653,7 @@ async function createWindow() {
     }
   });
 
-  const devUrl = process.env.SUPREME_RENDERER_URL;
+  const devUrl = process.env.WORKSPACE_RENDERER_URL;
   if (devUrl) {
     await mainWindow.loadURL(devUrl);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -1923,15 +1926,21 @@ app.whenReady().then(async () => {
     syncStructuredExports();
     return { ok: true };
   });
-  ipcMain.handle(channels.prismSend, async (_event, input: PrismRequest) => {
+  ipcMain.handle(channels.agentDelete, async (_event, agentId: string) => {
+    requirePermission('create_agents');
+    storage.deleteAgent(agentId);
+    syncStructuredExports();
+    return { ok: true };
+  });
+  ipcMain.handle(channels.coordinatorSend, async (_event, input: CoordinatorRequest) => {
     requirePermission('create_agents');
     syncRuntimeConfig();
-    const reply = await withRuntimeBridgeCompatibility(() => runtime.sendPrismRequest(input));
+    const reply = await withRuntimeBridgeCompatibility(() => runtime.sendCoordinatorRequest(input));
     if (reply.createdAgent) {
       storage.upsertAgent(reply.createdAgent);
       syncStructuredExports();
     }
-    await extractAndPersistMemories('chat', `prism:${reply.id}`, `${input.message}\n\n${reply.text}`);
+    await extractAndPersistMemories('chat', `coordinator:${reply.id}`, `${input.message}\n\n${reply.text}`);
     return reply;
   });
   ipcMain.handle(channels.agentChat, async (_event, input: AgentChatInput) => {
@@ -2322,17 +2331,17 @@ app.whenReady().then(async () => {
     syncStructuredExports();
     return saved;
   });
-  ipcMain.handle(channels.prismOverrideGet, async () => {
-    return storage.getPrismProviderOverride() as PrismProviderOverrideSettings | null;
+  ipcMain.handle(channels.coordinatorOverrideGet, async () => {
+    return storage.getCoordinatorProviderOverride() as CoordinatorProviderOverrideSettings | null;
   });
   ipcMain.handle(channels.retentionConfigGet, async () => requireWorkspaceReady().getRetentionConfig());
   ipcMain.handle(channels.retentionConfigSave, async (_event, config: RetentionConfigInput) => {
     requirePermission('manage_settings');
     return requireWorkspaceReady().saveRetentionConfig(config);
   });
-  ipcMain.handle(channels.prismOverrideSave, async (_event, override: PrismProviderOverrideSettings | null) => {
+  ipcMain.handle(channels.coordinatorOverrideSave, async (_event, override: CoordinatorProviderOverrideSettings | null) => {
     requirePermission('manage_settings');
-    const saved = storage.savePrismProviderOverride(override);
+    const saved = storage.saveCoordinatorProviderOverride(override);
     syncStructuredExports();
     return saved;
   });

@@ -13,35 +13,35 @@ import {
   Users,
   Wand2,
 } from 'lucide-react';
-import type { PrismMode } from '@supreme/shared';
-import type { PrismProviderOverrideSettings, ProviderModelPreset } from '@supreme/shared';
+import type { CoordinatorMode } from '@workspace/shared';
+import type { CoordinatorProviderOverrideSettings, ProviderModelPreset } from '@workspace/shared';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
-import { PrismProfilePanel } from './PrismProfilePanel';
+import { CoordinatorProfilePanel } from './CoordinatorProfilePanel';
 import { ChatMessage } from './chat/ChatMessage';
 import { TypingIndicator } from './chat/TypingIndicator';
 import { Button, Badge, Card, Input, SectionLabel, Divider, EmptyState } from './ui';
 
-interface PrismMessage {
+interface CoordinatorMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
-  mode?: PrismMode | 'work';
+  mode?: CoordinatorMode | 'work';
 }
 
-interface PrismWorkspaceProps {
+interface CoordinatorWorkspaceProps {
   snapshot: WorkspaceSnapshot;
-  messages: PrismMessage[];
+  messages: CoordinatorMessage[];
   busy: boolean;
-  onSend: (mode: PrismMode, message: string) => Promise<void>;
+  onSend: (mode: CoordinatorMode, message: string) => Promise<void>;
   onCreateTask: (input: TaskCreateInput) => Promise<void>;
   onClearTranscript: () => void;
-  prismOverride?: PrismProviderOverrideSettings | null;
-  onSavePrismOverride?: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  coordinatorOverride?: CoordinatorProviderOverrideSettings | null;
+  onSaveCoordinatorOverride?: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
 }
 
 const modes: Array<{
-  id: PrismMode | 'task' | 'council';
+  id: CoordinatorMode | 'task' | 'council';
   label: string;
   icon: React.ComponentType<{ size?: number }>;
   description: string;
@@ -52,20 +52,20 @@ const modes: Array<{
   { id: 'council', label: 'COUNCIL', icon: Users, description: 'Multi-model debate & consensus' },
 ];
 
-export function PrismWorkspace({
+export function CoordinatorWorkspace({
   snapshot,
   messages,
   busy,
   onSend,
   onCreateTask,
   onClearTranscript,
-  prismOverride,
-  onSavePrismOverride,
-}: PrismWorkspaceProps) {
-  const [activeMode, setActiveMode] = useState<PrismMode | 'task' | 'council'>('ask');
+  coordinatorOverride,
+  onSaveCoordinatorOverride,
+}: CoordinatorWorkspaceProps) {
+  const [activeMode, setActiveMode] = useState<CoordinatorMode | 'task' | 'council'>('ask');
   const [message, setMessage] = useState('');
   const [transcriptQuery, setTranscriptQuery] = useState('');
-  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | PrismMessage['role']>(
+  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | CoordinatorMessage['role']>(
     'all',
   );
   const [newestFirst, setNewestFirst] = useState(false);
@@ -137,22 +137,22 @@ export function PrismWorkspace({
 
   return (
     <div className="space-y-4">
-      <section className="flex min-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-surface-1">
+      <section className="flex min-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-2xl border border-black/8 dark:border-white/[0.08] bg-surface-1">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
+        <header className="flex items-center justify-between border-b border-black/8 dark:border-white/[0.06] px-5 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-brand/20 bg-brand/[0.08]">
               <Sparkles size={16} className="text-brand-light" />
             </div>
             <div>
-              <h2 className="text-[15px] font-semibold text-white">{activeConfig.label}</h2>
-              <p className="text-[11px] text-white/35">{activeConfig.description}</p>
+              <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white">{activeConfig.label}</h2>
+              <p className="text-[11px] text-slate-400 dark:text-white/35">{activeConfig.description}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {/* Mode pills */}
-            <div className="flex items-center rounded-xl border border-white/[0.06] bg-surface-0/50 p-0.5">
+            <div className="flex items-center rounded-xl border border-black/8 dark:border-white/[0.06] bg-surface-0/50 p-0.5">
               {modes.map((mode) => {
                 const active = mode.id === activeMode;
                 return (
@@ -162,12 +162,12 @@ export function PrismWorkspace({
                     onClick={() => setActiveMode(mode.id)}
                     className={[
                       'relative rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150',
-                      active ? 'text-white' : 'text-white/45 hover:text-white/70',
+                      active ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-white/45 hover:text-slate-600 dark:hover:text-white/70',
                     ].join(' ')}
                   >
                     {active && (
                       <motion.div
-                        layoutId="prism-mode"
+                        layoutId="coordinator-mode"
                         className="absolute inset-0 rounded-lg bg-brand/[0.15] border border-brand/20"
                         transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                       />
@@ -215,7 +215,7 @@ export function PrismWorkspace({
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="overflow-hidden border-b border-white/[0.06]"
+              className="overflow-hidden border-b border-black/8 dark:border-white/[0.06]"
             >
               <div className="px-5 py-4">
                 <div
@@ -248,7 +248,7 @@ export function PrismWorkspace({
                           onChange={(e) =>
                             setTranscriptRoleFilter(e.target.value as typeof transcriptRoleFilter)
                           }
-                          className="h-8 rounded-lg border border-white/[0.10] bg-surface-1 px-2.5 text-xs text-white/80 outline-none"
+                          className="h-8 rounded-lg border border-black/10 dark:border-white/[0.10] bg-surface-1 px-2.5 text-xs text-slate-700 dark:text-white/80 outline-none"
                         >
                           <option value="all">All roles</option>
                           <option value="user">User</option>
@@ -331,15 +331,15 @@ export function PrismWorkspace({
                   <Users size={16} className="text-[#a78bfa]" />
                   <span className="text-sm font-semibold text-[#a78bfa]">Multi-Model Council</span>
                 </div>
-                <p className="text-[12px] leading-relaxed text-white/45">
+                <p className="text-[12px] leading-relaxed text-slate-500 dark:text-white/45">
                   Multiple models evaluate the same brief independently, critique each other, and synthesize the strongest recommendation. Use this for high-stakes decisions.
                 </p>
               </div>
             )}
             <TaskComposerCard
               title={activeMode === 'task' ? 'Schedule Task' : 'Council Session'}
-              subtitle={activeMode === 'task' ? 'Queue a background job for Prism or an agent.' : 'Configure models, objective, and schedule for the council.'}
-              target={{ type: 'prism' }}
+              subtitle={activeMode === 'task' ? 'Queue a background job for Coordinator or an agent.' : 'Configure models, objective, and schedule for the council.'}
+              target={{ type: 'coordinator' }}
               defaultMode={activeMode}
               models={snapshot.models}
               busy={busy}
@@ -359,7 +359,7 @@ export function PrismWorkspace({
                       <Wand2 size={22} className="text-brand-light" />
                     )
                   }
-                  title={activeMode === 'ask' ? 'Ask Prism' : 'Create Agents'}
+                  title={activeMode === 'ask' ? 'Ask Coordinator' : 'Create Agents'}
                   description={
                     activeMode === 'ask'
                       ? 'Get help with objectives, workflows, prompts, and system design.'
@@ -380,10 +380,10 @@ export function PrismWorkspace({
                               ),
                           },
                           {
-                            label: 'How does Prism work?',
+                            label: 'How does Coordinator work?',
                             onClick: () =>
                               setMessage(
-                                'Explain how Prism creates and manages agent blueprints.',
+                                'Explain how Coordinator creates and manages agent blueprints.',
                               ),
                           },
                         ]
@@ -420,18 +420,18 @@ export function PrismWorkspace({
                       role={entry.role}
                       text={entry.text}
                       {...(entry.mode != null ? { mode: entry.mode } : {})}
-                      agentName="Prism"
+                      agentName="Coordinator"
                     />
                   ))}
-                  {busy && <TypingIndicator agentName="Prism" />}
+                  {busy && <TypingIndicator agentName="Coordinator" />}
                 </div>
               )}
             </div>
 
             {/* Composer */}
-            <form onSubmit={handleSubmit} className="border-t border-white/[0.06] px-5 pb-4 pt-3">
+            <form onSubmit={handleSubmit} className="border-t border-black/8 dark:border-white/[0.06] px-5 pb-4 pt-3">
               <div className="mx-auto max-w-[46rem]">
-                <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-surface-3 px-3 py-2 transition-colors focus-within:border-brand/30">
+                <div className="flex items-end gap-2 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-3 px-3 py-2 transition-colors focus-within:border-brand/30">
                   <div className="flex-1">
                     <textarea
                       ref={textareaRef}
@@ -439,10 +439,10 @@ export function PrismWorkspace({
                       onChange={(e) => setMessage(e.target.value)}
                       onKeyDown={handleKeyDown}
                       rows={1}
-                      className="max-h-[120px] min-h-[40px] w-full resize-none bg-transparent px-1 py-2 text-sm leading-relaxed text-white outline-none placeholder:text-white/25"
+                      className="max-h-[120px] min-h-[40px] w-full resize-none bg-transparent px-1 py-2 text-sm leading-relaxed text-slate-900 dark:text-white outline-none placeholder:text-slate-400 dark:placeholder:text-white/25"
                       placeholder={
                         activeMode === 'ask'
-                          ? 'Ask Prism anything...'
+                          ? 'Ask Coordinator anything...'
                           : 'Describe the agent you want to create...'
                       }
                     />
@@ -454,7 +454,7 @@ export function PrismWorkspace({
                       'mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all duration-150',
                       message.trim()
                         ? 'bg-brand text-white hover:bg-brand-hover shadow-glow'
-                        : 'bg-white/[0.04] text-white/20',
+                        : 'bg-black/[0.04] dark:bg-white/[0.04] text-slate-300 dark:text-white/20',
                       'disabled:cursor-not-allowed disabled:opacity-50',
                     ].join(' ')}
                     title={activeMode === 'ask' ? 'Send' : 'Create'}
@@ -462,7 +462,7 @@ export function PrismWorkspace({
                     <ArrowUp size={15} />
                   </button>
                 </div>
-                <p className="mt-1.5 text-center text-[10px] text-white/20">
+                <p className="mt-1.5 text-center text-[10px] text-slate-300 dark:text-white/20">
                   Press Enter to send, Shift+Enter for new line
                 </p>
               </div>
@@ -470,14 +470,14 @@ export function PrismWorkspace({
           </>
         )}
       </section>
-      {/* Prism Profile Panel */}
-      {onSavePrismOverride && (
-        <PrismProfilePanel
+      {/* Coordinator Profile Panel */}
+      {onSaveCoordinatorOverride && (
+        <CoordinatorProfilePanel
           open={showProfile}
           onClose={() => setShowProfile(false)}
-          prismOverride={prismOverride ?? null}
+          coordinatorOverride={coordinatorOverride ?? null}
           models={snapshot.models}
-          onSavePrismOverride={onSavePrismOverride}
+          onSaveCoordinatorOverride={onSaveCoordinatorOverride}
           busy={busy}
           bridgeAvailable={snapshot.runtime.runtimeBridgeReady}
         />
@@ -488,9 +488,9 @@ export function PrismWorkspace({
 
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-surface-1 px-3 py-2.5">
-      <div className="text-[10px] font-medium text-white/35">{label}</div>
-      <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+    <div className="rounded-xl border border-black/8 dark:border-white/[0.06] bg-surface-1 px-3 py-2.5">
+      <div className="text-[10px] font-medium text-slate-400 dark:text-white/35">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{value}</div>
     </div>
   );
 }

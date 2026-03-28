@@ -7,28 +7,28 @@ import { DashboardView } from './components/DashboardView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { Sidebar, ViewId } from './components/Sidebar';
-import { PrismWorkspace } from './components/PrismWorkspace';
+import { CoordinatorWorkspace } from './components/CoordinatorWorkspace';
 import { SettingsView } from './components/SettingsView';
 import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
-import { CanvasWorkspace } from './components/CanvasWorkspace';
+import { GroupsWorkspace } from './components/GroupsWorkspace';
 import { VoicePanel } from './components/VoicePanel';
 import { WorkspaceLockScreen } from './components/WorkspaceLockScreen';
-import { RamanIcon } from './components/RamanIcon';
+import { AppLogo } from './components/AppLogo';
 import { Button, Card, Input, useToast } from './components/ui';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useWorkspaceStore } from './stores/workspace-store';
 import { useNavigationStore } from './stores/navigation-store';
-import { usePrismStore } from './stores/prism-store';
+import { useCoordinatorStore } from './stores/coordinator-store';
 import { useChatStore } from './stores/chat-store';
 import { useSettingsStore } from './stores/settings-store';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput } from './lib/electron';
 import { logger } from './lib/logger';
 import type {
-  PrismMode,
+  CoordinatorMode,
   UserMapState,
   WorkItem,
-} from '@supreme/shared';
+} from '@workspace/shared';
 import type { WorkspaceSecurityState } from './lib/electron';
 
 function getErrorMessage(e: unknown): string {
@@ -43,7 +43,7 @@ export default function App() {
   // -- Zustand stores --
   const { snapshot, loading, error, refreshSnapshot, loadMoreTasks, loadMoreWorkItems, setError, clearError, startPolling, stopPolling } = useWorkspaceStore();
   const { activeView, navigate } = useNavigationStore();
-  const prismStore = usePrismStore();
+  const coordinatorStore = useCoordinatorStore();
   const chatStore = useChatStore();
   const settingsStore = useSettingsStore();
   const toast = useToast();
@@ -65,7 +65,7 @@ export default function App() {
     useMemo(() => [
       { key: 'k', meta: true, handler: () => setCmdPaletteOpen(v => !v), description: 'Command palette', label: 'Command Palette' },
       { key: '0', meta: true, handler: () => navigate('home'), description: 'Dashboard', label: 'Dashboard' },
-      { key: '1', meta: true, handler: () => navigate('prism'), description: 'Prism', label: 'Prism' },
+      { key: '1', meta: true, handler: () => navigate('coordinator'), description: 'Coordinator', label: 'Coordinator' },
       { key: '2', meta: true, handler: () => navigate('chats'), description: 'Chats', label: 'Chats' },
       { key: '3', meta: true, handler: () => navigate('usermap'), description: 'Context Brain', label: 'Context Brain' },
       { key: '4', meta: true, handler: () => navigate('work'), description: 'Work', label: 'Work' },
@@ -139,7 +139,7 @@ export default function App() {
         await api.profile.save({ ...profile, email: '' });
         await refreshSnapshot();
         setShowOnboarding(false);
-        toast.success('Welcome to RamN AI!');
+        toast.success('Welcome to Workspace!');
       } catch (e) {
         setError(getErrorMessage(e));
         throw e;
@@ -168,19 +168,18 @@ export default function App() {
     [api, snapshot?.profile, withBusy],
   );
 
-  // -- Prism --
-  const handlePrismSend = useCallback(
-    async (mode: PrismMode, message: string) => {
+  // -- Coordinator --
+  const handleCoordinatorSend = useCallback(
+    async (mode: CoordinatorMode, message: string) => {
       if (!snapshot) return;
-      await prismStore.sendMessage(mode, message, snapshot);
-      await refreshSnapshot();
-      const msgs = usePrismStore.getState().messages;
+      await coordinatorStore.sendMessage(mode, message, snapshot);
+      const msgs = useCoordinatorStore.getState().messages;
       const last = msgs[msgs.length - 1];
       if (last?.mode === 'create' && last.role === 'assistant') {
         navigate('chats');
       }
     },
-    [snapshot, prismStore, refreshSnapshot, navigate],
+    [snapshot, coordinatorStore, navigate],
   );
 
   // -- Tasks --
@@ -232,6 +231,15 @@ export default function App() {
     [api, withBusy],
   );
 
+  // -- Agent deletion --
+  const handleDeleteAgent = useCallback(
+    (agentId: string) => withBusy(async () => {
+      if (!api) throw new Error('Desktop bridge unavailable.');
+      await api.agents.delete(agentId);
+    }, 'Agent deleted.'),
+    [api, withBusy],
+  );
+
   // -- Chat (token streaming via IPC; persisted thread refreshes when the stream completes) --
   const handleSendAgentMessage = useCallback(
     async (input: AgentChatInput) => {
@@ -265,6 +273,7 @@ export default function App() {
       });
       try {
         await api.chat.sendAgentMessageStream({ ...input, streamId });
+        setBusy(false);
         await refreshSnapshot();
       } catch (e) {
         const msg = getErrorMessage(e);
@@ -312,6 +321,7 @@ export default function App() {
       });
       try {
         await api.chat.sendGroupMessageStream({ ...input, streamId });
+        setBusy(false);
         await refreshSnapshot();
       } catch (e) {
         const msg = getErrorMessage(e);
@@ -360,10 +370,10 @@ export default function App() {
         toast.info('Loaded Work result into chat composer.');
         return;
       }
-      prismStore.injectWorkMessage(item);
-      navigate('prism');
+      coordinatorStore.injectWorkMessage(item);
+      navigate('coordinator');
     },
-    [snapshot?.agents, chatStore, prismStore, navigate, toast],
+    [snapshot?.agents, chatStore, coordinatorStore, navigate, toast],
   );  const handleUnlockWorkspace = useCallback(async (password: string) => {
     if (!api) throw new Error('Desktop bridge unavailable.');
     clearError();
@@ -373,20 +383,7 @@ export default function App() {
     toast.success('Workspace unlocked.');
   }, [api, clearError, refreshSnapshot, settingsStore, toast]);
 
-  if (api && workspaceSecurity === null) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#08090a] dark:to-[#0D0D0D] px-6 text-gray-900 dark:text-white">
-        <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-white/70">
-          <LoaderCircle className="animate-spin" size={18} />
-          Preparing workspace
-        </div>
-      </div>
-    );
-  }
 
-  if (workspaceSecurity?.locked) {
-    return <WorkspaceLockScreen onUnlock={handleUnlockWorkspace} />;
-  }
 
   const handleOpenChatTarget = useCallback(
     (target: ChatTarget) => { chatStore.selectTarget(target); chatStore.clearDraftSeed(); navigate('chats'); },
@@ -394,8 +391,8 @@ export default function App() {
   );
 
   const handleOpenChatDestination = useCallback(
-    (target: ChatTarget | 'prism') => {
-      if (target === 'prism') { navigate('prism'); return; }
+    (target: ChatTarget | 'coordinator') => {
+      if (target === 'coordinator') { navigate('coordinator'); return; }
       chatStore.selectTarget(target); chatStore.clearDraftSeed(); navigate('chats');
     },
     [chatStore, navigate],
@@ -418,24 +415,24 @@ export default function App() {
   );
 
   // -- Settings (delegated to store, kept for props compat) --
-  const handleClearPrismTranscript = useCallback(() => {
-    prismStore.clearTranscript();
-    toast.info('Prism history cleared.');
-  }, [prismStore, toast]);
+  const handleClearCoordinatorTranscript = useCallback(() => {
+    coordinatorStore.clearTranscript();
+    toast.info('Coordinator history cleared.');
+  }, [coordinatorStore, toast]);
 
   // -- Render --
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-0 text-white">
+      <div className="flex min-h-screen items-center justify-center bg-surface-0 text-slate-900 dark:text-white">
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3 }} className="flex flex-col items-center gap-5">
-          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-            <RamanIcon size={28} />
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-black/8 bg-black/[0.03] dark:border-white/[0.08] dark:bg-white/[0.04]">
+            <AppLogo size={28} />
             <div className="absolute inset-0 rounded-2xl bg-brand/10 animate-pulse" />
           </div>
-          <div className="flex items-center gap-2.5 text-sm text-white/50">
+          <div className="flex items-center gap-2.5 text-sm text-slate-500 dark:text-white/50">
             <LoaderCircle className="animate-spin text-brand" size={16} />
-            Loading RamN AI…
+            Loading Workspace…
           </div>
         </motion.div>
       </div>
@@ -444,17 +441,32 @@ export default function App() {
 
   if (!api) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-0 px-8 text-white">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="max-w-lg rounded-2xl border border-white/[0.08] bg-surface-3 p-8 text-center shadow-elevated">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]"><RamanIcon size={24} /></div>
-          <h1 className="text-xl font-semibold text-white">Desktop bridge not detected</h1>
-          <p className="mt-3 text-sm leading-6 text-white/50">Launch via Electron, not the browser.</p>
-          <div className="mt-5 rounded-xl border border-white/[0.08] bg-surface-1 px-4 py-3 text-left">
+      <div className="flex min-h-screen items-center justify-center bg-surface-0 px-8 text-slate-900 dark:text-white">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="max-w-lg rounded-2xl border border-black/8 bg-surface-3 p-8 text-center shadow-elevated dark:border-white/[0.08]">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-black/8 bg-black/[0.03] dark:border-white/[0.08] dark:bg-white/[0.04]"><AppLogo size={24} /></div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Desktop bridge not detected</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-white/50">Launch via Electron, not the browser.</p>
+          <div className="mt-5 rounded-xl border border-black/8 bg-surface-1 px-4 py-3 text-left dark:border-white/[0.08]">
             <code className="font-mono text-sm text-brand-light">npm run desktop:dev</code>
           </div>
         </motion.div>
       </div>
     );
+  }
+
+  if (api && workspaceSecurity === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#08090a] dark:to-[#0D0D0D] px-6 text-gray-900 dark:text-white">
+        <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-white/70">
+          <LoaderCircle className="animate-spin" size={18} />
+          Preparing workspace
+        </div>
+      </div>
+    );
+  }
+
+  if (workspaceSecurity?.locked) {
+    return <WorkspaceLockScreen onUnlock={handleUnlockWorkspace} />;
   }
 
   if (showOnboarding || !snapshot?.profile) {
@@ -469,19 +481,19 @@ export default function App() {
     return <OnboardingFlow {...onboardingProps} />;
   }
 
-  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', prism: 'Prism', chats: 'Chats', canvas: 'Canvas', usermap: 'UserMap', work: 'Work', settings: 'Settings' };
-  const viewDescriptions: Record<ViewId, string> = { home: '', prism: '', chats: '', canvas: '', usermap: '', work: '', settings: '' };
+  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', coordinator: 'Coordinator', chats: 'Chats', groups: 'Groups', usermap: 'UserMap', work: 'Work', settings: 'Settings' };
+  const viewDescriptions: Record<ViewId, string> = { home: '', coordinator: '', chats: '', groups: '', usermap: '', work: '', settings: '' };
 
   return (
-    <div className="flex min-h-screen bg-[#F8F9FA] dark:bg-[#1A1A1A] text-gray-900 dark:text-white">
+    <div className="flex h-screen overflow-hidden bg-shell-50 dark:bg-surface-0 text-slate-900 dark:text-white">
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} items={commandItems} />
       <ErrorBoundary viewName="Voice" onDismiss={() => setVoicePanelOpen(false)}>
         <VoicePanel open={voicePanelOpen} onClose={() => setVoicePanelOpen(false)} />
       </ErrorBoundary>
       <Sidebar activeView={activeView} onSelect={navigate} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#F8F9FA] dark:bg-[#1A1A1A]">
-        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-black/5 dark:border-white/5 bg-[#F8F9FA]/95 dark:bg-[#141619]/90 px-5 backdrop-blur-xl">
-          <h1 className="text-[15px] font-semibold text-gray-900 dark:text-white">{viewTitles[activeView]}</h1>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-shell-50 dark:bg-surface-0">
+        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-black/5 dark:border-white/5 bg-shell-50/95 dark:bg-surface-1/90 px-5 backdrop-blur-xl">
+          <h1 className="text-[15px] font-semibold text-slate-900 dark:text-white">{viewTitles[activeView]}</h1>
           <div className="flex items-center gap-3">
             {snapshot.runtime.available && (
               <div className="flex items-center gap-1.5">
@@ -517,7 +529,7 @@ export default function App() {
               <div className="flex items-center gap-2.5 bg-[#f87171]/[0.06] px-5 py-2.5">
                 <AlertTriangle size={14} className="shrink-0 text-[#f87171]" />
                 <p className="flex-1 text-xs text-[#fca5a5]">{error}</p>
-                <button type="button" onClick={clearError} className="text-[10px] font-medium text-white/40 hover:text-white/60 transition-colors">Dismiss</button>
+                <button type="button" onClick={clearError} className="text-[10px] font-medium text-slate-500 hover:text-slate-700 transition-colors dark:text-white/40 dark:hover:text-white/60">Dismiss</button>
               </div>
             </motion.div>
           )}
@@ -531,9 +543,9 @@ export default function App() {
                   <DashboardView snapshot={snapshot} onNavigate={navigate} />
                 </ErrorBoundary>
               )}
-              {activeView === 'prism' && (
-                <ErrorBoundary viewName="Prism">
-                  <PrismWorkspace snapshot={snapshot} messages={prismStore.messages} busy={prismStore.busy} onSend={handlePrismSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearPrismTranscript} prismOverride={settingsStore.prismOverride} onSavePrismOverride={settingsStore.savePrismOverride} />
+              {activeView === 'coordinator' && (
+                <ErrorBoundary viewName="Coordinator">
+                  <CoordinatorWorkspace snapshot={snapshot} messages={coordinatorStore.messages} busy={coordinatorStore.busy} onSend={handleCoordinatorSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearCoordinatorTranscript} coordinatorOverride={settingsStore.coordinatorOverride} onSaveCoordinatorOverride={settingsStore.saveCoordinatorOverride} />
                 </ErrorBoundary>
               )}
               {activeView === 'chats' && (
@@ -541,9 +553,9 @@ export default function App() {
                   <ChatsWorkspace snapshot={snapshot} busy={busy} selectedTarget={chatStore.selectedTarget} draftSeed={chatStore.draftSeed} chatStream={chatStream} onSelectTarget={handleSelectChatTarget} onSendAgentMessage={handleSendAgentMessage} onSendGroupMessage={handleSendGroupMessage} onCreateTask={handleTaskCreate} onDeleteThread={handleDeleteThread} />
                 </ErrorBoundary>
               )}
-              {activeView === 'canvas' && (
-                <ErrorBoundary viewName="Canvas">
-                  <CanvasWorkspace busy={busy} />
+              {activeView === 'groups' && (
+                <ErrorBoundary viewName="Groups">
+                  <GroupsWorkspace snapshot={snapshot} busy={busy} onUpsertGroup={handleUpsertGroup} onDeleteGroup={handleDeleteGroup} onOpenChat={handleOpenChatDestination} />
                 </ErrorBoundary>
               )}
               {activeView === 'work' && (
@@ -561,7 +573,7 @@ export default function App() {
                   <SettingsView
                     activeSection={settingsStore.activeSection} onSelectSection={settingsStore.setActiveSection}
                     runtimeReady={snapshot.runtime.available} providerProfiles={settingsStore.providerProfiles}
-                    providerSelections={settingsStore.providerSelections} prismOverride={settingsStore.prismOverride}
+                    providerSelections={settingsStore.providerSelections} coordinatorOverride={settingsStore.coordinatorOverride}
                     workspaceSecurity={settingsStore.workspaceSecurity}
                     agentMode={settingsStore.agentMode} onSaveAgentMode={settingsStore.saveAgentMode}
                     ollamaStatus={settingsStore.ollamaStatus} models={snapshot.models} snapshot={snapshot}
@@ -569,11 +581,12 @@ export default function App() {
                     onRefresh={settingsStore.refreshSettings} onInstallDefaults={settingsStore.installDefaultModels}
                     onSaveProfile={settingsStore.saveProviderProfile} onDeleteProfile={settingsStore.deleteProviderProfile}
                     onTestProfile={settingsStore.testProviderProfile} onSetProviderSelection={settingsStore.setProviderSelection}
-                    onSavePrismOverride={settingsStore.savePrismOverride}
+                    onSaveCoordinatorOverride={settingsStore.saveCoordinatorOverride}
                     onEnableWorkspaceEncryption={settingsStore.enableWorkspaceEncryption}
                     onDisableWorkspaceEncryption={settingsStore.disableWorkspaceEncryption}
                     onSaveScheduleTimezone={handleSaveScheduleTimezone}
-                    onCreateAgentTask={handleTaskCreate} onUpsertGroup={handleUpsertGroup} onDeleteGroup={handleDeleteGroup} onOpenChat={handleOpenChatTarget}
+                    onCreateAgentTask={handleTaskCreate} onOpenChat={handleOpenChatTarget}
+                    onDeleteAgent={handleDeleteAgent}
                   />
                 </ErrorBoundary>
               )}

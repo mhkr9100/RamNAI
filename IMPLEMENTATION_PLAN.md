@@ -1,4 +1,4 @@
-# Supreme Raman AI — Full Implementation Plan
+# Workspace — Full Implementation Plan
 
 Consolidated roadmap with completion status. Phase numbering follows product direction (ARCHITECTURE.md) plus enterprise rollout (ENTERPRISE_PLAN.md).
 
@@ -8,8 +8,8 @@ Consolidated roadmap with completion status. Phase numbering follows product dir
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| **Phase 1** | v1 launch — desktop, local-only, Prism, tasks, chats | ✅ Complete |
-| **Phase 2** | External channels — Telegram for Prism | ✅ Complete |
+| **Phase 1** | v1 launch — desktop, local-only, Coordinator, tasks, chats | ✅ Complete |
+| **Phase 2** | External channels — Telegram for Coordinator | ✅ Complete |
 | **Phase 3** | Agent mode UX, runtime bridge depth | In progress |
 | **Phase 4** | Enterprise foundations | Planned |
 | **Phase 5** | RBAC, observability, scale | Future |
@@ -25,7 +25,7 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [x] Workspace monorepo
 - [x] Electron app shell
 - [x] Renderer app (React)
-- [x] Shared domain types (`@supreme/shared`)
+- [x] Shared domain types (`@workspace/shared`)
 - [x] SQLite storage layer
 - [x] Filesystem workspace export
 - [x] Local profile flow (name, email)
@@ -34,15 +34,15 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [ ] Bundled Ollama binary (future)
 - [ ] Auto-update with code signing
 
-### Prism
+### Coordinator
 
 - [x] Ask mode (runs through Ollama or runtime bridge)
 - [x] Create mode (produces structured chatbot spec)
 - [x] Created chatbots persist locally
-- [x] Created chatbots appear in Spectrum/Settings
-- [x] Prism provider override (persisted)
-- [x] Prism transcript controls (search, role filter, copy, reuse, clear)
-- [ ] Telegram for Prism (Phase 2)
+- [x] Created chatbots appear in Directory/Settings
+- [x] Coordinator provider override (persisted)
+- [x] Coordinator transcript controls (search, role filter, copy, reuse, clear)
+- [ ] Telegram for Coordinator (Phase 2)
 
 ### Tasks & Work
 
@@ -53,7 +53,7 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [x] Work items from completed runs
 - [x] Artifacts written to disk
 - [x] Work send-to-chat routes to chatbot thread when `sourceAgentId` exists
-- [x] Work send-to-chat falls back to Prism otherwise
+- [x] Work send-to-chat falls back to Coordinator otherwise
 - [x] Work search/filter controls
 - [x] Scheduler timezone correction (profile timezone for task creation; Settings selector)
 
@@ -72,27 +72,27 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [x] Persistent thread per group
 - [x] Task button beside chatbot chat input
 - [x] Thread reset for chatbot and group threads
-- [x] Prism create opens newly created chatbot chat directly
+- [x] Coordinator create opens newly created chatbot chat directly
 - [x] Runtime/thread status cues in chat surfaces
 
 ### Groups
 
-- [x] Group creation in Spectrum/Settings
+- [x] Group creation in Directory/Settings
 - [x] Group deletion
 - [x] Manual `@mention` routing for groups
-- [x] Group member handles in Spectrum and Chats
-- [x] Spectrum deep-links into group chats
+- [x] Group member handles in Directory and Chats
+- [x] Directory deep-links into group chats
 
 ### Settings
 
-- [x] Settings view (Local, Accounts, Agents, Prism)
+- [x] Settings view (Local, Accounts, Agents, Coordinator)
 - [x] Ollama runtime status visible
 - [x] Default model installation from UI
 - [x] Provider profiles (OpenAI, Anthropic, Google) list and save
 - [x] Provider profile delete
 - [x] Provider profile test
 - [x] Provider selection per provider
-- [x] Prism override get/save (persisted)
+- [x] Coordinator override get/save (persisted)
 - [x] Agent mode (ollama / bridge / auto) with Settings UI
 
 ### Agent Spin-Off (A1–A6)
@@ -113,14 +113,14 @@ Core product for desktop-first, privacy-first, local AI workspace.
 
 ---
 
-## Phase 2: External Channels (Telegram for Prism)
+## Phase 2: External Channels (Telegram for Coordinator)
 
-*From ARCHITECTURE: "Telegram for Prism is phase 2"*
+*From ARCHITECTURE: "Telegram for Coordinator is phase 2"*
 
 - [ ] Runtime bridge Telegram adapter (external)
 - [x] Connect Telegram bot via runtime CLI `channels add` (CLI)
-- [ ] Prism receives and responds to Telegram messages (runtime bridge gateway)
-- [x] UI: channel add flow for Telegram (bot token) in Prism Profile
+- [ ] Coordinator receives and responds to Telegram messages (runtime bridge gateway)
+- [x] UI: channel add flow for Telegram (bot token) in Coordinator Profile
 - [x] UI: remove channel button
 - [x] RUNTIME_BRIDGE.md: Telegram setup (BotFather, token)
 - [ ] (WhatsApp excluded at launch per HANDOFF)
@@ -206,8 +206,8 @@ Core product for desktop-first, privacy-first, local AI workspace.
 ## Summary: What's Done vs Pending
 
 **Done (approx. 85% of Phase 1):**
-- Full desktop shell, storage, Prism, tasks, chats, groups, UserMap, Settings
-- Provider profiles (CRUD, test, selection), Prism override, agent mode
+- Full desktop shell, storage, Coordinator, tasks, chats, groups, UserMap, Settings
+- Provider profiles (CRUD, test, selection), Coordinator override, agent mode
 - Agent spin-off A1–A4
 
 **Pending (Phase 1):**

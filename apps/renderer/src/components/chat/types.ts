@@ -1,4 +1,4 @@
-import type { ChatRouteMetadata } from '@supreme/shared';
+import type { ChatRouteMetadata } from '@workspace/shared';
 
 export type ChatMessageRole = 'user' | 'assistant' | 'system';
 

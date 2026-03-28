@@ -16,7 +16,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
-import { CAPABILITY_DEFINITIONS } from '@supreme/shared';
+import { CAPABILITY_DEFINITIONS } from '@workspace/shared';
 import { TaskComposerCard } from './TaskComposerCard';
 import { AgentProfilePanel } from './AgentProfilePanel';
 import type { ChatTarget } from './ChatsWorkspace';
@@ -32,22 +32,13 @@ import {
   Select,
 } from './ui';
 
-type SpectrumTab = 'agents' | 'capabilities' | 'models';
+type DirectoryTab = 'agents' | 'capabilities' | 'models';
 
-interface SpectrumViewProps {
+interface DirectoryViewProps {
   snapshot: WorkspaceSnapshot;
   busy: boolean;
   onCreateAgentTask: (input: TaskCreateInput) => Promise<void>;
-  onUpsertGroup: (group: {
-    id?: string;
-    name: string;
-    description?: string;
-    memberAgentIds: string[];
-    routingMode: 'auto' | 'manual';
-    autoRouteThreshold: number;
-    defaultResponderAgentId?: string;
-  }) => Promise<void>;
-  onDeleteGroup: (groupId: string) => Promise<void>;
+  onDeleteAgent?: (agentId: string) => Promise<void>;
   onOpenChat: (target: ChatTarget) => void;
 }
 
@@ -77,22 +68,17 @@ const CAPABILITY_CATALOG = CAPABILITY_DEFINITIONS.map((def) => ({
   icon: CAPABILITY_ICON_MAP[def.id] ?? Zap,
 }));
 
-export function SpectrumView({
+export function DirectoryView({
   snapshot,
   busy,
   onCreateAgentTask,
-  onUpsertGroup,
-  onDeleteGroup,
+  onDeleteAgent,
   onOpenChat,
-}: SpectrumViewProps) {
-  const [activeTab, setActiveTab] = useState<SpectrumTab>('agents');
+}: DirectoryViewProps) {
+  const [activeTab, setActiveTab] = useState<DirectoryTab>('agents');
   const [taskAgentId, setTaskAgentId] = useState<string | null>(null);
   const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
-  const [groupName, setGroupName] = useState('');
-  const [groupDescription, setGroupDescription] = useState('');
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-  const [routingMode, setRoutingMode] = useState<'auto' | 'manual'>('auto');
-  const [defaultResponderAgentId, setDefaultResponderAgentId] = useState('');
+
 
   const taskAgent = useMemo(
     () => snapshot.agents.find((agent) => agent.id === taskAgentId) ?? null,
@@ -104,15 +90,6 @@ export function SpectrumView({
     [snapshot.agents, profileAgentId],
   );
 
-  const fallbackOptions = useMemo(
-    () => [
-      { value: '', label: 'None' },
-      ...snapshot.agents
-        .filter((agent) => selectedMemberIds.includes(agent.id))
-        .map((agent) => ({ value: agent.id, label: agent.name })),
-    ],
-    [selectedMemberIds, snapshot.agents],
-  );
 
   const allCapabilities = useMemo(() => {
     const used = new Set<string>();
@@ -129,31 +106,7 @@ export function SpectrumView({
     }));
   }, [snapshot.agents]);
 
-  const toggleMember = (agentId: string) => {
-    setSelectedMemberIds((current) =>
-      current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId],
-    );
-  };
-
-  const handleCreateGroup = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!groupName.trim()) return;
-    await onUpsertGroup({
-      name: groupName.trim(),
-      ...(groupDescription.trim() ? { description: groupDescription.trim() } : {}),
-      memberAgentIds: selectedMemberIds,
-      routingMode,
-      autoRouteThreshold: 0.55,
-      ...(defaultResponderAgentId ? { defaultResponderAgentId } : {}),
-    });
-    setGroupName('');
-    setGroupDescription('');
-    setSelectedMemberIds([]);
-    setRoutingMode('auto');
-    setDefaultResponderAgentId('');
-  };
-
-  const tabs: Array<{ id: SpectrumTab; label: string; count: number }> = [
+  const tabs: Array<{ id: DirectoryTab; label: string; count: number }> = [
     { id: 'agents', label: 'AGENTS', count: snapshot.agents.length },
     { id: 'capabilities', label: 'CAPABILITIES', count: allCapabilities.filter((c) => c.active).length },
     { id: 'models', label: 'AI MODELS', count: snapshot.models.filter((m) => m.installed).length },
@@ -169,12 +122,12 @@ export function SpectrumView({
           action={
             <div className="flex flex-wrap gap-2">
               <Badge variant="brand">Agents {snapshot.agents.length}</Badge>
-              <Badge variant="brand">Groups {snapshot.groups.length}</Badge>
+
               <Badge variant="brand">Models {snapshot.models.filter((m) => m.installed).length}</Badge>
             </div>
           }
         />
-        <div className="mt-4 flex items-center rounded-xl border border-white/[0.06] bg-surface-0/50 p-0.5">
+        <div className="mt-4 flex items-center rounded-xl border border-black/8 dark:border-white/[0.06] bg-surface-0/50 p-0.5">
           {tabs.map((tab) => {
             const active = tab.id === activeTab;
             return (
@@ -184,19 +137,19 @@ export function SpectrumView({
                 onClick={() => setActiveTab(tab.id)}
                 className={[
                   'relative flex-1 rounded-lg px-4 py-2 text-xs font-semibold tracking-[0.04em] transition-all duration-150',
-                  active ? 'text-white' : 'text-white/40 hover:text-white/65',
+                  active ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white/65',
                 ].join(' ')}
               >
                 {active && (
                   <motion.div
-                    layoutId="spectrum-tab"
+                    layoutId="directory-tab"
                     className="absolute inset-0 rounded-lg bg-brand/[0.12] border border-brand/20"
                     transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                   />
                 )}
                 <span className="relative z-10 flex items-center justify-center gap-2">
                   {tab.label}
-                  <span className={`text-[10px] ${active ? 'text-brand-light' : 'text-white/25'}`}>
+                  <span className={`text-[10px] ${active ? 'text-brand-light' : 'text-slate-400 dark:text-white/25'}`}>
                     {tab.count}
                   </span>
                 </span>
@@ -272,7 +225,7 @@ export function SpectrumView({
                               <Badge key={cap} variant="outline" size="xs">{cap}</Badge>
                             ))}
                             {agent.tools.length === 0 && agent.skills.length === 0 && (
-                              <span className="text-[11px] text-white/30">No capabilities</span>
+                              <span className="text-[11px] text-slate-400 dark:text-white/30">No capabilities</span>
                             )}
                           </div>
                         </Card>
@@ -282,85 +235,7 @@ export function SpectrumView({
                 )}
               </Card>
 
-              {/* Groups */}
-              <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
-                <SectionLabel count={snapshot.groups.length} action={<Users size={16} className="text-white/35" />}>
-                  Groups
-                </SectionLabel>
-                <Divider className="my-4" />
 
-                <Card variant="default" padding="md" animate={false} className="bg-surface-3">
-                  <form onSubmit={handleCreateGroup} className="space-y-4">
-                    <Input
-                      label="Group Name"
-                      value={groupName}
-                      onChange={(e) => setGroupName(e.target.value)}
-                      placeholder="Growth Council"
-                    />
-                    <label className="block space-y-1.5">
-                      <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
-                        Description
-                      </span>
-                      <textarea
-                        value={groupDescription}
-                        onChange={(e) => setGroupDescription(e.target.value)}
-                        className="min-h-[80px] w-full rounded-xl border border-white/[0.10] bg-surface-1 px-3.5 py-2.5 text-[13px] leading-relaxed text-white/90 outline-none transition-all duration-150 placeholder:text-white/25 hover:border-white/[0.16] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
-                        placeholder="Optional description"
-                      />
-                    </label>
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">Members</div>
-                      {snapshot.agents.length === 0 ? (
-                        <EmptyState icon={<Bot size={16} className="text-white/45" />} title="No agents" compact />
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {snapshot.agents.map((agent) => (
-                            <Button key={agent.id} type="button" size="xs" variant={selectedMemberIds.includes(agent.id) ? 'brand' : 'secondary'} onClick={() => toggleMember(agent.id)}>
-                              {agent.name}
-                            </Button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">Routing</div>
-                        <div className="flex gap-2 rounded-2xl border border-white/[0.08] bg-surface-1 p-1">
-                          <Button type="button" variant={routingMode === 'auto' ? 'brand' : 'ghost'} size="sm" className="flex-1 justify-center" onClick={() => setRoutingMode('auto')}>Auto</Button>
-                          <Button type="button" variant={routingMode === 'manual' ? 'brand' : 'ghost'} size="sm" className="flex-1 justify-center" onClick={() => setRoutingMode('manual')}>Manual</Button>
-                        </div>
-                      </div>
-                      <Select label="Fallback Agent" value={defaultResponderAgentId} onChange={(e) => setDefaultResponderAgentId(e.target.value)} options={fallbackOptions} />
-                    </div>
-                    <Button type="submit" variant="brand" size="lg" fullWidth loading={busy} disabled={!groupName.trim()}>Save Group</Button>
-                  </form>
-                </Card>
-
-                <Divider label="Saved Groups" className="my-5" />
-
-                {snapshot.groups.length === 0 ? (
-                  <EmptyState icon={<Users size={18} className="text-white/45" />} title="No groups" compact />
-                ) : (
-                  <motion.div className="space-y-4" variants={listVariants} initial="hidden" animate="show">
-                    {snapshot.groups.map((group) => (
-                      <motion.div key={group.id} variants={itemVariants}>
-                        <Card variant="default" padding="md" animate={false} className="bg-surface-3">
-                          <CardHeader
-                            title={group.name}
-                            action={
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="info">{group.routingMode === 'auto' ? `Auto ${Math.round(group.autoRouteThreshold * 100)}%` : 'Manual'}</Badge>
-                                <Button type="button" size="sm" variant="secondary" icon={<MessageSquareMore size={14} />} onClick={() => onOpenChat({ type: 'group', id: group.id })}>Chat</Button>
-                                <Button type="button" size="sm" variant="danger" icon={<Trash2 size={14} />} disabled={busy} onClick={() => onDeleteGroup(group.id)}>Delete</Button>
-                              </div>
-                            }
-                          />
-                        </Card>
-                      </motion.div>
-                    ))}
-                  </motion.div>
-                )}
-              </Card>
             </section>
           </motion.div>
         )}
@@ -380,12 +255,12 @@ export function SpectrumView({
                 return (
                   <Card key={cap.id} variant="default" padding="lg" animate={false} className="bg-surface-2">
                     <div className="flex items-start gap-3">
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${cap.active ? 'border-brand/20 bg-brand/10' : 'border-white/[0.08] bg-white/[0.04]'}`}>
-                        <Icon size={18} className={cap.active ? 'text-brand-light' : 'text-white/40'} />
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${cap.active ? 'border-brand/20 bg-brand/10' : 'border-black/8 dark:border-white/[0.08] bg-black/[0.03] dark:bg-white/[0.04]'}`}>
+                        <Icon size={18} className={cap.active ? 'text-brand-light' : 'text-slate-400 dark:text-white/40'} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-white">{cap.label}</h3>
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{cap.label}</h3>
                           <Badge variant={cap.active ? 'success' : 'outline'} size="xs">
                             {cap.active ? 'Active' : 'Available'}
                           </Badge>
@@ -393,7 +268,7 @@ export function SpectrumView({
                         <div className="mt-3 flex items-center gap-3">
                           <Badge variant="default" size="xs">{cap.category}</Badge>
                           {cap.agentCount > 0 && (
-                            <span className="text-[11px] text-white/30">{cap.agentCount} agent{cap.agentCount !== 1 ? 's' : ''}</span>
+                            <span className="text-[11px] text-slate-400 dark:text-white/30">{cap.agentCount} agent{cap.agentCount !== 1 ? 's' : ''}</span>
                           )}
                         </div>
                       </div>
@@ -405,11 +280,11 @@ export function SpectrumView({
               {/* Placeholder for extensibility */}
               <Card variant="default" padding="lg" animate={false} className="bg-surface-2 border-dashed">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.02]">
-                    <Plug size={18} className="text-white/25" />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-black/8 dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
+                    <Plug size={18} className="text-slate-300 dark:text-white/25" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-white/50">More Skills</h3>
+                    <h3 className="text-sm font-semibold text-slate-400 dark:text-white/50">More Skills</h3>
                   </div>
                 </div>
               </Card>
@@ -430,17 +305,17 @@ export function SpectrumView({
               {snapshot.models.map((model) => (
                 <Card key={model.id} variant="default" padding="lg" animate={false} className="bg-surface-2">
                   <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${model.installed ? 'border-[#34d399]/20 bg-[#34d399]/10' : 'border-white/[0.08] bg-white/[0.04]'}`}>
-                      <Cpu size={18} className={model.installed ? 'text-[#34d399]' : 'text-white/40'} />
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${model.installed ? 'border-[#34d399]/20 bg-[#34d399]/10' : 'border-black/8 dark:border-white/[0.08] bg-black/[0.03] dark:bg-white/[0.04]'}`}>
+                      <Cpu size={18} className={model.installed ? 'text-[#34d399]' : 'text-slate-400 dark:text-white/40'} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white truncate">{model.label}</h3>
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{model.label}</h3>
                         <Badge variant={model.installed ? 'success' : 'default'} size="xs">
                           {model.installed ? 'Installed' : 'Available'}
                         </Badge>
                       </div>
-                      <p className="mt-1 text-[11px] font-mono text-white/35 truncate">{model.id}</p>
+                      <p className="mt-1 text-[11px] font-mono text-slate-400 dark:text-white/35 truncate">{model.id}</p>
                     </div>
                   </div>
                 </Card>
@@ -449,7 +324,7 @@ export function SpectrumView({
               {snapshot.models.length === 0 && (
                 <div className="col-span-full">
                 <EmptyState
-                  icon={<Cpu size={18} className="text-white/45" />}
+                  icon={<Cpu size={18} className="text-slate-400 dark:text-white/45" />}
                   title="No models"
                   compact
                 />
@@ -482,6 +357,7 @@ export function SpectrumView({
           setProfileAgentId(null);
           onOpenChat({ type: 'agent', id: agentId });
         }}
+        {...(onDeleteAgent ? { onDeleteAgent } : {})}
       />
     </div>
   );

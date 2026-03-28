@@ -1,4 +1,4 @@
-## Supreme Raman AI packaging plan (desktop-only)
+## Workspace packaging plan (desktop-only)
 
 This repo defaults to **unsigned preview builds** for local development.
 

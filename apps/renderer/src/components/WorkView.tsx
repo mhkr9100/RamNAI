@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, MessageSquareMore, Play, Search, Send, Trash2, X } from 'lucide-react';
-import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@supreme/shared';
+import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@workspace/shared';
 import type { WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTarget } from './ChatsWorkspace';
 import {
@@ -24,7 +24,7 @@ interface WorkViewProps {
   onRerunTask: (taskId: string) => Promise<void>;
   onDeleteWorkItem: (workItemId: string) => Promise<void>;
   onSendToChat: (item: WorkItem) => void;
-  onOpenChat: (target: ChatTarget | 'prism') => void;
+  onOpenChat: (target: ChatTarget | 'coordinator') => void;
   onOpenArtifact: (artifactId: string) => Promise<void>;
   onLoadMoreTasks?: () => Promise<void>;
   onLoadMoreWorkItems?: () => Promise<void>;
@@ -223,13 +223,13 @@ export function WorkView({
 
           {snapshot.tasks.length === 0 ? (
             <EmptyState
-              icon={<Play size={18} className="text-white/45" />}
+              icon={<Play size={18} className="text-slate-400 dark:text-white/45" />}
               title="No tasks yet"
               compact
             />
           ) : filteredTasks.length === 0 ? (
             <EmptyState
-              icon={<Search size={18} className="text-white/45" />}
+              icon={<Search size={18} className="text-slate-400 dark:text-white/45" />}
               title="No tasks match"
               description="Try widening your filters or clearing the search query."
               compact
@@ -256,7 +256,7 @@ export function WorkView({
                       }
                     />
 
-                    <p className="mt-3 text-sm leading-6 text-white/65">{task.objective}</p>
+                    <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-white/65">{task.objective}</p>
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <InfoTile
@@ -269,7 +269,7 @@ export function WorkView({
                     </div>
 
                     {task.lastError ? (
-                      <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                      <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-600 dark:text-red-200">
                         {task.lastError}
                       </div>
                     ) : null}
@@ -282,8 +282,8 @@ export function WorkView({
                         icon={<MessageSquareMore size={14} />}
                         onClick={() =>
                           onOpenChat(
-                            task.target.type === 'prism'
-                              ? 'prism'
+                            task.target.type === 'coordinator'
+                              ? 'coordinator'
                               : { type: 'agent', id: task.target.agentId },
                           )
                         }
@@ -355,14 +355,14 @@ export function WorkView({
 
           {snapshot.workItems.length === 0 ? (
             <EmptyState
-              icon={<Send size={18} className="text-white/45" />}
+              icon={<Send size={18} className="text-slate-400 dark:text-white/45" />}
               title="No results yet"
               description="Completed tasks and their artifacts will appear here."
               compact
             />
           ) : filteredWorkItems.length === 0 ? (
             <EmptyState
-              icon={<Search size={18} className="text-white/45" />}
+              icon={<Search size={18} className="text-slate-400 dark:text-white/45" />}
               title="No results match"
               description="Adjust the current filters to reveal more runs or artifacts."
               compact
@@ -396,7 +396,7 @@ export function WorkView({
                         <Badge variant="outline">
                           {item.sourceAgentId
                             ? `Routes to ${agentLookup.get(item.sourceAgentId)?.name ?? 'agent'}`
-                            : 'Routes to Prism'}
+                            : 'Routes to Coordinator'}
                         </Badge>
                       </div>
 
@@ -407,7 +407,7 @@ export function WorkView({
                           variant="secondary"
                           icon={<MessageSquareMore size={14} />}
                           onClick={() =>
-                            onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'prism')
+                            onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'coordinator')
                           }
                         >
                           Open Chat
@@ -465,13 +465,13 @@ export function WorkView({
                       {expanded ? (
                         <div className="mt-5 space-y-4">
                           {item.summary ? (
-                            <div className="whitespace-pre-wrap rounded-2xl border border-white/[0.08] bg-surface-1 px-4 py-4 text-sm leading-7 text-white/74">
+                            <div className="whitespace-pre-wrap rounded-2xl border border-black/8 dark:border-white/[0.08] bg-surface-1 px-4 py-4 text-sm leading-7 text-slate-600 dark:text-white/74">
                               {item.summary}
                             </div>
                           ) : null}
 
                           {item.lastError ? (
-                            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-600 dark:text-red-200">
                               {item.lastError}
                             </div>
                           ) : null}
@@ -489,8 +489,8 @@ export function WorkView({
                                 >
                                   <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div className="min-w-0">
-                                      <div className="text-sm font-semibold text-white">{artifact.title}</div>
-                                      <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                                      <div className="text-sm font-semibold text-slate-900 dark:text-white">{artifact.title}</div>
+                                      <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
                                         {artifact.kind} / {artifact.relativePath}
                                       </div>
                                     </div>
@@ -548,8 +548,8 @@ export function WorkView({
 }
 
 function describeTaskTarget(task: TaskSpec, agentLookup: Map<string, AgentSpec>) {
-  if (task.target.type === 'prism') {
-    return 'Prism';
+  if (task.target.type === 'coordinator') {
+    return 'Coordinator';
   }
 
   return agentLookup.get(task.target.agentId)?.name ?? `Agent ${task.target.agentId}`;
@@ -576,11 +576,11 @@ function StatusBadge({ status }: { status: TaskSpec['status'] | WorkItem['status
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-surface-1 px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+    <div className="rounded-2xl border border-black/8 dark:border-white/[0.08] bg-surface-1 px-4 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
         {label}
       </div>
-      <div className="mt-2 text-sm leading-6 text-white/72">{value}</div>
+      <div className="mt-2 text-sm leading-6 text-slate-600 dark:text-white/72">{value}</div>
     </div>
   );
 }

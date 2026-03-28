@@ -1,4 +1,4 @@
-import type { SqliteStorage } from '@supreme/storage';
+import type { SqliteStorage } from '@workspace/storage';
 
 export interface TaskRunHeartbeatController {
   stop: () => void;

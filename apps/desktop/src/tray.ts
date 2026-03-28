@@ -19,11 +19,11 @@ export function setupTray(getMainWindow: () => BrowserWindow | null): void {
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('RamN AI');
+  tray.setToolTip('Workspace');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open RamN AI',
+      label: 'Open Workspace',
       click: () => {
         const win = getMainWindow();
         if (win) {
@@ -34,14 +34,14 @@ export function setupTray(getMainWindow: () => BrowserWindow | null): void {
     },
     { type: 'separator' },
     {
-      label: 'Quick Ask Prism',
+      label: 'Quick Ask Coordinator',
       accelerator: 'CommandOrControl+Shift+P',
       click: () => {
         const win = getMainWindow();
         if (win) {
           win.show();
           win.focus();
-          win.webContents.send('navigate', 'prism');
+          win.webContents.send('navigate', 'coordinator');
         }
       },
     },
@@ -89,7 +89,7 @@ export function setupTray(getMainWindow: () => BrowserWindow | null): void {
     },
     { type: 'separator' },
     {
-      label: 'Quit RamN AI',
+      label: 'Quit Workspace',
       accelerator: 'CommandOrControl+Q',
       click: () => {
         app.quit();

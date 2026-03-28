@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { channels } from './preload-api.js';
 
-contextBridge.exposeInMainWorld('supreme', {
+contextBridge.exposeInMainWorld('workspaceApp', {
   profile: {
     get: () => ipcRenderer.invoke(channels.profileGet),
     save: (profile: unknown) => ipcRenderer.invoke(channels.profileSave, profile)
@@ -24,8 +24,11 @@ contextBridge.exposeInMainWorld('supreme', {
     upsert: (group: unknown) => ipcRenderer.invoke(channels.groupUpsert, group),
     delete: (groupId: string) => ipcRenderer.invoke(channels.groupDelete, groupId)
   },
-  prism: {
-    sendMessage: (input: unknown) => ipcRenderer.invoke(channels.prismSend, input)
+  agents: {
+    delete: (agentId: string) => ipcRenderer.invoke(channels.agentDelete, agentId)
+  },
+  coordinator: {
+    sendMessage: (input: unknown) => ipcRenderer.invoke(channels.coordinatorSend, input)
   },
   chat: {
     sendAgentMessage: (input: unknown) => ipcRenderer.invoke(channels.agentChat, input),
@@ -59,8 +62,8 @@ contextBridge.exposeInMainWorld('supreme', {
     setProviderSelection: (selection: unknown) => ipcRenderer.invoke(channels.providerAuthSetSelection, selection),
     getRetentionConfig: () => ipcRenderer.invoke(channels.retentionConfigGet),
     saveRetentionConfig: (config: unknown) => ipcRenderer.invoke(channels.retentionConfigSave, config),
-    getPrismOverride: () => ipcRenderer.invoke(channels.prismOverrideGet),
-    savePrismOverride: (override: unknown) => ipcRenderer.invoke(channels.prismOverrideSave, override),
+    getCoordinatorOverride: () => ipcRenderer.invoke(channels.coordinatorOverrideGet),
+    saveCoordinatorOverride: (override: unknown) => ipcRenderer.invoke(channels.coordinatorOverrideSave, override),
     getAgentMode: () => ipcRenderer.invoke(channels.agentModeGet),
     saveAgentMode: (mode: string) => ipcRenderer.invoke(channels.agentModeSave, mode),
     getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),

@@ -36,12 +36,12 @@ export interface RetentionConfig extends RetentionConfigInput {
   lastPurgeAt: string | null;
 }
 
-export interface PrismProviderOverrideSettings {
+export interface CoordinatorProviderOverrideSettings {
   provider: ProviderId;
   modelId: string;
 }
 
-/** Runtime mode for Prism/task execution. */
+/** Runtime mode for Coordinator/task execution. */
 export type AgentMode = 'ollama' | 'bridge' | 'auto';
 
 /** Workspace role (backend-only; desktop defaults to owner). */
@@ -77,7 +77,7 @@ export interface AgentSpec {
   slug: string;
   name: string;
   description: string;
-  createdBy: 'prism';
+  createdBy: 'coordinator';
   originObjective: string;
   persona: {
     role: string;
@@ -112,12 +112,12 @@ export interface AgentSpec {
     createdAt: string;
     updatedAt: string;
     version: number;
-    source: 'prism-create';
+    source: 'coordinator-create';
   };
 }
 
 export type TaskTarget =
-  | { type: 'prism' }
+  | { type: 'coordinator' }
   | { type: 'agent'; agentId: string };
 
 export type TaskMode = 'task' | 'council';
@@ -358,7 +358,7 @@ export type AuditEventKind =
   | 'task_run_failed'
   | 'task_run_cancelled'
   | 'provider_selection_changed'
-  | 'prism_override_changed';
+  | 'coordinator_override_changed';
 
 export interface AuditEvent {
   id: string;
@@ -404,17 +404,17 @@ export const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
   { id: 'mcp', label: 'MCP Protocol', description: 'Model Context Protocol tool integration', category: 'MCP' },
 ];
 
-export type PrismMode = 'ask' | 'create';
+export type CoordinatorMode = 'ask' | 'create';
 
-export interface PrismRequest {
-  mode: PrismMode;
+export interface CoordinatorRequest {
+  mode: CoordinatorMode;
   message: string;
   userMap: UserMapState;
   existingAgents: AgentSpec[];
   existingGroups: GroupSpec[];
 }
 
-export interface PrismReply {
+export interface CoordinatorReply {
   id: string;
   text: string;
   provider: ProviderId;

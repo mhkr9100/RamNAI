@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, ShieldCheck } from 'lucide-react';
 import { Button, Input } from './ui';
-import { RamanIcon } from './RamanIcon';
+import { AppLogo } from './AppLogo';
 
 interface WorkspaceLockScreenProps {
   onUnlock: (password: string) => Promise<void>;
@@ -48,7 +48,7 @@ export function WorkspaceLockScreen({ onUnlock }: WorkspaceLockScreenProps) {
             transition={{ delay: 0.1, type: 'spring', stiffness: 200, damping: 15 }}
             className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-200 dark:bg-white/5 ring-1 ring-gray-300 dark:ring-white/10"
           >
-            <RamanIcon size={36} />
+            <AppLogo size={36} />
           </motion.div>
 
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">

@@ -1,4 +1,4 @@
-# Critical Rules — Supreme Raman AI
+# Critical Rules — Workspace
 
 These rules are non-negotiable for production code.
 

@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PrismProfilePanel } from '../PrismProfilePanel';
-import type { PrismProviderOverrideSettings, ProviderModelPreset } from '@supreme/shared';
+import { CoordinatorProfilePanel } from '../CoordinatorProfilePanel';
+import type { CoordinatorProviderOverrideSettings, ProviderModelPreset } from '@workspace/shared';
 
 const mockModels: ProviderModelPreset[] = [
   { id: 'qwen2.5-coder:3b', provider: 'ollama', installed: true, label: 'Qwen 2.5 Coder 3B', recommended: false },
@@ -10,14 +10,14 @@ const mockModels: ProviderModelPreset[] = [
   { id: 'gpt-4o', provider: 'openai', installed: false, label: 'GPT-4o', recommended: true },
 ];
 
-const mockOverride: PrismProviderOverrideSettings = {
+const mockOverride: CoordinatorProviderOverrideSettings = {
   provider: 'ollama',
   modelId: 'qwen2.5-coder:3b',
 };
 
-describe('PrismProfilePanel', () => {
+describe('CoordinatorProfilePanel', () => {
   const onClose = vi.fn();
-  const onSavePrismOverride = vi.fn().mockResolvedValue(undefined);
+  const onSaveCoordinatorOverride = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,41 +25,41 @@ describe('PrismProfilePanel', () => {
 
   it('renders nothing when open is false', () => {
     const { container } = render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={false}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={false}
       />,
     );
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders Prism identity when open', () => {
+  it('renders Coordinator identity when open', () => {
     render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={true}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={false}
       />,
     );
-    expect(screen.getByText('Prism')).toBeInTheDocument();
+    expect(screen.getByText('Coordinator')).toBeInTheDocument();
     expect(screen.getByText('META ARCHITECT')).toBeInTheDocument();
   });
 
   it('close button calls onClose', () => {
     render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={true}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={false}
       />,
     );
@@ -67,30 +67,30 @@ describe('PrismProfilePanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('shows Prism capabilities', () => {
+  it('shows Coordinator capabilities', () => {
     render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={true}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={false}
       />,
     );
-    expect(screen.getByText('Prism Profile')).toBeInTheDocument();
+    expect(screen.getByText('Coordinator Profile')).toBeInTheDocument();
     expect(screen.getByText('MODEL ROUTING')).toBeInTheDocument();
     expect(screen.getByText('SYSTEM INSTRUCTIONS')).toBeInTheDocument();
   });
 
   it('displays model routing section', () => {
     render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={true}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={false}
       />,
     );
@@ -99,12 +99,12 @@ describe('PrismProfilePanel', () => {
 
   it('shows channels section with loading or empty state', () => {
     render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={true}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={false}
       />,
     );
@@ -113,12 +113,12 @@ describe('PrismProfilePanel', () => {
 
   it('save button is disabled when busy', () => {
     render(
-      <PrismProfilePanel
+      <CoordinatorProfilePanel
         open={true}
         onClose={onClose}
-        prismOverride={mockOverride}
+        coordinatorOverride={mockOverride}
         models={mockModels}
-        onSavePrismOverride={onSavePrismOverride}
+        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
         busy={true}
       />,
     );

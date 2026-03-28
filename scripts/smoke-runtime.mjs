@@ -24,7 +24,7 @@ for (const filePath of requiredBuildOutputs) {
   }
 }
 
-const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'supreme-runtime-smoke-'));
+const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'workspace-runtime-smoke-'));
 const tempHome = path.join(tempRoot, 'home');
 await mkdir(tempHome, { recursive: true });
 process.env.HOME = tempHome;
@@ -91,7 +91,7 @@ async function runCheck(name, fn) {
   console.log(`PASS ${name}`);
 }
 
-const dbPath = path.join(tempRoot, 'supreme-raman-ai.sqlite');
+const dbPath = path.join(tempRoot, 'workspace-app.sqlite');
 const workspacePaths = buildWorkspacePaths(path.join(tempRoot, 'workspace'));
 const storage = new SqliteStorage(dbPath);
 storage.init();
@@ -123,10 +123,10 @@ try {
     assert.ok(savedProfile.keyRef?.id);
     assert.ok(savedProfile.tokenRef?.id);
 
-    const appProfilesPath = path.join(tempHome, '.supreme-raman-ai', 'runtime-auth', 'auth-profiles.json');
-    const encryptedSecretsPath = path.join(tempHome, '.supreme-raman-ai', 'runtime-auth', 'secrets.enc.json');
-    const compatProfilesPath = path.join(tempHome, '.supreme-runtime', 'auth-profiles.json');
-    const compatSecretsPath = path.join(tempHome, '.supreme-runtime', 'secrets.json');
+    const appProfilesPath = path.join(tempHome, '.workspace-app', 'runtime-auth', 'auth-profiles.json');
+    const encryptedSecretsPath = path.join(tempHome, '.workspace-app', 'runtime-auth', 'secrets.enc.json');
+    const compatProfilesPath = path.join(tempHome, '.workspace-runtime', 'auth-profiles.json');
+    const compatSecretsPath = path.join(tempHome, '.workspace-runtime', 'secrets.json');
 
     const appProfilesText = await readFile(appProfilesPath, 'utf8');
     let encryptedSecretsText = null;
@@ -282,7 +282,7 @@ try {
       title: 'Recurring Active',
       objective: 'Should not recover while lease active',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now, timezone, installedModelIds, taskId: 'task-rec-active' });
 
@@ -290,7 +290,7 @@ try {
       title: 'Recurring Expired',
       objective: 'Should recover immediately',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now, timezone, installedModelIds, taskId: 'task-rec-expired' });
 
@@ -298,7 +298,7 @@ try {
       title: 'Once Expired',
       objective: 'Once task should fail on expired lease',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'once', runAtLocal: '2026-03-18 09:30' }
     }, { now, timezone, installedModelIds, taskId: 'task-once-expired' });
 
@@ -343,7 +343,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'prism' }
+      target: { type: 'coordinator' }
     });
     storage.upsertTaskRun({
       id: 'run-rec-expired',
@@ -357,7 +357,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'prism' }
+      target: { type: 'coordinator' }
     });
     storage.upsertTaskRun({
       id: 'run-once-expired',
@@ -371,7 +371,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'prism' }
+      target: { type: 'coordinator' }
     });
 
     recoverInterruptedWork(storage, now);
@@ -417,7 +417,7 @@ try {
       title: 'Rerun Task',
       objective: 'Rerun should cancel active lease holders',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now: new Date(nowIso), timezone, installedModelIds, taskId: 'task-rerun' });
 
@@ -446,7 +446,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'prism' }
+      target: { type: 'coordinator' }
     });
 
     storage.upsertWorkItem({
@@ -493,15 +493,15 @@ try {
     assert.equal(storage.hasPermission('create_agents'), true);
   });
 
-  await runCheck('prism override persistence', async () => {
+  await runCheck('coordinator override persistence', async () => {
     const override = { provider: 'ollama', modelId: 'qwen3:8b' };
-    storage.savePrismProviderOverride(override);
-    assert.deepEqual(storage.getPrismProviderOverride(), override);
+    storage.saveCoordinatorProviderOverride(override);
+    assert.deepEqual(storage.getCoordinatorProviderOverride(), override);
 
     const reopened = new SqliteStorage(dbPath);
     reopened.init();
     try {
-      assert.deepEqual(reopened.getPrismProviderOverride(), override);
+      assert.deepEqual(reopened.getCoordinatorProviderOverride(), override);
     } finally {
       reopened.close();
     }
@@ -516,7 +516,7 @@ try {
       title: 'Once Smoke Task',
       objective: 'Validate once scheduling',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'once', runAtLocal: '2026-03-18 09:30' }
     }, { now, timezone, installedModelIds, taskId: 'task-once' });
 
@@ -524,7 +524,7 @@ try {
       title: 'Daily Smoke Task',
       objective: 'Validate daily scheduling',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now, timezone, installedModelIds, taskId: 'task-daily' });
 
@@ -532,7 +532,7 @@ try {
       title: 'Cron Smoke Task',
       objective: 'Validate cron scheduling',
       mode: 'task',
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       schedule: { kind: 'cron', expression: '15 9 * * 1-5' }
     }, { now, timezone, installedModelIds, taskId: 'task-cron' });
 
@@ -583,7 +583,7 @@ try {
         {
           id: 'private-project-main',
           label: 'Primary Project',
-          value: 'Supreme Raman AI',
+          value: 'Workspace',
           nodeType: 'fact',
           visibility: 'private',
           children: [],
@@ -599,7 +599,7 @@ try {
       slug: 'smoke-agent',
       name: 'Smoke Agent',
       description: 'Runtime smoke agent',
-      createdBy: 'prism',
+      createdBy: 'coordinator',
       originObjective: 'Validate runtime smoke',
       persona: {
         role: 'Verifier',
@@ -638,7 +638,7 @@ try {
         createdAt: '2026-03-18T12:00:00.000Z',
         updatedAt: '2026-03-18T12:00:00.000Z',
         version: 1,
-        source: 'prism-create'
+        source: 'coordinator-create'
       }
     };
     storage.upsertAgent(agent);
@@ -657,7 +657,7 @@ try {
         id: 'fact-private',
         category: 'Projects',
         label: 'Primary Project',
-        value: 'Supreme Raman AI',
+        value: 'Workspace',
         confidence: 0.95,
         visibility: 'private',
         source: 'manual',
@@ -730,7 +730,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'prism' },
+      target: { type: 'coordinator' },
       provider: 'ollama',
       modelId: 'qwen3:8b',
       summary: 'Smoke run completed',
@@ -759,7 +759,7 @@ try {
       path.join(workspacePaths.tasks, 'task-runs.json'),
       path.join(workspacePaths.work, 'artifacts.json'),
       path.join(syncedWorkspaceRoot, 'runtime.workspace.json'),
-      path.join(syncedWorkspaceRoot, 'supreme-runtime.workspace.json'),
+      path.join(syncedWorkspaceRoot, 'workspace-runtime.workspace.json'),
       path.join(workspacePaths.root, artifactRelativePath)
     ];
 

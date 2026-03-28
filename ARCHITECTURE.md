@@ -1,8 +1,8 @@
-# Supreme Raman AI Architecture
+# Workspace Architecture
 
 ## Product Direction
 
-Supreme Raman AI is a new desktop-first product. It is not a continuation of the cloud-first RamN AI stack.
+Workspace is a new desktop-first product. It is not a continuation of the cloud-first Workspace stack.
 
 Locked decisions:
 
@@ -16,10 +16,10 @@ Locked decisions:
 - no cloud auth, no AWS backend, no DynamoDB, no Cognito
 - Ollama-first local runtime
 - optional provider keys later for OpenAI, Anthropic, and Google
-- Prism is the product architect
+- Coordinator is the product architect
 - the external runtime bridge is the long-term execution target
 - no external channels at launch
-- Telegram for Prism is phase 2
+- Telegram for Coordinator is phase 2
 
 ## Architecture Layers
 
@@ -45,9 +45,9 @@ React renderer is the human-facing workspace.
 
 Current top-level surfaces:
 
-- Prism
+- Coordinator
 - UserMap
-- Spectrum
+- Directory
 - Work
 
 Responsibilities:
@@ -96,8 +96,8 @@ Implemented today:
 
 - runtime availability checks
 - local model discovery from Ollama
-- Prism ask execution
-- Prism create execution
+- Coordinator ask execution
+- Coordinator create execution
 - task execution
 - council execution
 - durable memory extraction
@@ -116,13 +116,13 @@ Rules:
 - task outputs become Work items and optional artifacts
 - completed runs can extract memory facts
 
-This replaces the old browser polling and IndexedDB pattern from RamN AI.
+This replaces the old browser polling and IndexedDB pattern from Workspace.
 
 ## Core Specs
 
 ### Agent Spec
 
-Prism creates a persistent local chatbot spec containing:
+Coordinator creates a persistent local chatbot spec containing:
 
 - identity and metadata
 - persona
@@ -146,7 +146,7 @@ Supported schedule types:
 
 Targets in v1:
 
-- Prism
+- Coordinator
 - one individual chatbot
 
 Direct group tasking is out of scope in v1.
@@ -190,7 +190,7 @@ What is real now:
 - SQLite storage
 - filesystem workspace export
 - local Ollama runtime adapter
-- Prism ask and create flows
+- Coordinator ask and create flows
 - task scheduling in main process
 - council execution
 - Work view for tasks and outputs
@@ -204,7 +204,7 @@ What is still pending:
 - dedicated chatbot chat surface
 - manual `@mention` group execution
 - bundled Ollama setup and first-run model installer
-- Telegram for Prism
+- Telegram for Coordinator
 
 ## Repository Layout
 
@@ -237,7 +237,7 @@ Release flow later:
 
 These are reference-only, not active implementation bases:
 
-- legacy RamN AI repo
+- legacy Workspace repo
 - standalone RamanAI/UserMap repo
 
-Supreme Raman AI should continue as its own repo and architecture.
+Workspace should continue as its own repo and architecture.

@@ -8,15 +8,15 @@ import {
   GroupSpec,
   MemoryCategory,
   MemoryFact,
-  PrismReply,
-  PrismRequest,
-  PrismProviderOverrideSettings,
+  CoordinatorReply,
+  CoordinatorRequest,
+  CoordinatorProviderOverrideSettings,
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
   UserMapNode,
   UserMapState
-} from '@supreme/shared';
+} from '@workspace/shared';
 import OpenAI from 'openai';
 import { RuntimeBridge, type BridgePromptResult } from './runtime-bridge.js';
 
@@ -114,7 +114,7 @@ export interface StreamResult {
 export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
-  private prismOverride: PrismProviderOverrideSettings | null = null;
+  private coordinatorOverride: CoordinatorProviderOverrideSettings | null = null;
   private agentMode: AgentMode = 'auto';
   private remoteProviderAuthResolver: RemoteProviderAuthResolver | null = null;
   private readonly runtimeBridge = new RuntimeBridge();
@@ -127,8 +127,8 @@ export class LocalRuntimeAdapter {
     this.runtimeBridgeHooks = hooks;
   }
 
-  setPrismProviderOverride(override: PrismProviderOverrideSettings | null) {
-    this.prismOverride = override;
+  setCoordinatorProviderOverride(override: CoordinatorProviderOverrideSettings | null) {
+    this.coordinatorOverride = override;
   }
 
   setAgentMode(mode: AgentMode) {
@@ -179,16 +179,16 @@ export class LocalRuntimeAdapter {
     });
   }
 
-  async sendPrismRequest(input: PrismRequest): Promise<PrismReply> {
+  async sendCoordinatorRequest(input: CoordinatorRequest): Promise<CoordinatorReply> {
     const ollamaModels = await this.listOllamaModels();
-    const prismExecution = this.resolvePrismExecutionModel(ollamaModels);
-    if (prismExecution.provider !== 'ollama') {
+    const coordinatorExecution = this.resolveCoordinatorExecutionModel(ollamaModels);
+    if (coordinatorExecution.provider !== 'ollama') {
       try {
         if (input.mode === 'create') {
           const response = await this.generateWithFallback({
-            execution: prismExecution,
-            system: this.buildPrismCreateSystemPrompt(),
-            prompt: this.buildPrismCreatePrompt(input),
+            execution: coordinatorExecution,
+            system: this.buildCoordinatorCreateSystemPrompt(),
+            prompt: this.buildCoordinatorCreatePrompt(input),
             format: 'json'
           });
           const parsed = this.parseJsonObject<Record<string, unknown>>(response.text);
@@ -196,7 +196,7 @@ export class LocalRuntimeAdapter {
 
           return {
             id: randomUUID(),
-            text: `Created ${createdAgent.name}. Prism designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+            text: `Created ${createdAgent.name}. Coordinator designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
             provider: response.provider,
             modelId: response.modelId,
             createdAgent
@@ -204,9 +204,9 @@ export class LocalRuntimeAdapter {
         }
 
         const response = await this.generateWithFallback({
-          execution: prismExecution,
-          system: this.buildPrismAskSystemPrompt(),
-          prompt: this.buildPrismAskPrompt(input)
+          execution: coordinatorExecution,
+          system: this.buildCoordinatorAskSystemPrompt(),
+          prompt: this.buildCoordinatorAskPrompt(input)
         });
 
         return {
@@ -217,19 +217,19 @@ export class LocalRuntimeAdapter {
         };
       } catch (error) {
         console.warn(
-          `[runtime] ${prismExecution.provider} Prism execution failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
+          `[runtime] ${coordinatorExecution.provider} Coordinator execution failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
         );
       }
     }
 
-    if (prismExecution.provider === 'ollama' && this.agentMode !== 'ollama') {
-      const bridgeReply = await this.tryBridgePrism(input);
+    if (coordinatorExecution.provider === 'ollama' && this.agentMode !== 'ollama') {
+      const bridgeReply = await this.tryBridgeCoordinator(input);
       if (bridgeReply) {
         return bridgeReply;
       }
     }
 
-    const overrideModelId = this.prismOverride?.provider === 'ollama' ? this.prismOverride.modelId : null;
+    const overrideModelId = this.coordinatorOverride?.provider === 'ollama' ? this.coordinatorOverride.modelId : null;
     const modelId = overrideModelId && ollamaModels.some((model) => model.installed && model.id === overrideModelId)
       ? overrideModelId
       : this.pickModelId(ollamaModels);
@@ -237,8 +237,8 @@ export class LocalRuntimeAdapter {
     if (input.mode === 'create') {
       const jsonText = await this.generateText({
         modelId,
-        system: this.buildPrismCreateSystemPrompt(),
-        prompt: this.buildPrismCreatePrompt(input),
+        system: this.buildCoordinatorCreateSystemPrompt(),
+        prompt: this.buildCoordinatorCreatePrompt(input),
         format: 'json'
       });
 
@@ -247,7 +247,7 @@ export class LocalRuntimeAdapter {
 
       return {
         id: randomUUID(),
-        text: `Created ${createdAgent.name}. Prism designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+        text: `Created ${createdAgent.name}. Coordinator designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
         provider: 'ollama',
         modelId,
         createdAgent
@@ -256,8 +256,8 @@ export class LocalRuntimeAdapter {
 
     const text = await this.generateText({
       modelId,
-      system: this.buildPrismAskSystemPrompt(),
-      prompt: this.buildPrismAskPrompt(input)
+      system: this.buildCoordinatorAskSystemPrompt(),
+      prompt: this.buildCoordinatorAskPrompt(input)
     });
 
     return {
@@ -281,8 +281,8 @@ export class LocalRuntimeAdapter {
     }
 
     const prompt = [
-      task.target.type === 'prism'
-        ? 'You are Prism in Supreme Raman AI. Execute the following scheduled autonomous task.'
+      task.target.type === 'coordinator'
+        ? 'You are Coordinator in Workspace. Execute the following scheduled autonomous task.'
         : `You are executing a scheduled task for the chatbot "${targetAgent?.name ?? 'Unknown Chatbot'}". Respect its role and instructions.`,
       targetAgent ? `Role: ${targetAgent.persona.role}\nMission: ${targetAgent.persona.mission}\nInstructions: ${targetAgent.persona.systemInstructions}` : '',
       this.formatUserMapSummary(context.userMap),
@@ -334,22 +334,22 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private resolvePrismExecutionModel(ollamaModels: ProviderModelPreset[]): ExecutionModelRef {
-    if (this.prismOverride) {
-      if (this.prismOverride.provider === 'ollama') {
+  private resolveCoordinatorExecutionModel(ollamaModels: ProviderModelPreset[]): ExecutionModelRef {
+    if (this.coordinatorOverride) {
+      if (this.coordinatorOverride.provider === 'ollama') {
         return {
           provider: 'ollama',
           modelId: this.resolveSupportedModel(
             'ollama',
-            this.stripProviderPrefix('ollama', this.prismOverride.modelId),
+            this.stripProviderPrefix('ollama', this.coordinatorOverride.modelId),
             ollamaModels.filter((model) => model.installed).map((model) => model.id)
           )
         };
       }
 
       return {
-        provider: this.prismOverride.provider,
-        modelId: this.stripProviderPrefix(this.prismOverride.provider, this.prismOverride.modelId),
+        provider: this.coordinatorOverride.provider,
+        modelId: this.stripProviderPrefix(this.coordinatorOverride.provider, this.coordinatorOverride.modelId),
         ...(this.safePickOllamaModelId(ollamaModels) ? { fallbackOllamaModelId: this.safePickOllamaModelId(ollamaModels) } : {})
       };
     }
@@ -910,7 +910,7 @@ export class LocalRuntimeAdapter {
     }
   }
 
-  private async tryBridgePrism(input: PrismRequest): Promise<PrismReply | null> {
+  private async tryBridgeCoordinator(input: CoordinatorRequest): Promise<CoordinatorReply | null> {
     const available = await this.isBridgeAvailable();
     if (!available) {
       return null;
@@ -918,20 +918,20 @@ export class LocalRuntimeAdapter {
 
     try {
       const models = await this.listModels();
-      const selectedModel = this.pickPrismBridgeModel(models);
+      const selectedModel = this.pickCoordinatorBridgeModel(models);
 
       if (input.mode === 'create') {
         const response = await this.sendWithBridge({
           modelRef: selectedModel,
-          system: this.buildPrismCreateSystemPrompt(),
-          prompt: this.buildPrismCreatePrompt(input)
+          system: this.buildCoordinatorCreateSystemPrompt(),
+          prompt: this.buildCoordinatorCreatePrompt(input)
         });
         const parsed = this.parseJsonObject<Record<string, unknown>>(response.text);
         const createdAgent = this.normalizeAgentSpec(parsed, input.message, models);
 
         return {
           id: randomUUID(),
-          text: `Created ${createdAgent.name}. Prism designed this chatbot through the runtime bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+          text: `Created ${createdAgent.name}. Coordinator designed this chatbot through the runtime bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
           provider: this.normalizeProviderId(response.provider),
           modelId: response.modelId,
           createdAgent
@@ -940,8 +940,8 @@ export class LocalRuntimeAdapter {
 
       const response = await this.sendWithBridge({
         modelRef: selectedModel,
-        system: this.buildPrismAskSystemPrompt(),
-        prompt: this.buildPrismAskPrompt(input)
+        system: this.buildCoordinatorAskSystemPrompt(),
+        prompt: this.buildCoordinatorAskPrompt(input)
       });
 
       return {
@@ -976,8 +976,8 @@ export class LocalRuntimeAdapter {
       }
 
       const prompt = [
-        task.target.type === 'prism'
-          ? 'You are Prism in Supreme Raman AI. Execute the following scheduled autonomous task.'
+        task.target.type === 'coordinator'
+          ? 'You are Coordinator in Workspace. Execute the following scheduled autonomous task.'
           : `You are executing a scheduled task for the chatbot "${targetAgent?.name ?? 'Unknown Chatbot'}". Respect its role and instructions.`,
         targetAgent
           ? `Role: ${targetAgent.persona.role}\nMission: ${targetAgent.persona.mission}\nInstructions: ${targetAgent.persona.systemInstructions}`
@@ -1102,7 +1102,7 @@ export class LocalRuntimeAdapter {
       : (workers[0] ?? defaultExecution);
 
     const sharedBrief = [
-      'You are part of a council run in Supreme Raman AI.',
+      'You are part of a council run in Workspace.',
       'Produce a strong answer to the task objective using the supplied context.',
       this.formatUserMapSummary(context.userMap),
       `Objective:\n${task.objective}`
@@ -1180,7 +1180,7 @@ export class LocalRuntimeAdapter {
       : (workers[0] ?? (runtime === 'bridge' ? this.pickBridgeModel(models) : this.pickModelId(models)));
 
     const sharedBrief = [
-      'You are part of a council run in Supreme Raman AI.',
+      'You are part of a council run in Workspace.',
       'Produce a strong answer to the task objective using the supplied context.',
       this.formatUserMapSummary(context.userMap),
       `Objective:\n${task.objective}`
@@ -1258,16 +1258,18 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private buildPrismAskSystemPrompt() {
+  private buildCoordinatorAskSystemPrompt() {
     return [
-      'You are Prism inside Supreme Raman AI.',
+      'You are Coordinator inside Workspace.',
       'You are a prompt, context, and execution architect for a local-first AI workspace.',
+      'If the user simply says "Hi", "Hello", or provides a casual greeting, respond warmly and conversationally without trying to build an agent.',
+      'Only provide advice on setting up an agent if the user explicitly asks for it or provides an objective.',
       'Be concise, practical, and specific.',
       'Ground your answer in the user context provided. If local runtime limitations matter, say so plainly.'
     ].join(' ');
   }
 
-  private buildPrismAskPrompt(input: PrismRequest) {
+  private buildCoordinatorAskPrompt(input: CoordinatorRequest) {
     return [
       `User objective:\n${input.message}`,
       this.formatUserMapSummary(input.userMap),
@@ -1276,16 +1278,16 @@ export class LocalRuntimeAdapter {
     ].join('\n\n');
   }
 
-  private buildPrismCreateSystemPrompt() {
+  private buildCoordinatorCreateSystemPrompt() {
     return [
-      'You are Prism inside Supreme Raman AI.',
+      'You are Coordinator inside Workspace.',
       'Create a single JSON object representing a local-execution chatbot spec.',
       'Return JSON only. No markdown. No prose.',
       'Respect these runtime rules: local-first, Ollama-first, group chats may auto-route by default, explicit @mentions pin routing, scheduled tasks supported, recurring tasks supported, council eligible when useful.'
     ].join(' ');
   }
 
-  private buildPrismCreatePrompt(input: PrismRequest) {
+  private buildCoordinatorCreatePrompt(input: CoordinatorRequest) {
     return [
       'Design one persistent chatbot from the following user objective.',
       `Objective:\n${input.message}`,
@@ -1334,7 +1336,7 @@ export class LocalRuntimeAdapter {
   private normalizeAgentSpec(parsed: Record<string, unknown>, objective: string, models: ProviderModelPreset[]): AgentSpec {
     const now = new Date().toISOString();
     const defaultModelIds = models.filter((model) => model.installed).slice(0, 3).map((model) => model.id);
-    const name = this.asString(parsed.name) || 'Prism Chatbot';
+    const name = this.asString(parsed.name) || 'Coordinator Chatbot';
     const providerStrategy: AgentSpec['providerStrategy'] = typeof parsed.providerStrategy === 'object' && parsed.providerStrategy
       ? parsed.providerStrategy as AgentSpec['providerStrategy']
       : {
@@ -1382,7 +1384,7 @@ export class LocalRuntimeAdapter {
       slug: this.slugify(name),
       name,
       description: this.asString(parsed.description) || objective,
-      createdBy: 'prism',
+      createdBy: 'coordinator',
       originObjective: objective,
       persona: {
         role: this.asString(persona.role) || 'Specialist chatbot',
@@ -1417,7 +1419,7 @@ export class LocalRuntimeAdapter {
         createdAt: now,
         updatedAt: now,
         version: 1,
-        source: 'prism-create'
+        source: 'coordinator-create'
       }
     };
   }
@@ -1798,9 +1800,9 @@ export class LocalRuntimeAdapter {
     return this.pickBridgeModel(models);
   }
 
-  private pickPrismBridgeModel(models: ProviderModelPreset[]): string {
-    if (this.prismOverride) {
-      return this.resolveBridgeModel(this.prismOverride.provider, this.prismOverride.modelId, models.filter((model) => model.installed));
+  private pickCoordinatorBridgeModel(models: ProviderModelPreset[]): string {
+    if (this.coordinatorOverride) {
+      return this.resolveBridgeModel(this.coordinatorOverride.provider, this.coordinatorOverride.modelId, models.filter((model) => model.installed));
     }
 
     return this.pickBridgeModel(models);

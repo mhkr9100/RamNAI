@@ -1,11 +1,11 @@
 import * as nodeCrypto from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { StorageTextCipher } from '@supreme/storage';
+import type { StorageTextCipher } from '@workspace/storage';
 
 const METADATA_FILENAME = 'workspace-security.json';
 const ENCRYPTED_TEXT_PREFIX = 'SRMAI_ENC:';
-const KEYCHECK_MESSAGE = 'supreme-raman-ai-workspace-keycheck';
+const KEYCHECK_MESSAGE = 'workspace-app-workspace-keycheck';
 const ARGON2_MEMORY_KIB = 64 * 1024;
 const ARGON2_PASSES = 3;
 const ARGON2_PARALLELISM = 1;

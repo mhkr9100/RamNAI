@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-const APP_BUNDLE_ID = 'ai.raman.app';
+const APP_BUNDLE_ID = 'app.workspace.desktop';
 
 /**
  * macOS notarization script for electron-builder afterSign hook.

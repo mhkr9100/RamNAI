@@ -33,20 +33,20 @@ export function EmptyState({
       ]
         .filter(Boolean)
         .join(' ')}
-    >
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+      >
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-black/8 bg-black/[0.03] dark:border-white/[0.08] dark:bg-white/[0.04]">
         {icon}
       </div>
 
       <h3
-        className={`mt-4 font-semibold text-white/80 ${compact ? 'text-sm' : 'text-base'}`}
+        className={`mt-4 font-semibold text-slate-900 dark:text-white/80 ${compact ? 'text-sm' : 'text-base'}`}
       >
         {title}
       </h3>
 
       {description && (
         <p
-          className={`mt-1.5 max-w-sm text-white/40 ${compact ? 'text-xs' : 'text-sm'} leading-relaxed`}
+          className={`mt-1.5 max-w-sm text-slate-500 dark:text-white/40 ${compact ? 'text-xs' : 'text-sm'} leading-relaxed`}
         >
           {description}
         </p>

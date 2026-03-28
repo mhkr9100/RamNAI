@@ -1,5 +1,5 @@
 {
-  "name": "@supreme/runtime",
+  "name": "@workspace/runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@google/genai": "^1.46.0",
-    "@supreme/shared": "file:../shared",
+    "@workspace/shared": "file:../shared",
     "keytar": "^7.9.0",
     "openai": "^6.32.0"
   },

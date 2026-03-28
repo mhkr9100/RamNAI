@@ -16,7 +16,7 @@ Object.defineProperty(navigator, 'clipboard', {
 const noopAsync = () => Promise.resolve(null);
 const noopAsyncArr = () => Promise.resolve([]);
 
-Object.defineProperty(window, 'supreme', {
+Object.defineProperty(window, 'workspaceApp', {
   value: {
     workspace: { getSnapshot: vi.fn() },
     bridge: {

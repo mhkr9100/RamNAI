@@ -1,5 +1,5 @@
 {
-  "name": "@supreme/renderer",
+  "name": "@workspace/renderer",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@supreme/shared": "file:../../packages/shared",
+    "@workspace/shared": "file:../../packages/shared",
     "framer-motion": "^12.23.24",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.575.0",

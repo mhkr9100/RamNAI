@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { CalendarClock, SendHorizontal } from 'lucide-react';
-import type { TaskSpec } from '@supreme/shared';
+import type { TaskSpec } from '@workspace/shared';
 import type { TaskCreateInput } from '@/lib/electron';
 import { Badge, Button, Card, CardHeader, Input, SectionLabel, Select, Textarea } from './ui';
 
@@ -154,15 +154,15 @@ export function TaskComposerCard({
                   placeholder={
                     mode === 'council'
                       ? 'Have multiple models evaluate the same brief, critique each other once, and synthesize the strongest final recommendation.'
-                      : 'Tell Prism exactly what should be executed when this task runs.'
+                      : 'Tell Coordinator exactly what should be executed when this task runs.'
                   }
                 />
               </div>
               <div className="space-y-2">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50">
                   Mode
                 </div>
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/[0.08] bg-surface-1 p-1">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-1 p-1">
                   {(['task', 'council'] as const).map((value) => (
                     <Button
                       key={value}
@@ -191,12 +191,12 @@ export function TaskComposerCard({
             <div className="grid gap-4 xl:grid-cols-2">
               <div className="xl:col-span-2 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50">
                     Schedule Type
                   </span>
                   <Badge variant="info">{scheduleKind}</Badge>
                 </div>
-                <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/[0.08] bg-surface-1 p-1">
+                <div className="grid grid-cols-3 gap-2 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-1 p-1">
                   {(['once', 'simple', 'cron'] as const).map((value) => (
                     <Button
                       key={value}
@@ -284,12 +284,12 @@ export function TaskComposerCard({
                   { value: 'both', label: 'In App + Desktop' },
                 ]}
               />
-              <label className="xl:col-span-2 flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-surface-1 px-4 py-3 text-sm text-white/70">
+              <label className="xl:col-span-2 flex items-center gap-3 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-1 px-4 py-3 text-sm text-slate-600 dark:text-white/70">
                 <input
                   type="checkbox"
                   checked={defaultSendToChat}
                   onChange={(event) => setDefaultSendToChat(event.target.checked)}
-                  className="h-4 w-4 rounded border-white/20 bg-transparent"
+                  className="h-4 w-4 rounded border-black/20 dark:border-white/20 bg-transparent"
                 />
                 Ready to send back to chat.
               </label>
@@ -297,31 +297,31 @@ export function TaskComposerCard({
           </section>
 
           {mode === 'council' ? (
-            <section className="space-y-4 rounded-2xl border border-white/[0.08] bg-surface-1 p-4">
+            <section className="space-y-4 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-1 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <SectionLabel className="flex-1">Council Models</SectionLabel>
                 <Badge variant="brand">Council</Badge>
               </div>
               <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
                 <div>
-                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.04em] text-white/50">
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/50">
                     Workers
                   </div>
                   <div className="grid gap-2 md:grid-cols-2">
                     {installedModels.map((model) => (
                       <label
                         key={model.id}
-                        className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-surface-2 px-4 py-3 text-sm text-white/70"
+                        className="flex items-center gap-3 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-2 px-4 py-3 text-sm text-slate-600 dark:text-white/70"
                       >
                         <input
                           type="checkbox"
                           checked={workerModelIds.includes(model.id)}
                           onChange={() => toggleWorker(model.id)}
-                          className="h-4 w-4 rounded border-white/20 bg-transparent"
+                          className="h-4 w-4 rounded border-black/20 dark:border-white/20 bg-transparent"
                         />
                         <div className="min-w-0">
-                          <div className="font-semibold text-white">{model.label}</div>
-                          <div className="truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                          <div className="font-semibold text-slate-900 dark:text-white">{model.label}</div>
+                          <div className="truncate text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
                             {model.id}
                           </div>
                         </div>
@@ -340,18 +340,18 @@ export function TaskComposerCard({
           ) : null}
 
           {error ? (
-            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+            <div className="rounded-2xl border border-red-300/30 dark:border-red-400/20 bg-red-50 dark:bg-red-400/10 px-4 py-3 text-sm text-red-700 dark:text-red-100">
               {error}
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-4 rounded-2xl border border-white/[0.08] bg-surface-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 rounded-2xl border border-black/10 dark:border-white/[0.08] bg-surface-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-400 dark:text-white/40">
                 Target
               </div>
-              <div className="text-sm text-white/70">
-                {target.type === 'prism' ? 'Prism' : `Agent ${target.agentId}`}
+              <div className="text-sm text-slate-600 dark:text-white/70">
+                {target.type === 'coordinator' ? 'Coordinator' : `Agent ${target.agentId}`}
               </div>
             </div>
             <Button

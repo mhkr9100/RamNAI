@@ -18,7 +18,7 @@ import {
   RetentionConfigInput,
   ProviderModelPreset,
   ProviderAuthSelection,
-  PrismProviderOverrideSettings,
+  CoordinatorProviderOverrideSettings,
   ROLE_PERMISSIONS,
   TaskSpec,
   TaskRunRecord,
@@ -27,7 +27,7 @@ import {
   VoiceConfig,
   WorkspaceRole,
   WorkItem
-} from '@supreme/shared';
+} from '@workspace/shared';
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -115,7 +115,7 @@ const TEXT_CIPHER_TABLES: Array<{ table: string; columns: string[] }> = [
   { table: 'memory_facts', columns: ['payload'] },
   { table: 'models', columns: ['payload'] },
   { table: 'provider_auth_state', columns: ['payload'] },
-  { table: 'prism_settings', columns: ['payload'] },
+  { table: 'coordinator_settings', columns: ['payload'] },
   { table: 'voice_config', columns: ['payload'] },
   { table: 'audit_log', columns: ['payload'] }
 ];
@@ -647,7 +647,7 @@ export class SqliteStorage {
         provider TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS prism_settings (
+      CREATE TABLE IF NOT EXISTS coordinator_settings (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         payload TEXT NOT NULL
       );
@@ -694,9 +694,9 @@ export class SqliteStorage {
       this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
     }
 
-    const prismSettingsRow = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    if (!prismSettingsRow) {
-      this.db.prepare('INSERT INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson({}));
+    const coordinatorSettingsRow = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    if (!coordinatorSettingsRow) {
+      this.db.prepare('INSERT INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson({}));
     }
 
     this.ensureRetentionConfigRow();
@@ -1251,31 +1251,31 @@ export class SqliteStorage {
     return selection;
   }
 
-  getPrismProviderOverride(): PrismProviderOverrideSettings | null {
-    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+  getCoordinatorProviderOverride(): CoordinatorProviderOverrideSettings | null {
+    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const override = parsed.providerOverride;
     if (!override || typeof override !== 'object') {
       return null;
     }
-    const candidate = override as PrismProviderOverrideSettings;
+    const candidate = override as CoordinatorProviderOverrideSettings;
     if (!candidate.provider || !candidate.modelId) {
       return null;
     }
     return candidate;
   }
 
-  savePrismProviderOverride(override: PrismProviderOverrideSettings | null): PrismProviderOverrideSettings | null {
-    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+  saveCoordinatorProviderOverride(override: CoordinatorProviderOverrideSettings | null): CoordinatorProviderOverrideSettings | null {
+    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = {
       ...parsed,
       providerOverride: override ?? null
     };
-    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
+    this.db.prepare('INSERT OR REPLACE INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     this.appendAuditEvent({
-      kind: 'prism_override_changed',
-      entityType: 'prism_settings',
+      kind: 'coordinator_override_changed',
+      entityType: 'coordinator_settings',
       payload: override ? { provider: override.provider, modelId: override.modelId } : { cleared: true },
       createdAt: new Date().toISOString()
     });
@@ -1283,27 +1283,26 @@ export class SqliteStorage {
   }
 
   getAgentMode(): AgentMode {
-    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const raw = parsed.agentMode;
     if (raw === 'ollama' || raw === 'bridge' || raw === 'auto') return raw;
-    if (raw === 'openclaw') return 'bridge'; // migration from legacy
     return 'auto';
   }
 
   saveAgentMode(mode: AgentMode): AgentMode {
-    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = {
       ...parsed,
       agentMode: mode
     };
-    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
+    this.db.prepare('INSERT OR REPLACE INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     return mode;
   }
 
   getWorkspaceRole(): WorkspaceRole {
-    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const raw = parsed.workspaceRole;
     if (raw === 'owner' || raw === 'admin' || raw === 'member' || raw === 'viewer') return raw;
@@ -1311,10 +1310,10 @@ export class SqliteStorage {
   }
 
   saveWorkspaceRole(role: WorkspaceRole): WorkspaceRole {
-    const row = this.db.prepare('SELECT payload FROM prism_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = { ...parsed, workspaceRole: role };
-    this.db.prepare('INSERT OR REPLACE INTO prism_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
+    this.db.prepare('INSERT OR REPLACE INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     return role;
   }
 
@@ -1327,9 +1326,9 @@ export class SqliteStorage {
   getVoiceConfig(): VoiceConfig {
     const row = this.db.prepare('SELECT payload FROM voice_config WHERE id = 1').get() as { payload?: string } | undefined;
     if (row?.payload) {
-      return this.decodeJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
+      return this.decodeJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey Workspace', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
     }
-    return { enabled: false, wakeWord: 'Hey RamN', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' };
+    return { enabled: false, wakeWord: 'Hey Workspace', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' };
   }
 
   saveVoiceConfig(config: VoiceConfig): VoiceConfig {

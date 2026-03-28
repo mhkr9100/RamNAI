@@ -13,7 +13,7 @@ import {
   Key 
 } from 'lucide-react';
 import { Button, Card, Input, Badge, Divider } from './ui';
-import { RamanIcon } from './RamanIcon';
+import { AppLogo } from './AppLogo';
 
 export interface OnboardingFlowProps {
   onComplete: (profile: { name: string }) => Promise<void>;
@@ -82,7 +82,7 @@ export function OnboardingFlow({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#f3f5f4] dark:bg-[#0f1113] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-shell-50 dark:bg-surface-0 overflow-hidden">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-12%] top-[-8%] h-[28rem] w-[28rem] rounded-full bg-emerald-400/12 blur-3xl dark:bg-emerald-400/10" />
         <div className="absolute right-[-8%] top-[12%] h-[24rem] w-[24rem] rounded-full bg-black/6 blur-3xl dark:bg-white/6" />
@@ -108,7 +108,7 @@ export function OnboardingFlow({
                   transition={{ delay: 0.1, duration: 0.5 }}
                   className="mb-8 relative text-gray-900 dark:text-white/30"
                 >
-                  <RamanIcon size={96} />
+                  <AppLogo size={96} />
                 </motion.div>
                 
                 <motion.h1 
@@ -117,7 +117,7 @@ export function OnboardingFlow({
                   transition={{ delay: 0.2 }}
                   className="text-3xl font-black uppercase tracking-tighter text-gray-950 dark:text-white mb-3"
                 >
-                  Welcome to RamN AI
+                  Welcome to Workspace
                 </motion.h1>
 
                 <motion.div
@@ -169,20 +169,20 @@ export function OnboardingFlow({
 
             {step === 2 && (
               <div className="flex flex-col">
-                <Button variant="ghost" size="sm" className="self-start mb-6 -ml-3 text-white/50" onClick={() => paginate(-1)} icon={<ArrowLeft size={16} />}>
+                <Button variant="ghost" size="sm" className="self-start mb-6 -ml-3 text-gray-500 dark:text-white/50" onClick={() => paginate(-1)} icon={<ArrowLeft size={16} />}>
                   Back
                 </Button>
-                
-                <h2 className="text-2xl font-bold text-white mb-2">Connect your runtime</h2>
-                <p className="text-white/50 text-sm mb-8">RamN AI works best with a local engine like Ollama.</p>
-                
-                <div className="p-5 bg-surface-3 border border-white/[0.08] rounded-2xl mb-6 flex flex-col shadow-sm">
+
+                <h2 className="text-2xl font-bold text-gray-950 dark:text-white mb-2">Connect your runtime</h2>
+                <p className="text-gray-500 dark:text-white/50 text-sm mb-8">Workspace works best with a local engine like Ollama.</p>
+
+                <div className="p-5 bg-surface-3 border border-black/8 dark:border-white/[0.08] rounded-2xl mb-6 flex flex-col shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
-                        <Box size={16} className="text-white/70" />
+                      <div className="w-8 h-8 rounded-lg bg-black/[0.04] dark:bg-white/5 flex items-center justify-center">
+                        <Box size={16} className="text-gray-600 dark:text-white/70" />
                       </div>
-                      <h3 className="font-semibold text-white/90">Local Engine (Ollama)</h3>
+                      <h3 className="font-semibold text-gray-900 dark:text-white/90">Local Engine (Ollama)</h3>
                     </div>
                     {isCheckingRuntime ? (
                       <Badge variant="default" icon={<LoaderCircle size={12} className="animate-spin" />}>Checking...</Badge>
@@ -210,15 +210,15 @@ export function OnboardingFlow({
                   )}
                 </div>
 
-                <div className="h-px bg-white/[0.08] my-6 w-full" />
-                
+                <div className="h-px bg-black/8 dark:bg-white/[0.08] my-6 w-full" />
+
                 <div className="space-y-4 mb-10">
                   <div className="flex items-center gap-2 mb-2">
-                    <Key size={14} className="text-white/40" />
-                    <h3 className="text-sm font-semibold text-white/80">Cloud Providers</h3>
+                    <Key size={14} className="text-gray-400 dark:text-white/40" />
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-white/80">Cloud Providers</h3>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/40 pl-1">OpenAI API Key</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.04em] text-gray-400 dark:text-white/40 pl-1">OpenAI API Key</label>
                     <Input 
                       type="password"
                       placeholder="sk-..." 
@@ -227,7 +227,7 @@ export function OnboardingFlow({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/40 pl-1">Anthropic API Key</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.04em] text-gray-400 dark:text-white/40 pl-1">Anthropic API Key</label>
                     <Input 
                       type="password"
                       placeholder="sk-ant-..." 
@@ -268,7 +268,7 @@ export function OnboardingFlow({
                   initial={{ y: 10, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.2 }}
-                  className="text-3xl font-bold text-white mb-3"
+                  className="text-3xl font-bold text-gray-950 dark:text-white mb-3"
                 >
                   You're all set!
                 </motion.h2>
@@ -280,17 +280,17 @@ export function OnboardingFlow({
                   transition={{ delay: 0.4 }}
                   className="flex flex-col gap-3 w-full mb-10 text-left"
                 >
-                  <div className="flex items-start gap-3 bg-surface-3 border border-white/[0.08] p-4 rounded-xl">
+                  <div className="flex items-start gap-3 bg-surface-3 border border-black/8 dark:border-white/[0.08] p-4 rounded-xl">
                     <Sparkles className="text-[#a78bfa] mt-0.5" size={16} />
-                    <h4 className="text-white/90 text-sm font-medium">Create Agent</h4>
+                    <h4 className="text-gray-900 dark:text-white/90 text-sm font-medium">Create Agent</h4>
                   </div>
-                  <div className="flex items-start gap-3 bg-surface-3 border border-white/[0.08] p-4 rounded-xl">
+                  <div className="flex items-start gap-3 bg-surface-3 border border-black/8 dark:border-white/[0.08] p-4 rounded-xl">
                     <BrainCircuit className="text-[#a78bfa] mt-0.5" size={16} />
-                    <h4 className="text-white/90 text-sm font-medium">Group Chat</h4>
+                    <h4 className="text-gray-900 dark:text-white/90 text-sm font-medium">Group Chat</h4>
                   </div>
-                  <div className="flex items-start gap-3 bg-surface-3 border border-white/[0.08] p-4 rounded-xl">
+                  <div className="flex items-start gap-3 bg-surface-3 border border-black/8 dark:border-white/[0.08] p-4 rounded-xl">
                     <Shield className="text-[#a78bfa] mt-0.5" size={16} />
-                    <h4 className="text-white/90 text-sm font-medium">Settings</h4>
+                    <h4 className="text-gray-900 dark:text-white/90 text-sm font-medium">Settings</h4>
                   </div>
                 </motion.div>
 
@@ -307,7 +307,7 @@ export function OnboardingFlow({
                     onClick={handleComplete} 
                     loading={isSubmitting}
                   >
-                    Start using RamN AI
+                    Start using Workspace
                   </Button>
                 </motion.div>
               </div>

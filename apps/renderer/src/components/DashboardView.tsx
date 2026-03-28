@@ -4,7 +4,7 @@ import { MessageSquare, ClipboardList, Bot, ArrowRight, Zap } from 'lucide-react
 import type { WorkspaceSnapshot } from '../lib/electron';
 import type { ViewId } from './Sidebar';
 import { Badge } from './ui';
-import { RamanIcon } from './RamanIcon';
+import { AppLogo } from './AppLogo';
 
 interface DashboardViewProps {
   snapshot: WorkspaceSnapshot;
@@ -27,17 +27,17 @@ export function DashboardView({ snapshot, onNavigate }: DashboardViewProps) {
         className="flex flex-col items-center text-center space-y-12"
       >
         <div className="text-gray-900 dark:text-white/30">
-          <RamanIcon size={120} />
+          <AppLogo size={120} />
         </div>
         <div className="space-y-6">
           <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-gray-900 dark:text-white uppercase leading-none">
-            RamN <span className="text-gray-400 dark:text-white/20">AI</span>
+            Workspace <span className="text-gray-400 dark:text-white/20">AI</span>
             <span className="text-[12px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold ml-4 align-top border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 rounded px-2 py-0.5">Beta</span>
           </h1>
         </div>
         <div className="flex flex-col md:flex-row gap-4">
           <button
-            onClick={() => onNavigate('prism')}
+            onClick={() => onNavigate('coordinator')}
             className="px-12 py-5 bg-gray-900 dark:bg-white text-white dark:text-black text-xs font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-2xl hover:bg-gray-800 dark:hover:bg-slate-200 active:scale-[0.98]"
           >
             Enter Workspace
@@ -87,16 +87,16 @@ export function DashboardView({ snapshot, onNavigate }: DashboardViewProps) {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="pt-8">
         <h2 className="text-[10px] font-black text-gray-400 dark:text-white/30 uppercase tracking-[0.5em] mb-4">Quick Actions</h2>
         <div className="grid grid-cols-2 gap-4">
-          <button type="button" onClick={() => onNavigate('prism')} className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] flex gap-6 text-left shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
+          <button type="button" onClick={() => onNavigate('coordinator')} className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] flex gap-6 text-left shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-300 flex-shrink-0">
               <Zap size={20} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-widest">Ask Prism</h3>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-widest">Ask Coordinator</h3>
               <p className="text-xs text-gray-600 dark:text-white/40 mt-1 leading-relaxed">Strategy, prompts, architecture</p>
             </div>
           </button>
-          <button type="button" onClick={() => onNavigate('prism')} className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] flex gap-6 text-left shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
+          <button type="button" onClick={() => onNavigate('coordinator')} className="p-6 rounded-3xl border border-black/10 dark:border-white/5 bg-white dark:bg-white/[0.02] flex gap-6 text-left shadow-xl dark:shadow-none hover:border-black/20 dark:hover:border-white/10 transition-colors">
             <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-300 flex-shrink-0">
               <Bot size={20} />
             </div>

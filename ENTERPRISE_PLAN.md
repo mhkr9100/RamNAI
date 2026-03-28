@@ -1,4 +1,4 @@
-# Enterprise-Grade Implementation Plan — Supreme Raman AI
+# Enterprise-Grade Implementation Plan — Workspace
 
 This plan outlines the path to an enterprise-ready platform with support for agent spin-off **with** and **without** the runtime bridge. It aligns with [CRITICAL_RULES.md](./CRITICAL_RULES.md) and [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -9,8 +9,8 @@ This plan outlines the path to an enterprise-ready platform with support for age
 ### 1.1 Current Architecture
 
 - **Ollama-only**: Direct calls to local Ollama; no external runtime.
-- **Runtime bridge**: External CLI used for Prism prompts, agents, sessions, channels.
-- **LocalRuntimeAdapter** routes Prism/task execution: runtime bridge first when available, else Ollama.
+- **Runtime bridge**: External CLI used for Coordinator prompts, agents, sessions, channels.
+- **LocalRuntimeAdapter** routes Coordinator/task execution: runtime bridge first when available, else Ollama.
 
 ### 1.2 Spin-Off Modes
 
@@ -24,7 +24,7 @@ This plan outlines the path to an enterprise-ready platform with support for age
 | Task | Description | Priority |
 |------|-------------|----------|
 | **A1** | Add workspace config flag: `agentMode: 'ollama' | 'bridge'` | P1 |
-| **A2** | When `ollama`: bypass runtime bridge for Prism/tasks; use `LocalRuntimeAdapter` Ollama path only | P1 |
+| **A2** | When `ollama`: bypass runtime bridge for Coordinator/tasks; use `LocalRuntimeAdapter` Ollama path only | P1 |
 | **A3** | When `bridge`: require runtime bridge availability; use RuntimeBridge and BridgeAgentManager | P1 |
 | **A4** | Expose `agentMode` in Settings UI with validation (e.g. warn if bridge selected but CLI unavailable) | P2 |
 | **A5** | On workspace init, auto-detect best mode: bridge if available, else Ollama | P2 |
@@ -97,7 +97,7 @@ User Intent → Workspace Config (agentMode) → LocalRuntimeAdapter
 ### Phase 1: Agent Spin-Off (Weeks 1–2)
 
 - Implement **A1–A3**: `agentMode` config and routing.
-- Test both modes with real Prism create/ask and task execution.
+- Test both modes with real Coordinator create/ask and task execution.
 - No mock or placeholder responses (per CRITICAL_RULES).
 
 ### Phase 2: Agent Mode UX (Weeks 2–3)

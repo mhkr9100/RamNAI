@@ -1,5 +1,5 @@
-export { RamanIcon } from '../RamanIcon';
-export { PrismIcon } from './PrismIcon';
-export { SpectrumIcon } from './SpectrumIcon';
+export { AppLogo } from '../AppLogo';
+export { CoordinatorIcon } from './CoordinatorIcon';
+export { DirectoryIcon } from './DirectoryIcon';
 export { UserMapIcon } from './UserMapIcon';
 export { ChatIcon } from './ChatIcon';

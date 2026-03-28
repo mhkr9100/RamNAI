@@ -9,6 +9,7 @@ import {
   Settings2,
   Sparkles,
   ArrowRight,
+  Users,
 } from 'lucide-react';
 import { Kbd } from './ui';
 import type { ViewId } from './Sidebar';
@@ -130,10 +131,10 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
             transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
             className="fixed inset-x-0 top-[15%] z-[80] mx-auto w-full max-w-lg"
           >
-            <div role="dialog" aria-modal="true" aria-label="Command palette" className="mx-4 overflow-hidden rounded-2xl border border-white/[0.10] bg-surface-3/95 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+            <div role="dialog" aria-modal="true" aria-label="Command palette" className="mx-4 overflow-hidden rounded-2xl border border-black/10 dark:border-white/[0.10] bg-surface-3/95 shadow-[0_16px_48px_rgba(0,0,0,0.25)] dark:shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl">
               {/* Search */}
-              <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-                <Search size={16} className="shrink-0 text-white/30" />
+              <div className="flex items-center gap-3 border-b border-black/8 dark:border-white/[0.06] px-4 py-3">
+                <Search size={16} className="shrink-0 text-slate-400 dark:text-white/30" />
                 <input
                   ref={inputRef}
                   value={query}
@@ -143,7 +144,7 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
                   aria-expanded={true}
                   aria-controls="command-palette-listbox"
                   aria-activedescendant={flatItems[selectedIndex] ? `command-option-${flatItems[selectedIndex]!.id}` : undefined}
-                  className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/25"
+                  className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white outline-none placeholder:text-slate-400 dark:placeholder:text-white/25"
                   placeholder="Search commands..."
                 />
                 <Kbd>esc</Kbd>
@@ -157,13 +158,13 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
                 className="max-h-[360px] overflow-y-auto custom-scrollbar py-2"
               >
                 {flatItems.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-white/30">
+                  <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-white/30">
                     No results for "{query}"
                   </div>
                 ) : (
                   grouped.map(([group, groupItems]) => (
                     <div key={group}>
-                      <div className="px-4 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-white/25">
+                      <div className="px-4 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400 dark:text-white/25">
                         {group}
                       </div>
                       {groupItems.map((item) => {
@@ -182,17 +183,17 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
                             className={[
                               'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors duration-75',
                               isSelected
-                                ? 'bg-brand/[0.10] text-white'
-                                : 'text-white/70 hover:bg-white/[0.04]',
+                                ? 'bg-brand/[0.10] text-slate-900 dark:text-white'
+                                : 'text-slate-600 dark:text-white/70 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]',
                             ].join(' ')}
                           >
-                            <span className={`shrink-0 ${isSelected ? 'text-brand-light' : 'text-white/35'}`}>
+                            <span className={`shrink-0 ${isSelected ? 'text-brand-light' : 'text-slate-400 dark:text-white/35'}`}>
                               {item.icon}
                             </span>
                             <div className="flex-1 min-w-0">
                               <div className="text-[13px] font-medium truncate">{item.label}</div>
                               {item.description && (
-                                <div className="text-[11px] text-white/35 truncate">
+                                <div className="text-[11px] text-slate-400 dark:text-white/35 truncate">
                                   {item.description}
                                 </div>
                               )}
@@ -216,7 +217,7 @@ export function CommandPalette({ open, onClose, items }: CommandPaletteProps) {
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-between border-t border-white/[0.06] px-4 py-2 text-[10px] text-white/20">
+              <div className="flex items-center justify-between border-t border-black/8 dark:border-white/[0.06] px-4 py-2 text-[10px] text-slate-300 dark:text-white/20">
                 <span>{flatItems.length} command{flatItems.length !== 1 ? 's' : ''}</span>
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
@@ -247,13 +248,13 @@ export function buildDefaultCommands(navigate: (view: ViewId) => void): CommandI
       action: () => navigate('home'),
     },
     {
-      id: 'nav-prism',
-      label: 'Prism',
+      id: 'nav-coordinator',
+      label: 'Coordinator',
       icon: <Sparkles size={16} />,
       group: 'Navigation',
-      keywords: ['ask', 'create', 'architect', 'prism'],
+      keywords: ['ask', 'create', 'architect', 'coordinator'],
       shortcut: ['⌘', '1'],
-      action: () => navigate('prism'),
+      action: () => navigate('coordinator'),
     },
     {
       id: 'nav-chats',
@@ -274,13 +275,13 @@ export function buildDefaultCommands(navigate: (view: ViewId) => void): CommandI
       action: () => navigate('usermap'),
     },
     {
-      id: 'nav-canvas',
-      label: 'Canvas',
-      icon: <Bot size={16} />,
+      id: 'nav-groups',
+      label: 'Groups',
+      icon: <Users size={16} />,
       group: 'Navigation',
-      keywords: ['canvas', 'draw', 'visual', 'a2ui', 'diagram'],
+      keywords: ['groups', 'multi-agent', 'team', 'council'],
       shortcut: ['⌘', '4'],
-      action: () => navigate('canvas'),
+      action: () => navigate('groups'),
     },
     {
       id: 'nav-work',

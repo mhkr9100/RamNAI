@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function SpectrumIcon({ size = 20, className = '' }: { size?: number; className?: string }) {
+export function DirectoryIcon({ size = 20, className = '' }: { size?: number; className?: string }) {
   return (
     <svg
       width={size}

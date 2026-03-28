@@ -1,14 +1,14 @@
-// Supreme Raman AI — Zustand Store
+// Workspace — Zustand Store
 import { create } from 'zustand';
 import { getDesktopApi } from '@/lib/electron';
 import type { WorkspaceSecurityState } from '@/lib/electron';
 import type {
   AgentMode,
   OllamaRuntimeStatus,
-  PrismProviderOverrideSettings,
+  CoordinatorProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderId
-} from '@supreme/shared';
+} from '@workspace/shared';
 import { useWorkspaceStore } from './workspace-store';
 
 function getErrorMessage(error: unknown): string {
@@ -16,7 +16,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
-export type SettingsSection = 'runtime' | 'providers' | 'agents' | 'prism';
+export type SettingsSection = 'runtime' | 'providers' | 'agents' | 'coordinator';
 
 export interface SaveProviderProfileInput {
   id?: string;
@@ -31,7 +31,7 @@ export interface SaveProviderProfileInput {
 export interface SettingsStoreState {
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
-  prismOverride: PrismProviderOverrideSettings | null;
+  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
   workspaceSecurity: WorkspaceSecurityState | null;
   agentMode: AgentMode;
   ollamaStatus: OllamaRuntimeStatus | null;
@@ -44,7 +44,7 @@ export interface SettingsStoreState {
   deleteProviderProfile: (profile: ProviderAuthProfile) => Promise<void>;
   testProviderProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   installDefaultModels: () => Promise<void>;
-  savePrismOverride: (override: PrismProviderOverrideSettings | null) => Promise<void>;
+  saveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
   saveAgentMode: (mode: AgentMode) => Promise<void>;
   setProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
   enableWorkspaceEncryption: (password: string) => Promise<void>;
@@ -60,7 +60,7 @@ const EMPTY_PROVIDER_SELECTIONS: Record<RemoteProviderId, string | null> = {
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   providerProfiles: [],
   providerSelections: { ...EMPTY_PROVIDER_SELECTIONS },
-  prismOverride: null,
+  coordinatorOverride: null,
   workspaceSecurity: null,
   agentMode: 'auto',
   ollamaStatus: null,
@@ -79,14 +79,14 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
 
     try {
       const api = getDesktopApi();
-      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, prismOverride, agentMode, workspaceSecurity] =
+      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, coordinatorOverride, agentMode, workspaceSecurity] =
         await Promise.all([
           api.settings.listProviderProfiles(),
           api.settings.getOllamaStatus(),
           api.settings.getProviderSelection('openai'),
           api.settings.getProviderSelection('anthropic'),
           api.settings.getProviderSelection('google'),
-          api.settings.getPrismOverride(),
+          api.settings.getCoordinatorOverride(),
           api.settings.getAgentMode(),
           api.security.getState()
         ]);
@@ -98,7 +98,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           anthropic: anthropicSelection?.profileId ?? null,
           google: googleSelection?.profileId ?? null
         },
-        prismOverride,
+        coordinatorOverride,
         workspaceSecurity,
         agentMode: agentMode ?? 'auto',
         ollamaStatus,
@@ -213,17 +213,17 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       set({ loading: false });
     }
   },
-  async savePrismOverride(prismOverride) {
+  async saveCoordinatorOverride(coordinatorOverride) {
     const workspaceStore = useWorkspaceStore.getState();
 
     set({ loading: true });
     workspaceStore.clearError();
 
     try {
-      await getDesktopApi().settings.savePrismOverride(prismOverride);
+      await getDesktopApi().settings.saveCoordinatorOverride(coordinatorOverride);
       await get().refreshSettings();
       if (useWorkspaceStore.getState().error === null) {
-        workspaceStore.setNotice(prismOverride ? 'Saved Prism settings.' : 'Cleared Prism settings.');
+        workspaceStore.setNotice(coordinatorOverride ? 'Saved Coordinator settings.' : 'Cleared Coordinator settings.');
       }
     } catch (error) {
       workspaceStore.setError(getErrorMessage(error));

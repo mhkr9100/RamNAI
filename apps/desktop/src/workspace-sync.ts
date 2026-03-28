@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { WorkspaceSnapshot } from '@supreme/storage';
-import type { RuntimeWorkspaceManager } from '@supreme/runtime';
+import type { WorkspaceSnapshot } from '@workspace/storage';
+import type { RuntimeWorkspaceManager } from '@workspace/runtime';
 
 export interface WorkspacePaths {
   root: string;

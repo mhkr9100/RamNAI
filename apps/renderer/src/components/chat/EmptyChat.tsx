@@ -10,7 +10,7 @@ export interface EmptyChatProps {
 }
 
 export const EmptyChat: React.FC<EmptyChatProps> = ({
-  agentName = 'RamN AI',
+  agentName = 'Workspace',
   agentRole = 'Start a conversation',
   suggestions = [
     "What can you help me with?",
@@ -27,15 +27,15 @@ export const EmptyChat: React.FC<EmptyChatProps> = ({
         transition={{ duration: 0.4 }}
         className="flex flex-col items-center text-center max-w-lg"
       >
-        <div className="w-16 h-16 bg-[#141720] border border-white/10 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
+        <div className="w-16 h-16 bg-surface-3 dark:bg-[#141720] border border-black/8 dark:border-white/10 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
           <Sparkles className="w-8 h-8 text-emerald-500 dark:text-emerald-300" />
         </div>
         
-        <h2 className="text-2xl font-semibold text-white mb-2">
+        <h2 className="mb-2 text-2xl font-semibold text-slate-900 dark:text-white">
           {agentName}
         </h2>
         
-        <p className="text-white/60 mb-10 text-sm">
+        <p className="mb-10 text-sm text-slate-500 dark:text-white/60">
           {agentRole}
         </p>
 
@@ -47,7 +47,7 @@ export const EmptyChat: React.FC<EmptyChatProps> = ({
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 + index * 0.1 }}
               onClick={() => onSuggestionClick?.(suggestion)}
-              className="px-5 py-3 rounded-xl bg-[#141720] border border-white/5 text-sm text-white/80 hover:bg-white/5 hover:border-white/10 transition-all text-left flex items-center justify-between group"
+              className="px-5 py-3 rounded-xl bg-surface-3 dark:bg-[#141720] border border-black/8 dark:border-white/5 text-sm text-slate-700 dark:text-white/80 hover:bg-black/[0.04] dark:hover:bg-white/5 hover:border-black/15 dark:hover:border-white/10 transition-all text-left flex items-center justify-between group"
             >
               <span>{suggestion}</span>
               <span className="text-emerald-500 dark:text-emerald-300 opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0">

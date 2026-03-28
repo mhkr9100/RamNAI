@@ -12,7 +12,7 @@ import {
   ShieldOff,
   Trash2,
 } from 'lucide-react';
-import type { MemoryFact, MemoryVisibility, UserMapNode, UserMapState } from '@supreme/shared';
+import type { MemoryFact, MemoryVisibility, UserMapNode, UserMapState } from '@workspace/shared';
 import { Badge, Button, Card, Divider, EmptyState, Input, SectionLabel } from './ui';
 
 interface UserMapPanelProps {
@@ -26,16 +26,24 @@ interface UserMapPanelProps {
 export function UserMapPanel({ tree, facts, busy, onSave, onSync }: UserMapPanelProps) {
   const [draft, setDraft] = useState<UserMapState>(tree);
   const [showFacts, setShowFacts] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    setDraft(tree);
-  }, [tree]);
+    if (!dirty) {
+      setDraft(tree);
+    }
+  }, [tree, dirty]);
 
   const privateFacts = useMemo(() => facts.filter((fact) => fact.visibility === 'private'), [facts]);
   const publicFacts = useMemo(() => facts.filter((fact) => fact.visibility === 'public'), [facts]);
 
+  const updateDraft = (updater: (current: UserMapState) => UserMapState) => {
+    setDraft((current) => updater(current));
+    setDirty(true);
+  };
+
   const replaceTree = (visibility: MemoryVisibility, nextRoot: UserMapNode) => {
-    setDraft((current) => ({
+    updateDraft((current) => ({
       ...current,
       ...(visibility === 'private' ? { privateTree: nextRoot } : { publicTree: nextRoot }),
     }));
@@ -44,12 +52,22 @@ export function UserMapPanel({ tree, facts, busy, onSave, onSync }: UserMapPanel
   const duplicateNodeAcrossTrees = (sourceTree: MemoryVisibility, node: UserMapNode) => {
     const targetTree: MemoryVisibility = sourceTree === 'private' ? 'public' : 'private';
     const duplicated = cloneNodeForVisibility(node, targetTree);
-    setDraft((current) => ({
+    updateDraft((current) => ({
       privateTree:
         targetTree === 'private' ? appendChild(current.privateTree, duplicated) : current.privateTree,
       publicTree:
         targetTree === 'public' ? appendChild(current.publicTree, duplicated) : current.publicTree,
     }));
+  };
+
+  const handleSaveDraft = async () => {
+    await onSave(draft);
+    setDirty(false);
+  };
+
+  const handleDiscardDraft = () => {
+    setDraft(tree);
+    setDirty(false);
   };
 
   return (
@@ -60,9 +78,12 @@ export function UserMapPanel({ tree, facts, busy, onSave, onSync }: UserMapPanel
         animate={false}
         className="overflow-hidden bg-surface-2"
       >
-        <div className="border-b border-white/[0.08] px-5 py-4">
+        <div className="border-b border-black/8 px-5 py-4 dark:border-white/[0.08]">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <SectionLabel>UserMap</SectionLabel>
+            <div className="flex flex-wrap items-center gap-2">
+              <SectionLabel>UserMap</SectionLabel>
+              {dirty ? <Badge variant="warning">Unsaved</Badge> : null}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -78,22 +99,36 @@ export function UserMapPanel({ tree, facts, busy, onSave, onSync }: UserMapPanel
                 size="sm"
                 variant="secondary"
                 icon={<RefreshCw size={14} />}
-                disabled={busy}
+                disabled={busy || dirty}
                 onClick={() => onSync()}
               >
                 Sync
               </Button>
+              {dirty ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={handleDiscardDraft}
+                >
+                  Discard
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
                 variant="brand"
                 icon={<Save size={14} />}
-                disabled={busy}
-                onClick={() => onSave(draft)}
+                disabled={busy || !dirty}
+                onClick={() => void handleSaveDraft()}
               >
                 Save
               </Button>
             </div>
+          </div>
+          <div className="mt-2 text-xs text-slate-500 dark:text-white/45">
+            {dirty ? 'Draft changes stay local until you save or discard them.' : 'Delete branches, edit nodes, then save to persist the changes.'}
           </div>
         </div>
 
@@ -164,7 +199,7 @@ function TreeSection({
 }) {
   return (
     <Card variant="default" padding="none" animate={false} className="bg-surface-3">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/8 px-4 py-3 dark:border-white/[0.08]">
         <div className="flex flex-wrap items-center gap-2">
           <SectionLabel>{title}</SectionLabel>
           <Badge variant="default">Nodes {countNodes(node)}</Badge>
@@ -195,7 +230,7 @@ function FactColumn({ title, facts }: { title: string; facts: MemoryFact[] }) {
       <div className="mt-4">
         {facts.length === 0 ? (
           <EmptyState
-            icon={<Eye size={16} className="text-white/45" />}
+            icon={<Eye size={16} className="text-slate-500 dark:text-white/45" />}
             title="No facts"
             description="Sync UserMap with memories to populate this column."
             compact
@@ -211,13 +246,13 @@ function FactColumn({ title, facts }: { title: string; facts: MemoryFact[] }) {
               >
                 <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-white/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/40">
                       {fact.category}
                     </div>
                     <Badge variant="outline">{Math.round(fact.confidence * 100)}%</Badge>
                   </div>
-                  <div className="mt-2 text-sm font-semibold text-white">{fact.label}</div>
-                  <div className="mt-1 text-sm leading-6 text-white/65">{fact.value}</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{fact.label}</div>
+                  <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-white/65">{fact.value}</div>
                 </Card>
               </motion.div>
             ))}
@@ -274,7 +309,7 @@ function TreeNodeEditor({
   };
 
   return (
-    <div className={depth > 0 ? 'ml-4 border-l border-white/[0.06] pl-3' : ''}>
+    <div className={depth > 0 ? 'ml-4 border-l border-black/8 pl-3 dark:border-white/[0.06]' : ''}>
       <div
         className={`group rounded-2xl px-2 py-2 transition ${
           isRoot ? 'mb-2 bg-surface-2' : 'hover:bg-surface-2'
@@ -296,7 +331,7 @@ function TreeNodeEditor({
             </Button>
           ) : (
             <div className="mt-2 flex h-7 w-7 items-center justify-center">
-              <div className="h-1.5 w-1.5 rounded-full bg-white/20" />
+              <div className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-white/20" />
             </div>
           )}
 
@@ -337,8 +372,8 @@ function TreeNodeEditor({
                   <span
                     className={
                       isRoot
-                        ? 'text-sm font-semibold uppercase tracking-[0.04em] text-white'
-                        : 'text-sm font-semibold text-white/85'
+                        ? 'text-sm font-semibold uppercase tracking-[0.04em] text-slate-900 dark:text-white'
+                        : 'text-sm font-semibold text-slate-800 dark:text-white/85'
                     }
                   >
                     {node.label}
@@ -346,13 +381,13 @@ function TreeNodeEditor({
                   {!isRoot ? <Badge variant="default">{node.visibility}</Badge> : null}
                   {!isRoot && node.protected ? <Badge variant="brand">Protected</Badge> : null}
                 </div>
-                {node.value ? <div className="mt-1 text-xs leading-5 text-white/50">{node.value}</div> : null}
+                {node.value ? <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-white/50">{node.value}</div> : null}
               </div>
             )}
           </div>
 
           {!isEditing ? (
-            <div className="flex flex-wrap items-center gap-1 opacity-0 transition group-hover:opacity-100">
+            <div className="flex flex-wrap items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
               {!isRoot ? (
                 <Button type="button" size="xs" variant="ghost" onClick={() => setIsEditing(true)}>
                   Edit

@@ -9,3 +9,41 @@ coverage
 .npm_cache
 *.tsbuildinfo
 *.zip
+
+# Secrets & environment
+.env
+.env.*
+.env.local
+*.pem
+*.key
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+secrets.json
+auth-profiles.json
+provider-secrets.enc.json
+runtime.workspace.json
+workspace-runtime.workspace.json
+.workspace-app/
+.workspace-runtime/
+
+# Personal agent config (not for public repos)
+SOUL.md
+USER.md
+IDENTITY.md
+HEARTBEAT.md
+TOOLS.md
+MEMORY.md
+memory/
+
+# External tool state
+.local-tool-state/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo

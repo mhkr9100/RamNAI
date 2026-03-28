@@ -1,12 +1,12 @@
 {
-  "name": "@supreme/storage",
+  "name": "@workspace/storage",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "@supreme/shared": "file:../shared"
+    "@workspace/shared": "file:../shared"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

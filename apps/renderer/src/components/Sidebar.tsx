@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Monitor, Moon, PenTool, Settings2, Sun, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Monitor, Moon, Settings2, Sun, User, Users } from 'lucide-react';
 import { useThemeStore } from '../stores/theme-store';
-import { RamanIcon } from './RamanIcon';
-import { PrismIcon } from './icons/PrismIcon';
+import { AppLogo } from './AppLogo';
+import { CoordinatorIcon } from './icons/CoordinatorIcon';
 import { UserMapIcon } from './icons/UserMapIcon';
 import { ChatIcon } from './icons/ChatIcon';
 import { Kbd } from './ui';
 
-export type ViewId = 'home' | 'prism' | 'chats' | 'canvas' | 'work' | 'usermap' | 'settings';
+export type ViewId = 'home' | 'coordinator' | 'chats' | 'groups' | 'work' | 'usermap' | 'settings';
 
 interface SidebarProps {
   activeView: ViewId;
@@ -16,10 +16,10 @@ interface SidebarProps {
 }
 
 const mainNavItems: Array<{ id: ViewId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-  { id: 'prism', label: 'Prism', icon: PrismIcon },
+  { id: 'coordinator', label: 'Coordinator', icon: CoordinatorIcon },
   { id: 'usermap', label: 'UserMap', icon: UserMapIcon },
   { id: 'chats', label: 'Chats', icon: ChatIcon },
-  { id: 'canvas', label: 'Canvas', icon: PenTool },
+  { id: 'groups', label: 'Groups', icon: Users },
 ];
 
 function NavButton({
@@ -98,7 +98,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
       animate={{ width: expanded ? 200 : 68 }}
       transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
       aria-expanded={expanded}
-      className="flex shrink-0 flex-col border-r border-black/10 dark:border-white/5 bg-[#F8F9FA] dark:bg-[#1A1A1A] relative z-20 overflow-hidden"
+      className="flex shrink-0 flex-col border-r border-black/10 dark:border-white/5 bg-shell-50 dark:bg-surface-0 relative z-20 overflow-hidden"
     >
       {/* Brand - clicks to Dashboard */}
       <div className="flex h-14 items-center gap-2.5 px-4 border-b border-black/5 dark:border-white/5">
@@ -109,10 +109,10 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
             'flex items-center gap-2.5 transition-opacity hover:opacity-80',
             activeView === 'home' ? 'opacity-100' : '',
           ].join(' ')}
-          title="RamN AI Dashboard"
+          title="Workspace Dashboard"
         >
           <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-gray-900 dark:text-white">
-            <RamanIcon size={28} />
+            <AppLogo size={28} />
             <span className="absolute -top-1 -right-2 text-[5px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 border border-slate-600 dark:border-slate-500 rounded px-0.5 bg-white/80 dark:bg-black/40 backdrop-blur-sm">Beta</span>
           </div>
           <AnimatePresence>
@@ -124,7 +124,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
                 transition={{ duration: 0.15 }}
                 className="flex flex-col"
               >
-                <span className="text-[11px] font-black text-gray-900 dark:text-white whitespace-nowrap tracking-[0.2em]">RamN AI</span>
+                <span className="text-[11px] font-black text-gray-900 dark:text-white whitespace-nowrap tracking-[0.2em]">Workspace</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -211,7 +211,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center gap-2 text-[11px] text-white/30 whitespace-nowrap"
+                className="flex items-center gap-2 whitespace-nowrap text-[11px] text-slate-500 dark:text-white/30"
               >
                 Collapse <Kbd>&#8984;</Kbd><Kbd>B</Kbd>
               </motion.span>

@@ -19,7 +19,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@supreme/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      '@workspace/shared': path.resolve(__dirname, '../../packages/shared/src'),
     },
   },
 });
