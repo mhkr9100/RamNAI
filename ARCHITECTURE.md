@@ -1,8 +1,8 @@
-# Workspace Architecture
+# Raman AI Architecture
 
 ## Product Direction
 
-Workspace is a new desktop-first product. It is not a continuation of the cloud-first Workspace stack.
+Raman AI is a desktop-first product built around local execution, local storage, and bring-your-own-model flexibility.
 
 Locked decisions:
 
@@ -16,10 +16,10 @@ Locked decisions:
 - no cloud auth, no AWS backend, no DynamoDB, no Cognito
 - Ollama-first local runtime
 - optional provider keys later for OpenAI, Anthropic, and Google
-- Coordinator is the product architect
+- Raman AI is the built-in assistant
 - the external runtime bridge is the long-term execution target
 - no external channels at launch
-- Telegram for Coordinator is phase 2
+- Telegram for Raman AI is phase 2
 
 ## Architecture Layers
 
@@ -41,12 +41,11 @@ Renderer must not own background execution or persistence authority.
 
 ### 2. Renderer
 
-React renderer is the human-facing workspace.
+React renderer is the human-facing application shell.
 
 Current top-level surfaces:
 
-- Coordinator
-- UserMap
+- Raman AI
 - Directory
 - Work
 
@@ -72,14 +71,14 @@ SQLite currently persists:
 - tasks
 - work items
 - artifacts
-- usermap tree
+- context tree
 - memory facts
 - models
 
 Filesystem workspace currently mirrors:
 
 - `context/profile.json`
-- `context/usermap-tree.json`
+- `context/context-tree.json`
 - `context/memory-facts.json`
 - `context/models.json`
 - `agents/*.json`
@@ -96,8 +95,8 @@ Implemented today:
 
 - runtime availability checks
 - local model discovery from Ollama
-- Coordinator ask execution
-- Coordinator create execution
+- Assistant ask execution
+- Assistant create execution
 - task execution
 - council execution
 - durable memory extraction
@@ -116,13 +115,13 @@ Rules:
 - task outputs become Work items and optional artifacts
 - completed runs can extract memory facts
 
-This replaces the old browser polling and IndexedDB pattern from Workspace.
+This replaces the older browser polling and IndexedDB pattern used in earlier prototypes.
 
 ## Core Specs
 
 ### Agent Spec
 
-Coordinator creates a persistent local chatbot spec containing:
+Assistant creates a persistent local chatbot spec containing:
 
 - identity and metadata
 - persona
@@ -146,7 +145,7 @@ Supported schedule types:
 
 Targets in v1:
 
-- Coordinator
+- Assistant
 - one individual chatbot
 
 Direct group tasking is out of scope in v1.
@@ -169,9 +168,9 @@ Supported actions:
 - rerun
 - delete
 
-### UserMap Memory Spec
+### ContextTree Memory Spec
 
-UserMap is tree-first at launch.
+ContextTree is tree-first at launch.
 
 It combines:
 
@@ -190,11 +189,11 @@ What is real now:
 - SQLite storage
 - filesystem workspace export
 - local Ollama runtime adapter
-- Coordinator ask and create flows
+- Assistant ask and create flows
 - task scheduling in main process
 - council execution
 - Work view for tasks and outputs
-- tree-first UserMap editing
+- tree-first ContextTree editing
 - automatic memory extraction path
 
 What is still pending:
@@ -204,7 +203,7 @@ What is still pending:
 - dedicated chatbot chat surface
 - manual `@mention` group execution
 - bundled Ollama setup and first-run model installer
-- Telegram for Coordinator
+- Telegram for Assistant
 
 ## Repository Layout
 
@@ -238,6 +237,6 @@ Release flow later:
 These are reference-only, not active implementation bases:
 
 - legacy Workspace repo
-- standalone RamanAI/UserMap repo
+- standalone RamanAI/ContextTree repo
 
 Workspace should continue as its own repo and architecture.

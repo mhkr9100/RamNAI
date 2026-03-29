@@ -1,12 +1,12 @@
 {
-  "name": "@workspace/storage",
+  "name": "@raman-ai/storage",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "@workspace/shared": "file:../shared"
+    "@raman-ai/shared": "file:../shared"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

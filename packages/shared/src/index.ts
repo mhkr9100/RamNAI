@@ -36,12 +36,12 @@ export interface RetentionConfig extends RetentionConfigInput {
   lastPurgeAt: string | null;
 }
 
-export interface CoordinatorProviderOverrideSettings {
+export interface AssistantProviderOverrideSettings {
   provider: ProviderId;
   modelId: string;
 }
 
-/** Runtime mode for Coordinator/task execution. */
+/** Runtime mode for Assistant/task execution. */
 export type AgentMode = 'ollama' | 'bridge' | 'auto';
 
 /** Workspace role (backend-only; desktop defaults to owner). */
@@ -51,7 +51,7 @@ export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
 export type Permission =
   | 'create_agents'
   | 'run_tasks'
-  | 'edit_usermap'
+  | 'edit_context'
   | 'manage_settings'
   | 'delete_agents'
   | 'delete_groups'
@@ -61,9 +61,9 @@ export type Permission =
 
 /** Role → allowed permissions. Owner has all. */
 export const ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
-  owner: ['create_agents', 'run_tasks', 'edit_usermap', 'manage_settings', 'delete_agents', 'delete_groups', 'delete_tasks', 'export_audit', 'create_support_bundle'],
-  admin: ['create_agents', 'run_tasks', 'edit_usermap', 'manage_settings', 'delete_agents', 'delete_groups', 'delete_tasks', 'export_audit', 'create_support_bundle'],
-  member: ['create_agents', 'run_tasks', 'edit_usermap'],
+  owner: ['create_agents', 'run_tasks', 'edit_context', 'manage_settings', 'delete_agents', 'delete_groups', 'delete_tasks', 'export_audit', 'create_support_bundle'],
+  admin: ['create_agents', 'run_tasks', 'edit_context', 'manage_settings', 'delete_agents', 'delete_groups', 'delete_tasks', 'export_audit', 'create_support_bundle'],
+  member: ['create_agents', 'run_tasks', 'edit_context'],
   viewer: []
 };
 
@@ -77,7 +77,7 @@ export interface AgentSpec {
   slug: string;
   name: string;
   description: string;
-  createdBy: 'coordinator';
+  createdBy: 'assistant';
   originObjective: string;
   persona: {
     role: string;
@@ -88,7 +88,7 @@ export interface AgentSpec {
   tools: string[];
   skills: string[];
   context: {
-    userMapPaths: string[];
+    contextPaths: string[];
     workspacePaths: string[];
     memoryNamespaces: string[];
     canReadArtifacts: boolean;
@@ -112,12 +112,12 @@ export interface AgentSpec {
     createdAt: string;
     updatedAt: string;
     version: number;
-    source: 'coordinator-create';
+    source: 'assistant-create';
   };
 }
 
 export type TaskTarget =
-  | { type: 'coordinator' }
+  | { type: 'assistant' }
   | { type: 'agent'; agentId: string };
 
 export type TaskMode = 'task' | 'council';
@@ -247,21 +247,21 @@ export interface MemoryFact {
   updatedAt: string;
 }
 
-export interface UserMapNode {
+export interface ContextTreeNode {
   id: string;
   label: string;
   value?: string;
   nodeType: 'root' | 'category' | 'cluster' | 'fact';
-  children: UserMapNode[];
+  children: ContextTreeNode[];
   visibility: MemoryVisibility;
   confidence?: number;
   protected?: boolean;
   source?: 'manual' | 'memory';
 }
 
-export interface UserMapState {
-  privateTree: UserMapNode;
-  publicTree: UserMapNode;
+export interface ContextTreeState {
+  privateTree: ContextTreeNode;
+  publicTree: ContextTreeNode;
 }
 
 export type GroupRoutingMode = 'auto' | 'manual';
@@ -358,7 +358,7 @@ export type AuditEventKind =
   | 'task_run_failed'
   | 'task_run_cancelled'
   | 'provider_selection_changed'
-  | 'coordinator_override_changed';
+  | 'assistant_override_changed';
 
 export interface AuditEvent {
   id: string;
@@ -404,17 +404,17 @@ export const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
   { id: 'mcp', label: 'MCP Protocol', description: 'Model Context Protocol tool integration', category: 'MCP' },
 ];
 
-export type CoordinatorMode = 'ask' | 'create';
+export type AssistantMode = 'ask' | 'create';
 
-export interface CoordinatorRequest {
-  mode: CoordinatorMode;
+export interface AssistantRequest {
+  mode: AssistantMode;
   message: string;
-  userMap: UserMapState;
+  contextTree: ContextTreeState;
   existingAgents: AgentSpec[];
   existingGroups: GroupSpec[];
 }
 
-export interface CoordinatorReply {
+export interface AssistantReply {
   id: string;
   text: string;
   provider: ProviderId;
@@ -428,7 +428,7 @@ export const DEFAULT_MODEL_PRESETS: ProviderModelPreset[] = [
   { id: 'deepseek-r1:8b', provider: 'ollama', label: 'DeepSeek R1 8B', recommended: true, installed: false }
 ];
 
-export function createEmptyUserMapTree(label: string, visibility: MemoryVisibility): UserMapNode {
+export function createEmptyContextTreeTree(label: string, visibility: MemoryVisibility): ContextTreeNode {
   return {
     id: `${visibility}-root`,
     label,
@@ -438,18 +438,18 @@ export function createEmptyUserMapTree(label: string, visibility: MemoryVisibili
   };
 }
 
-export const EMPTY_USERMAP_STATE: UserMapState = {
-  privateTree: createEmptyUserMapTree('Private', 'private'),
-  publicTree: createEmptyUserMapTree('Public', 'public')
+export const EMPTY_CONTEXT_STATE: ContextTreeState = {
+  privateTree: createEmptyContextTreeTree('Private', 'private'),
+  publicTree: createEmptyContextTreeTree('Public', 'public')
 };
 
-export const EMPTY_PUBLIC_USERMAP_TREE = EMPTY_USERMAP_STATE.publicTree;
-export const EMPTY_PRIVATE_USERMAP_TREE = EMPTY_USERMAP_STATE.privateTree;
+export const EMPTY_PUBLIC_CONTEXT_TREE = EMPTY_CONTEXT_STATE.publicTree;
+export const EMPTY_PRIVATE_CONTEXT_TREE = EMPTY_CONTEXT_STATE.privateTree;
 
-export const EMPTY_USERMAP_TREE: UserMapNode = {
+export const EMPTY_CONTEXT_TREE: ContextTreeNode = {
   id: 'root',
-  label: 'UserMap',
+  label: 'Context',
   nodeType: 'root',
   visibility: 'private',
-  children: [EMPTY_USERMAP_STATE.publicTree, EMPTY_USERMAP_STATE.privateTree]
+  children: [EMPTY_CONTEXT_STATE.publicTree, EMPTY_CONTEXT_STATE.privateTree]
 };

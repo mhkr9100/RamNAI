@@ -7,7 +7,7 @@
     "composite": true,
     "lib": ["ES2022"],
     "paths": {
-      "@workspace/shared": ["../shared/src/index.ts"]
+      "@raman-ai/shared": ["../shared/src/index.ts"]
     }
   },
   "references": [{ "path": "../shared" }],

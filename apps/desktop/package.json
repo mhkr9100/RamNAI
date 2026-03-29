@@ -1,9 +1,9 @@
 {
-  "name": "@workspace/desktop",
+  "name": "@raman-ai/desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Desktop shell for Workspace",
-  "author": "Workspace",
+  "description": "Desktop shell for Raman AI",
+  "author": "Raman AI",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
@@ -19,9 +19,9 @@
     "package:win-x64": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox npm run build && node scripts/generate-icons.mjs && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false HOME=.home-sandbox USERPROFILE=.home-sandbox electron-builder --dir --win --x64"
   },
   "dependencies": {
-    "@workspace/runtime": "file:../../packages/runtime",
-    "@workspace/shared": "file:../../packages/shared",
-    "@workspace/storage": "file:../../packages/storage",
+    "@raman-ai/runtime": "file:../../packages/runtime",
+    "@raman-ai/shared": "file:../../packages/shared",
+    "@raman-ai/storage": "file:../../packages/storage",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
@@ -31,11 +31,11 @@
     "electron-builder": "^26.0.12",
     "wait-on": "^9.0.1"
   },
-  "productName": "Workspace",
+  "productName": "Raman AI",
   "build": {
     "appId": "app.workspace.desktop",
-    "productName": "Workspace",
-    "copyright": "Copyright © 2025 Workspace",
+    "productName": "Raman AI",
+    "copyright": "Copyright © 2025 Raman AI",
     "icon": "assets/icon.png",
     "files": [
       "dist/**/*"
@@ -46,7 +46,7 @@
     "publish": {
       "provider": "github",
       "owner": "YOUR_GITHUB_USERNAME",
-      "repo": "workspace-app"
+      "repo": "raman-ai"
     },
     "afterSign": "scripts/notarize.mjs",
     "mac": {

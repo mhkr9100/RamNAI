@@ -14,10 +14,10 @@ import {
   Send,
 } from 'lucide-react';
 import type {
-  CoordinatorProviderOverrideSettings,
+  AssistantProviderOverrideSettings,
   ProviderId,
   ProviderModelPreset,
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 import { getDesktopApi } from '@/lib/electron';
 import { Badge, Button, Card, Divider, SectionLabel, Select, Input } from './ui';
 
@@ -28,18 +28,18 @@ interface ChannelEntry {
   accountName: string;
 }
 
-interface CoordinatorProfilePanelProps {
+interface AssistantProfilePanelProps {
   open: boolean;
   onClose: () => void;
-  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
+  assistantOverride: AssistantProviderOverrideSettings | null;
   models: ProviderModelPreset[];
-  onSaveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
+  onSaveAssistantOverride: (override: AssistantProviderOverrideSettings | null) => Promise<void>;
   busy: boolean;
   /** Whether runtime bridge is available for channels */
   bridgeAvailable?: boolean;
 }
 
-const PRISM_CAPABILITIES = [
+const RAMAN_AI_CAPABILITIES = [
   { label: 'Web Search', icon: Globe },
   { label: 'Thinking', icon: Sparkles },
   { label: 'Code Execution', icon: Terminal },
@@ -57,15 +57,15 @@ const PROVIDER_OPTIONS = [
 
 const TELEGRAM_CHANNEL_ID = 'telegram';
 
-export function CoordinatorProfilePanel({
+export function AssistantProfilePanel({
   open,
   onClose,
-  coordinatorOverride,
+  assistantOverride,
   models,
-  onSaveCoordinatorOverride,
+  onSaveAssistantOverride,
   busy,
   bridgeAvailable = false,
-}: CoordinatorProfilePanelProps) {
+}: AssistantProfilePanelProps) {
   const [overrideProvider, setOverrideProvider] = useState<ProviderId>('ollama');
   const [overrideModelId, setOverrideModelId] = useState('');
   const [channels, setChannels] = useState<ChannelEntry[]>([]);
@@ -91,14 +91,14 @@ export function CoordinatorProfilePanel({
   }, [open, refreshChannels]);
 
   useEffect(() => {
-    if (coordinatorOverride) {
-      setOverrideProvider(coordinatorOverride.provider);
-      setOverrideModelId(coordinatorOverride.modelId);
+    if (assistantOverride) {
+      setOverrideProvider(assistantOverride.provider);
+      setOverrideModelId(assistantOverride.modelId);
       return;
     }
     setOverrideProvider('ollama');
     setOverrideModelId(installedModels[0]?.id ?? '');
-  }, [coordinatorOverride, installedModels]);
+  }, [assistantOverride, installedModels]);
 
   const localModelOptions = installedModels.length === 0
     ? [{ value: '', label: 'No local models installed' }]
@@ -107,7 +107,7 @@ export function CoordinatorProfilePanel({
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!overrideModelId.trim()) return;
-    await onSaveCoordinatorOverride({ provider: overrideProvider, modelId: overrideModelId.trim() });
+    await onSaveAssistantOverride({ provider: overrideProvider, modelId: overrideModelId.trim() });
   };
 
   const handleAddTelegram = async (event: React.FormEvent) => {
@@ -163,7 +163,7 @@ export function CoordinatorProfilePanel({
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-black/8 px-5 py-4 dark:border-white/[0.06]">
-              <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white">Coordinator Profile</h2>
+              <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white">Raman AI Profile</h2>
               <button
                 type="button"
                 onClick={onClose}
@@ -183,9 +183,9 @@ export function CoordinatorProfilePanel({
                 </div>
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-brand-light">
-                    META ARCHITECT
+                    PRIMARY SYSTEM
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Coordinator</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Raman AI</h3>
                 </div>
               </div>
 
@@ -196,9 +196,9 @@ export function CoordinatorProfilePanel({
                 <SectionLabel className="mb-2">SYSTEM INSTRUCTIONS</SectionLabel>
                 <Card className="bg-surface-3 p-4">
                   <p className="text-sm leading-relaxed text-slate-600 dark:text-white/70">
-                    Coordinator is the meta-architect of Workspace. It designs agent blueprints, orchestrates
-                    multi-agent workflows, analyzes UserMap context, and provides strategy for building
-                    focused AI assistants. Coordinator has full access to the workspace state and can create
+                    Raman AI designs agent blueprints, orchestrates multi-agent workflows, and provides
+                    strategy for building focused AI assistants. Raman AI has full access to the workspace
+                    state and can create
                     agents, schedule tasks, and run council sessions.
                   </p>
                 </Card>
@@ -215,8 +215,8 @@ export function CoordinatorProfilePanel({
                       <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500 dark:text-white/40">
                         Current
                       </span>
-                      <Badge variant={coordinatorOverride ? 'brand' : 'default'}>
-                        {coordinatorOverride ? `${coordinatorOverride.provider} / ${coordinatorOverride.modelId}` : 'Automatic'}
+                      <Badge variant={assistantOverride ? 'brand' : 'default'}>
+                        {assistantOverride ? `${assistantOverride.provider} / ${assistantOverride.modelId}` : 'Automatic'}
                       </Badge>
                     </div>
                   </Card>
@@ -258,7 +258,7 @@ export function CoordinatorProfilePanel({
                     <Button type="submit" variant="brand" size="md" loading={busy} className="flex-1">
                       Save
                     </Button>
-                    <Button type="button" variant="secondary" size="md" disabled={busy} onClick={() => void onSaveCoordinatorOverride(null)}>
+                    <Button type="button" variant="secondary" size="md" disabled={busy} onClick={() => void onSaveAssistantOverride(null)}>
                       Auto
                     </Button>
                   </div>
@@ -269,9 +269,9 @@ export function CoordinatorProfilePanel({
 
               {/* Capabilities */}
               <div>
-                <SectionLabel className="mb-3">PRISM CAPABILITIES</SectionLabel>
+                <SectionLabel className="mb-3">RAMAN AI CAPABILITIES</SectionLabel>
                 <div className="flex flex-wrap gap-2">
-                  {PRISM_CAPABILITIES.map((cap) => {
+                  {RAMAN_AI_CAPABILITIES.map((cap) => {
                     const Icon = cap.icon;
                     return (
                       <span
@@ -292,7 +292,7 @@ export function CoordinatorProfilePanel({
               <div>
                 <SectionLabel className="mb-3">CHANNELS</SectionLabel>
                 <p className="mb-3 text-[12px] text-slate-500 dark:text-white/35">
-                  Coordinator can communicate through Telegram and other platforms via the runtime bridge.
+                  Raman AI can communicate through Telegram and other platforms via the runtime bridge.
                 </p>
                 {!bridgeAvailable && (
                   <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">

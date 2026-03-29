@@ -1,11 +1,11 @@
 import * as nodeCrypto from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { StorageTextCipher } from '@workspace/storage';
+import type { StorageTextCipher } from '@raman-ai/storage';
 
 const METADATA_FILENAME = 'workspace-security.json';
 const ENCRYPTED_TEXT_PREFIX = 'SRMAI_ENC:';
-const KEYCHECK_MESSAGE = 'workspace-app-workspace-keycheck';
+const KEYCHECK_MESSAGE = 'raman-ai-workspace-keycheck';
 const ARGON2_MEMORY_KIB = 64 * 1024;
 const ARGON2_PASSES = 3;
 const ARGON2_PARALLELISM = 1;
@@ -202,7 +202,7 @@ export class WorkspaceEncryptionManager {
     }
 
     if (!this.key) {
-      throw new Error('Workspace is locked.');
+      throw new Error('Raman AI is locked.');
     }
 
     return decryptWithKey(this.key, value);
@@ -214,13 +214,13 @@ export class WorkspaceEncryptionManager {
     }
 
     if (!password.trim()) {
-      throw new Error('Workspace password is required.');
+      throw new Error('Raman AI password is required.');
     }
 
     const candidateKey = deriveKey(password, this.metadata.salt);
     const verifier = decryptWithKey(candidateKey, this.metadata.verifier);
     if (verifier !== KEYCHECK_MESSAGE) {
-      throw new Error('Incorrect workspace password.');
+      throw new Error('Incorrect Raman AI password.');
     }
 
     this.key = candidateKey;
@@ -228,11 +228,11 @@ export class WorkspaceEncryptionManager {
 
   async enable(password: string): Promise<void> {
     if (this.metadata) {
-      throw new Error('Workspace encryption is already enabled.');
+      throw new Error('Data encryption is already enabled.');
     }
 
     if (!password.trim()) {
-      throw new Error('Workspace password is required.');
+      throw new Error('Raman AI password is required.');
     }
 
     const salt = nodeCrypto.randomBytes(16).toString('base64');
@@ -271,7 +271,7 @@ export class WorkspaceEncryptionManager {
       const candidateKey = deriveKey(password, this.metadata.salt);
       const verifier = decryptWithKey(candidateKey, this.metadata.verifier);
       if (verifier !== KEYCHECK_MESSAGE) {
-        throw new Error('Incorrect workspace password.');
+        throw new Error('Incorrect Raman AI password.');
       }
     }
 

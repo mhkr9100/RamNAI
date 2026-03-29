@@ -1,4 +1,4 @@
-import type { ChatRouteMetadata } from '@workspace/shared';
+import type { ChatRouteMetadata } from '@raman-ai/shared';
 
 export type ChatMessageRole = 'user' | 'assistant' | 'system';
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bot, BrainCircuit } from 'lucide-react';
 import { ChatIcon } from './icons/ChatIcon';
-import type { AgentSpec, ChatThread, GroupSpec, GroupRouteMetadata } from '@workspace/shared';
+import type { AgentSpec, ChatThread, GroupSpec, GroupRouteMetadata } from '@raman-ai/shared';
 import type { AgentChatInput, GroupChatInput, TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTranscriptMessage } from './chat/types';
 import { TaskComposerCard } from './TaskComposerCard';
@@ -59,7 +59,7 @@ export function ChatsWorkspace({
   const [showTaskComposer, setShowTaskComposer] = useState(false);
   const [showAgentProfile, setShowAgentProfile] = useState(false);
   const chatAgents = useMemo(
-    () => snapshot.agents.filter((a) => a.slug !== 'coordinator' && a.id !== 'coordinator'),
+    () => snapshot.agents.filter((a) => a.slug !== 'assistant' && a.id !== 'assistant'),
     [snapshot.agents]
   );
 

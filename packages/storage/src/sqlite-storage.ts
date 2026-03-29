@@ -7,9 +7,9 @@ import {
   AuditEventKind,
   ChatThread,
   DEFAULT_MODEL_PRESETS,
-  EMPTY_PRIVATE_USERMAP_TREE,
-  EMPTY_PUBLIC_USERMAP_TREE,
-  EMPTY_USERMAP_STATE,
+  EMPTY_PRIVATE_CONTEXT_TREE,
+  EMPTY_PUBLIC_CONTEXT_TREE,
+  EMPTY_CONTEXT_STATE,
   GroupSpec,
   LocalProfile,
   MemoryFact,
@@ -18,16 +18,16 @@ import {
   RetentionConfigInput,
   ProviderModelPreset,
   ProviderAuthSelection,
-  CoordinatorProviderOverrideSettings,
+  AssistantProviderOverrideSettings,
   ROLE_PERMISSIONS,
   TaskSpec,
   TaskRunRecord,
-  UserMapNode,
-  UserMapState,
+  ContextTreeNode,
+  ContextTreeState,
   VoiceConfig,
   WorkspaceRole,
   WorkItem
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -54,9 +54,9 @@ export interface WorkspaceSnapshot {
   taskRuns: TaskRunRecord[];
   workItems: WorkItem[];
   artifacts: ArtifactRecord[];
-  userMap: UserMapState;
-  publicUserMap: UserMapNode;
-  privateUserMap: UserMapNode;
+  contextTree: ContextTreeState;
+  publicContextTree: ContextTreeNode;
+  privateContextTree: ContextTreeNode;
   memoryFacts: MemoryFact[];
   publicMemoryFacts: MemoryFact[];
   privateMemoryFacts: MemoryFact[];
@@ -111,11 +111,11 @@ const TEXT_CIPHER_TABLES: Array<{ table: string; columns: string[] }> = [
   { table: 'work_items', columns: ['payload'] },
   { table: 'task_runs', columns: ['target', 'summary', 'last_error', 'artifact_ids', 'council_trace', 'payload'] },
   { table: 'artifacts', columns: ['payload'] },
-  { table: 'usermap', columns: ['payload'] },
+  { table: 'context', columns: ['payload'] },
   { table: 'memory_facts', columns: ['payload'] },
   { table: 'models', columns: ['payload'] },
   { table: 'provider_auth_state', columns: ['payload'] },
-  { table: 'coordinator_settings', columns: ['payload'] },
+  { table: 'assistant_settings', columns: ['payload'] },
   { table: 'voice_config', columns: ['payload'] },
   { table: 'audit_log', columns: ['payload'] }
 ];
@@ -204,57 +204,57 @@ function isOlderThanCutoff(value: string | null | undefined, cutoffMs: number): 
   return !Number.isNaN(timestamp) && timestamp < cutoffMs;
 }
 
-function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: VisibilityScope): UserMapNode {
+function cloneContextTreeNode(node: ContextTreeNode, inheritedVisibility?: VisibilityScope): ContextTreeNode {
   const visibility = node.visibility ?? inheritedVisibility;
   return {
     ...node,
     ...(visibility ? { visibility } : {}),
-    children: node.children.map((child) => cloneUserMapNode(child, visibility))
+    children: node.children.map((child) => cloneContextTreeNode(child, visibility))
   };
 }
 
-function normalizeUserMapTree(tree: UserMapNode, visibility: VisibilityScope): UserMapNode {
-  const base = cloneUserMapNode(tree, visibility);
+function normalizeContextTreeTree(tree: ContextTreeNode, visibility: VisibilityScope): ContextTreeNode {
+  const base = cloneContextTreeNode(tree, visibility);
   return {
     ...base,
     visibility,
-    children: base.children.map((child) => cloneUserMapNode(child, visibility))
+    children: base.children.map((child) => cloneContextTreeNode(child, visibility))
   };
 }
 
-function normalizeUserMapState(state: UserMapState): UserMapState {
+function normalizeContextTreeState(state: ContextTreeState): ContextTreeState {
   return {
-    publicTree: normalizeUserMapTree(state.publicTree, 'public'),
-    privateTree: normalizeUserMapTree(state.privateTree, 'private')
+    publicTree: normalizeContextTreeTree(state.publicTree, 'public'),
+    privateTree: normalizeContextTreeTree(state.privateTree, 'private')
   };
 }
 
-function coerceUserMapState(value: unknown): UserMapState {
+function coerceContextTreeState(value: unknown): ContextTreeState {
   if (value && typeof value === 'object') {
-    const candidate = value as Partial<UserMapState> & Partial<UserMapNode> & { children?: UserMapNode[]; visibility?: VisibilityScope };
+    const candidate = value as Partial<ContextTreeState> & Partial<ContextTreeNode> & { children?: ContextTreeNode[]; visibility?: VisibilityScope };
     if (candidate.publicTree && candidate.privateTree) {
-      return normalizeUserMapState({
+      return normalizeContextTreeState({
         publicTree: candidate.publicTree,
         privateTree: candidate.privateTree
       });
     }
 
     if (Array.isArray(candidate.children)) {
-      const publicTree = candidate.children.find((child) => child.visibility === 'public') ?? EMPTY_PUBLIC_USERMAP_TREE;
+      const publicTree = candidate.children.find((child) => child.visibility === 'public') ?? EMPTY_PUBLIC_CONTEXT_TREE;
       const legacyPrivateChildren = candidate.children.filter((child) => child.visibility !== 'public');
       const privateTree = candidate.children.find((child) => child.visibility === 'private')
         ?? {
-          ...EMPTY_PRIVATE_USERMAP_TREE,
-          children: legacyPrivateChildren.length ? legacyPrivateChildren : EMPTY_PRIVATE_USERMAP_TREE.children
+          ...EMPTY_PRIVATE_CONTEXT_TREE,
+          children: legacyPrivateChildren.length ? legacyPrivateChildren : EMPTY_PRIVATE_CONTEXT_TREE.children
         };
-      return normalizeUserMapState({ publicTree, privateTree });
+      return normalizeContextTreeState({ publicTree, privateTree });
     }
   }
 
-  return EMPTY_USERMAP_STATE;
+  return EMPTY_CONTEXT_STATE;
 }
 
-function stateRoots(state: UserMapState) {
+function stateRoots(state: ContextTreeState) {
   return {
     publicRoot: state.publicTree,
     privateRoot: state.privateTree
@@ -631,7 +631,7 @@ export class SqliteStorage {
         id TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS usermap (
+      CREATE TABLE IF NOT EXISTS context (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         payload TEXT NOT NULL
       );
@@ -647,7 +647,7 @@ export class SqliteStorage {
         provider TEXT PRIMARY KEY,
         payload TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS coordinator_settings (
+      CREATE TABLE IF NOT EXISTS assistant_settings (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         payload TEXT NOT NULL
       );
@@ -685,18 +685,18 @@ export class SqliteStorage {
       }
     }
 
-    const userMapRow = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
-    if (!userMapRow) {
-      this.db.prepare('INSERT INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(EMPTY_USERMAP_STATE));
+    const contextTreeRow = this.db.prepare('SELECT payload FROM context WHERE id = 1').get() as { payload?: string } | undefined;
+    if (!contextTreeRow) {
+      this.db.prepare('INSERT INTO context (id, payload) VALUES (1, ?)').run(this.encodeJson(EMPTY_CONTEXT_STATE));
     } else {
-      const parsed = this.decodeJson<unknown>(userMapRow.payload ?? '', EMPTY_USERMAP_STATE);
-      const normalized = coerceUserMapState(parsed);
-      this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
+      const parsed = this.decodeJson<unknown>(contextTreeRow.payload ?? '', EMPTY_CONTEXT_STATE);
+      const normalized = coerceContextTreeState(parsed);
+      this.db.prepare('INSERT OR REPLACE INTO context (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
     }
 
-    const coordinatorSettingsRow = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
-    if (!coordinatorSettingsRow) {
-      this.db.prepare('INSERT INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson({}));
+    const assistantSettingsRow = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    if (!assistantSettingsRow) {
+      this.db.prepare('INSERT INTO assistant_settings (id, payload) VALUES (1, ?)').run(this.encodeJson({}));
     }
 
     this.ensureRetentionConfigRow();
@@ -917,24 +917,24 @@ export class SqliteStorage {
     return profile;
   }
 
-  getUserMap(): UserMapState {
-    const row = this.db.prepare('SELECT payload FROM usermap WHERE id = 1').get() as { payload?: string } | undefined;
-    return coerceUserMapState(this.decodeJson(row?.payload, EMPTY_USERMAP_STATE));
+  getContextTree(): ContextTreeState {
+    const row = this.db.prepare('SELECT payload FROM context WHERE id = 1').get() as { payload?: string } | undefined;
+    return coerceContextTreeState(this.decodeJson(row?.payload, EMPTY_CONTEXT_STATE));
   }
 
-  saveUserMap(tree: UserMapState): UserMapState {
-    const normalized = normalizeUserMapState(tree);
-    this.db.prepare('INSERT OR REPLACE INTO usermap (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
+  saveContextTree(tree: ContextTreeState): ContextTreeState {
+    const normalized = normalizeContextTreeState(tree);
+    this.db.prepare('INSERT OR REPLACE INTO context (id, payload) VALUES (1, ?)').run(this.encodeJson(normalized));
     return normalized;
   }
 
-  getUserMapRoots(): { publicRoot: UserMapNode; privateRoot: UserMapNode } {
-    const state = this.getUserMap();
+  getContextTreeRoots(): { publicRoot: ContextTreeNode; privateRoot: ContextTreeNode } {
+    const state = this.getContextTree();
     return stateRoots(state);
   }
 
-  saveUserMapRoots(roots: { publicRoot: UserMapNode; privateRoot: UserMapNode }) {
-    return this.saveUserMap({
+  saveContextTreeRoots(roots: { publicRoot: ContextTreeNode; privateRoot: ContextTreeNode }) {
+    return this.saveContextTree({
       publicTree: roots.publicRoot,
       privateTree: roots.privateRoot
     });
@@ -1251,31 +1251,31 @@ export class SqliteStorage {
     return selection;
   }
 
-  getCoordinatorProviderOverride(): CoordinatorProviderOverrideSettings | null {
-    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+  getAssistantProviderOverride(): AssistantProviderOverrideSettings | null {
+    const row = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const override = parsed.providerOverride;
     if (!override || typeof override !== 'object') {
       return null;
     }
-    const candidate = override as CoordinatorProviderOverrideSettings;
+    const candidate = override as AssistantProviderOverrideSettings;
     if (!candidate.provider || !candidate.modelId) {
       return null;
     }
     return candidate;
   }
 
-  saveCoordinatorProviderOverride(override: CoordinatorProviderOverrideSettings | null): CoordinatorProviderOverrideSettings | null {
-    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+  saveAssistantProviderOverride(override: AssistantProviderOverrideSettings | null): AssistantProviderOverrideSettings | null {
+    const row = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = {
       ...parsed,
       providerOverride: override ?? null
     };
-    this.db.prepare('INSERT OR REPLACE INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
+    this.db.prepare('INSERT OR REPLACE INTO assistant_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     this.appendAuditEvent({
-      kind: 'coordinator_override_changed',
-      entityType: 'coordinator_settings',
+      kind: 'assistant_override_changed',
+      entityType: 'assistant_settings',
       payload: override ? { provider: override.provider, modelId: override.modelId } : { cleared: true },
       createdAt: new Date().toISOString()
     });
@@ -1283,7 +1283,7 @@ export class SqliteStorage {
   }
 
   getAgentMode(): AgentMode {
-    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const raw = parsed.agentMode;
     if (raw === 'ollama' || raw === 'bridge' || raw === 'auto') return raw;
@@ -1291,18 +1291,18 @@ export class SqliteStorage {
   }
 
   saveAgentMode(mode: AgentMode): AgentMode {
-    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = {
       ...parsed,
       agentMode: mode
     };
-    this.db.prepare('INSERT OR REPLACE INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
+    this.db.prepare('INSERT OR REPLACE INTO assistant_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     return mode;
   }
 
   getWorkspaceRole(): WorkspaceRole {
-    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const raw = parsed.workspaceRole;
     if (raw === 'owner' || raw === 'admin' || raw === 'member' || raw === 'viewer') return raw;
@@ -1310,10 +1310,10 @@ export class SqliteStorage {
   }
 
   saveWorkspaceRole(role: WorkspaceRole): WorkspaceRole {
-    const row = this.db.prepare('SELECT payload FROM coordinator_settings WHERE id = 1').get() as { payload?: string } | undefined;
+    const row = this.db.prepare('SELECT payload FROM assistant_settings WHERE id = 1').get() as { payload?: string } | undefined;
     const parsed = row?.payload ? this.decodeJson<Record<string, unknown>>(row.payload, {}) : {};
     const next = { ...parsed, workspaceRole: role };
-    this.db.prepare('INSERT OR REPLACE INTO coordinator_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
+    this.db.prepare('INSERT OR REPLACE INTO assistant_settings (id, payload) VALUES (1, ?)').run(this.encodeJson(next));
     return role;
   }
 
@@ -1326,9 +1326,9 @@ export class SqliteStorage {
   getVoiceConfig(): VoiceConfig {
     const row = this.db.prepare('SELECT payload FROM voice_config WHERE id = 1').get() as { payload?: string } | undefined;
     if (row?.payload) {
-      return this.decodeJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey Workspace', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
+      return this.decodeJson<VoiceConfig>(row.payload, { enabled: false, wakeWord: 'Hey Raman AI', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' });
     }
-    return { enabled: false, wakeWord: 'Hey Workspace', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' };
+    return { enabled: false, wakeWord: 'Hey Raman AI', preferredVoice: 'Nova', autoListen: false, ttsProvider: 'system' };
   }
 
   saveVoiceConfig(config: VoiceConfig): VoiceConfig {
@@ -1337,8 +1337,8 @@ export class SqliteStorage {
   }
 
   getWorkspaceSnapshot(options?: GetWorkspaceSnapshotOptions): WorkspaceSnapshot {
-    const userMap = this.getUserMap();
-    const { publicRoot, privateRoot } = stateRoots(userMap);
+    const contextTree = this.getContextTree();
+    const { publicRoot, privateRoot } = stateRoots(contextTree);
     const memoryFacts = this.listMemoryFacts();
 
     const useLite =
@@ -1366,9 +1366,9 @@ export class SqliteStorage {
       taskRuns: this.listTaskRuns(),
       workItems,
       artifacts: this.listArtifacts(),
-      userMap,
-      publicUserMap: publicRoot,
-      privateUserMap: privateRoot,
+      contextTree,
+      publicContextTree: publicRoot,
+      privateContextTree: privateRoot,
       memoryFacts,
       publicMemoryFacts: memoryFacts.filter((fact) => memoryVisibility(fact) === 'public'),
       privateMemoryFacts: memoryFacts.filter((fact) => memoryVisibility(fact) === 'private'),

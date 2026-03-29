@@ -13,59 +13,59 @@ import {
   Users,
   Wand2,
 } from 'lucide-react';
-import type { CoordinatorMode } from '@workspace/shared';
-import type { CoordinatorProviderOverrideSettings, ProviderModelPreset } from '@workspace/shared';
+import type { AssistantMode } from '@raman-ai/shared';
+import type { AssistantProviderOverrideSettings, ProviderModelPreset } from '@raman-ai/shared';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import { TaskComposerCard } from './TaskComposerCard';
-import { CoordinatorProfilePanel } from './CoordinatorProfilePanel';
+import { AssistantProfilePanel } from './AssistantProfilePanel';
 import { ChatMessage } from './chat/ChatMessage';
 import { TypingIndicator } from './chat/TypingIndicator';
 import { Button, Badge, Card, Input, SectionLabel, Divider, EmptyState } from './ui';
 
-interface CoordinatorMessage {
+interface AssistantMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
-  mode?: CoordinatorMode | 'work';
+  mode?: AssistantMode | 'work';
 }
 
-interface CoordinatorWorkspaceProps {
+interface AssistantWorkspaceProps {
   snapshot: WorkspaceSnapshot;
-  messages: CoordinatorMessage[];
+  messages: AssistantMessage[];
   busy: boolean;
-  onSend: (mode: CoordinatorMode, message: string) => Promise<void>;
+  onSend: (mode: AssistantMode, message: string) => Promise<void>;
   onCreateTask: (input: TaskCreateInput) => Promise<void>;
   onClearTranscript: () => void;
-  coordinatorOverride?: CoordinatorProviderOverrideSettings | null;
-  onSaveCoordinatorOverride?: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
+  assistantOverride?: AssistantProviderOverrideSettings | null;
+  onSaveAssistantOverride?: (override: AssistantProviderOverrideSettings | null) => Promise<void>;
 }
 
 const modes: Array<{
-  id: CoordinatorMode | 'task' | 'council';
+  id: AssistantMode | 'task' | 'council';
   label: string;
   icon: React.ComponentType<{ size?: number }>;
   description: string;
 }> = [
-  { id: 'ask', label: 'ASK PRISM', icon: Sparkles, description: 'Strategy, prompts, architecture' },
+  { id: 'ask', label: 'ASK RAMAN AI', icon: Sparkles, description: 'Strategy, prompts, architecture' },
   { id: 'create', label: 'CREATE AGENTS', icon: Wand2, description: 'Design from an objective' },
   { id: 'task', label: 'SCHEDULE', icon: Bot, description: 'Queue a background job' },
   { id: 'council', label: 'COUNCIL', icon: Users, description: 'Multi-model debate & consensus' },
 ];
 
-export function CoordinatorWorkspace({
+export function AssistantWorkspace({
   snapshot,
   messages,
   busy,
   onSend,
   onCreateTask,
   onClearTranscript,
-  coordinatorOverride,
-  onSaveCoordinatorOverride,
-}: CoordinatorWorkspaceProps) {
-  const [activeMode, setActiveMode] = useState<CoordinatorMode | 'task' | 'council'>('ask');
+  assistantOverride,
+  onSaveAssistantOverride,
+}: AssistantWorkspaceProps) {
+  const [activeMode, setActiveMode] = useState<AssistantMode | 'task' | 'council'>('ask');
   const [message, setMessage] = useState('');
   const [transcriptQuery, setTranscriptQuery] = useState('');
-  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | CoordinatorMessage['role']>(
+  const [transcriptRoleFilter, setTranscriptRoleFilter] = useState<'all' | AssistantMessage['role']>(
     'all',
   );
   const [newestFirst, setNewestFirst] = useState(false);
@@ -167,7 +167,7 @@ export function CoordinatorWorkspace({
                   >
                     {active && (
                       <motion.div
-                        layoutId="coordinator-mode"
+                        layoutId="assistant-mode"
                         className="absolute inset-0 rounded-lg bg-brand/[0.15] border border-brand/20"
                         transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                       />
@@ -277,12 +277,11 @@ export function CoordinatorWorkspace({
 
                   {showDetails && (
                     <Card variant="ghost" padding="md" animate={false}>
-                      <SectionLabel className="mb-3">Workspace</SectionLabel>
+                      <SectionLabel className="mb-3">Raman AI</SectionLabel>
                       <div className="grid grid-cols-2 gap-2">
                         <StatCard label="Agents" value={snapshot.agents.length} />
                         <StatCard label="Groups" value={snapshot.groups.length} />
                         <StatCard label="Tasks" value={snapshot.tasks.length} />
-                        <StatCard label="UserMap" value={countNodes(snapshot.userMap)} />
                         <StatCard
                           label="Models"
                           value={snapshot.models.filter((m) => m.installed).length}
@@ -338,8 +337,8 @@ export function CoordinatorWorkspace({
             )}
             <TaskComposerCard
               title={activeMode === 'task' ? 'Schedule Task' : 'Council Session'}
-              subtitle={activeMode === 'task' ? 'Queue a background job for Coordinator or an agent.' : 'Configure models, objective, and schedule for the council.'}
-              target={{ type: 'coordinator' }}
+              subtitle={activeMode === 'task' ? 'Queue a background job for Raman AI or an agent.' : 'Configure models, objective, and schedule for the council.'}
+              target={{ type: 'assistant' }}
               defaultMode={activeMode}
               models={snapshot.models}
               busy={busy}
@@ -359,7 +358,7 @@ export function CoordinatorWorkspace({
                       <Wand2 size={22} className="text-brand-light" />
                     )
                   }
-                  title={activeMode === 'ask' ? 'Ask Coordinator' : 'Create Agents'}
+                  title={activeMode === 'ask' ? 'Ask Raman AI' : 'Create Agents'}
                   description={
                     activeMode === 'ask'
                       ? 'Get help with objectives, workflows, prompts, and system design.'
@@ -373,17 +372,17 @@ export function CoordinatorWorkspace({
                             onClick: () => setMessage('What can you help me with?'),
                           },
                           {
-                            label: 'Analyze my UserMap context',
+                            label: 'Analyze my context',
                             onClick: () =>
                               setMessage(
-                                'Analyze my UserMap and suggest what agents would be useful.',
+                                'Analyze my current context and suggest what agents would be useful.',
                               ),
                           },
                           {
-                            label: 'How does Coordinator work?',
+                            label: 'How does Raman AI work?',
                             onClick: () =>
                               setMessage(
-                                'Explain how Coordinator creates and manages agent blueprints.',
+                                'Explain how Raman AI creates and manages agent blueprints.',
                               ),
                           },
                         ]
@@ -420,10 +419,10 @@ export function CoordinatorWorkspace({
                       role={entry.role}
                       text={entry.text}
                       {...(entry.mode != null ? { mode: entry.mode } : {})}
-                      agentName="Coordinator"
+                      agentName="Raman AI"
                     />
                   ))}
-                  {busy && <TypingIndicator agentName="Coordinator" />}
+                  {busy && <TypingIndicator agentName="Raman AI" />}
                 </div>
               )}
             </div>
@@ -442,7 +441,7 @@ export function CoordinatorWorkspace({
                       className="max-h-[120px] min-h-[40px] w-full resize-none bg-transparent px-1 py-2 text-sm leading-relaxed text-slate-900 dark:text-white outline-none placeholder:text-slate-400 dark:placeholder:text-white/25"
                       placeholder={
                         activeMode === 'ask'
-                          ? 'Ask Coordinator anything...'
+                          ? 'Ask Raman AI anything...'
                           : 'Describe the agent you want to create...'
                       }
                     />
@@ -470,14 +469,14 @@ export function CoordinatorWorkspace({
           </>
         )}
       </section>
-      {/* Coordinator Profile Panel */}
-      {onSaveCoordinatorOverride && (
-        <CoordinatorProfilePanel
+      {/* Raman AI Profile Panel */}
+      {onSaveAssistantOverride && (
+        <AssistantProfilePanel
           open={showProfile}
           onClose={() => setShowProfile(false)}
-          coordinatorOverride={coordinatorOverride ?? null}
+          assistantOverride={assistantOverride ?? null}
           models={snapshot.models}
-          onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+          onSaveAssistantOverride={onSaveAssistantOverride}
           busy={busy}
           bridgeAvailable={snapshot.runtime.runtimeBridgeReady}
         />
@@ -493,10 +492,4 @@ function StatCard({ label, value }: { label: string; value: number }) {
       <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{value}</div>
     </div>
   );
-}
-
-function countNodes(node: WorkspaceSnapshot['userMap']): number {
-  const countTree = (tree: WorkspaceSnapshot['userMap']['privateTree']): number =>
-    1 + tree.children.reduce((total: number, child) => total + countTree(child), 0);
-  return countTree(node.privateTree) + countTree(node.publicTree);
 }

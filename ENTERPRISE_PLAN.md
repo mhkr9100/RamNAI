@@ -1,4 +1,4 @@
-# Enterprise-Grade Implementation Plan — Workspace
+# Enterprise-Grade Implementation Plan — Raman AI
 
 This plan outlines the path to an enterprise-ready platform with support for agent spin-off **with** and **without** the runtime bridge. It aligns with [CRITICAL_RULES.md](./CRITICAL_RULES.md) and [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -9,8 +9,8 @@ This plan outlines the path to an enterprise-ready platform with support for age
 ### 1.1 Current Architecture
 
 - **Ollama-only**: Direct calls to local Ollama; no external runtime.
-- **Runtime bridge**: External CLI used for Coordinator prompts, agents, sessions, channels.
-- **LocalRuntimeAdapter** routes Coordinator/task execution: runtime bridge first when available, else Ollama.
+- **Runtime bridge**: External CLI used for Raman AI prompts, agents, sessions, channels.
+- **LocalRuntimeAdapter** routes Raman AI and task execution: runtime bridge first when available, else Ollama.
 
 ### 1.2 Spin-Off Modes
 
@@ -24,7 +24,7 @@ This plan outlines the path to an enterprise-ready platform with support for age
 | Task | Description | Priority |
 |------|-------------|----------|
 | **A1** | Add workspace config flag: `agentMode: 'ollama' | 'bridge'` | P1 |
-| **A2** | When `ollama`: bypass runtime bridge for Coordinator/tasks; use `LocalRuntimeAdapter` Ollama path only | P1 |
+| **A2** | When `ollama`: bypass runtime bridge for Raman AI and task execution; use `LocalRuntimeAdapter` Ollama path only | P1 |
 | **A3** | When `bridge`: require runtime bridge availability; use RuntimeBridge and BridgeAgentManager | P1 |
 | **A4** | Expose `agentMode` in Settings UI with validation (e.g. warn if bridge selected but CLI unavailable) | P2 |
 | **A5** | On workspace init, auto-detect best mode: bridge if available, else Ollama | P2 |
@@ -33,7 +33,7 @@ This plan outlines the path to an enterprise-ready platform with support for age
 ### 1.4 Data Flow Summary
 
 ```
-User Intent → Workspace Config (agentMode) → LocalRuntimeAdapter
+User Intent → Raman AI Config (agentMode) → LocalRuntimeAdapter
                                                     ├── bridge: RuntimeBridge / BridgeAgentManager
                                                     └── ollama: Direct Ollama API
 ```
@@ -56,7 +56,7 @@ User Intent → Workspace Config (agentMode) → LocalRuntimeAdapter
 |-------|-------------|-------|
 | **E4** | Workspace-level isolation: one workspace = one tenant | Maps to one SQLite DB + one workspace dir |
 | **E5** | Role model: `owner`, `admin`, `member`, `viewer` | Backend-only; no UI in v1 |
-| **E6** | Permissions: create agents, run tasks, edit UserMap, manage settings | Enforced in main process and storage layer |
+| **E6** | Permissions: create agents, run tasks, edit ContextTree, manage settings | Enforced in main process and storage layer |
 
 ### 2.3 Audit & Compliance
 
@@ -97,7 +97,7 @@ User Intent → Workspace Config (agentMode) → LocalRuntimeAdapter
 ### Phase 1: Agent Spin-Off (Weeks 1–2)
 
 - Implement **A1–A3**: `agentMode` config and routing.
-- Test both modes with real Coordinator create/ask and task execution.
+- Test both modes with real Assistant create/ask and task execution.
 - No mock or placeholder responses (per CRITICAL_RULES).
 
 ### Phase 2: Agent Mode UX (Weeks 2–3)
@@ -107,7 +107,7 @@ User Intent → Workspace Config (agentMode) → LocalRuntimeAdapter
 
 ### Phase 3: Enterprise Foundations (Weeks 4–6)
 
-- **E2**, **E7**, **E10**, **E11**: Workspace encryption option, audit log, structured logging, health.
+- **E2**, **E7**, **E10**, **E11**: Data encryption option, audit log, structured logging, health.
 - Backend-only changes; no business logic in frontend.
 
 ### Phase 4: RBAC & Observability (Weeks 7–10)

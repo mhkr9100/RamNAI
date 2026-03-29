@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { channels } from './preload-api.js';
 
-contextBridge.exposeInMainWorld('workspaceApp', {
+contextBridge.exposeInMainWorld('ramanAI', {
   profile: {
     get: () => ipcRenderer.invoke(channels.profileGet),
     save: (profile: unknown) => ipcRenderer.invoke(channels.profileSave, profile)
@@ -16,9 +16,9 @@ contextBridge.exposeInMainWorld('workspaceApp', {
     listChatThreadsPaginated: (limit: number, offset: number) =>
       ipcRenderer.invoke(channels.workspaceListChatThreadsPaginated, limit, offset)
   },
-  userMap: {
-    save: (tree: unknown) => ipcRenderer.invoke(channels.userMapSave, tree),
-    syncMemories: () => ipcRenderer.invoke(channels.userMapSync)
+  contextTree: {
+    save: (tree: unknown) => ipcRenderer.invoke(channels.contextTreeSave, tree),
+    syncMemories: () => ipcRenderer.invoke(channels.contextTreeSync)
   },
   groups: {
     upsert: (group: unknown) => ipcRenderer.invoke(channels.groupUpsert, group),
@@ -27,8 +27,8 @@ contextBridge.exposeInMainWorld('workspaceApp', {
   agents: {
     delete: (agentId: string) => ipcRenderer.invoke(channels.agentDelete, agentId)
   },
-  coordinator: {
-    sendMessage: (input: unknown) => ipcRenderer.invoke(channels.coordinatorSend, input)
+  assistant: {
+    sendMessage: (input: unknown) => ipcRenderer.invoke(channels.assistantSend, input)
   },
   chat: {
     sendAgentMessage: (input: unknown) => ipcRenderer.invoke(channels.agentChat, input),
@@ -62,8 +62,8 @@ contextBridge.exposeInMainWorld('workspaceApp', {
     setProviderSelection: (selection: unknown) => ipcRenderer.invoke(channels.providerAuthSetSelection, selection),
     getRetentionConfig: () => ipcRenderer.invoke(channels.retentionConfigGet),
     saveRetentionConfig: (config: unknown) => ipcRenderer.invoke(channels.retentionConfigSave, config),
-    getCoordinatorOverride: () => ipcRenderer.invoke(channels.coordinatorOverrideGet),
-    saveCoordinatorOverride: (override: unknown) => ipcRenderer.invoke(channels.coordinatorOverrideSave, override),
+    getAssistantOverride: () => ipcRenderer.invoke(channels.assistantOverrideGet),
+    saveAssistantOverride: (override: unknown) => ipcRenderer.invoke(channels.assistantOverrideSave, override),
     getAgentMode: () => ipcRenderer.invoke(channels.agentModeGet),
     saveAgentMode: (mode: string) => ipcRenderer.invoke(channels.agentModeSave, mode),
     getOllamaStatus: () => ipcRenderer.invoke(channels.ollamaStatus),

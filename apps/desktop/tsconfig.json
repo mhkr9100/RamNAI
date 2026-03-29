@@ -7,9 +7,9 @@
     "composite": true,
     "lib": ["ES2022", "DOM"],
     "paths": {
-      "@workspace/shared": ["../../packages/shared/src/index.ts"],
-      "@workspace/storage": ["../../packages/storage/src/index.ts"],
-      "@workspace/runtime": ["../../packages/runtime/src/index.ts"]
+      "@raman-ai/shared": ["../../packages/shared/src/index.ts"],
+      "@raman-ai/storage": ["../../packages/storage/src/index.ts"],
+      "@raman-ai/runtime": ["../../packages/runtime/src/index.ts"]
     }
   },
   "references": [

@@ -6,14 +6,14 @@ import type {
   GroupSpec,
   LocalProfile,
   MemoryFact,
-  UserMapNode,
-  UserMapState
-} from '@workspace/shared';
+  ContextTreeNode,
+  ContextTreeState
+} from '@raman-ai/shared';
 import { EXTERNAL_WORKSPACE_MANIFEST_FILENAME } from './runtime-compat.js';
 
 export interface RuntimeWorkspaceSource {
   profile: LocalProfile | null;
-  userMap: UserMapState;
+  contextTree: ContextTreeState;
   agents: AgentSpec[];
   groups: GroupSpec[];
   memoryFacts: MemoryFact[];
@@ -24,7 +24,7 @@ export interface RuntimeWorkspaceSource {
 
 export interface RuntimeWorkspaceManagerOptions {
   workspaceName?: string;
-  coordinatorWorkspaceName?: string;
+  assistantWorkspaceName?: string;
 }
 
 export interface RuntimeWorkspaceFile {
@@ -33,14 +33,14 @@ export interface RuntimeWorkspaceFile {
 }
 
 export interface RuntimeWorkspaceSubjectManifest {
-  kind: 'coordinator' | 'agent';
+  kind: 'assistant' | 'agent';
   name: string;
   slug: string;
   workspacePath: string;
   skillsPaths: string[];
   tools: string[];
   workspacePaths: string[];
-  userMapPaths: string[];
+  contextPaths: string[];
   memoryNamespaces: string[];
 }
 
@@ -48,7 +48,7 @@ export interface RuntimeWorkspaceManifest {
   workspaceName: string;
   generatedAt: string;
   profile: LocalProfile | null;
-  coordinator: RuntimeWorkspaceSubjectManifest;
+  assistant: RuntimeWorkspaceSubjectManifest;
   agents: RuntimeWorkspaceSubjectManifest[];
     groups: Array<{
       id: string;
@@ -82,8 +82,8 @@ export interface RuntimeWorkspaceSyncResult {
 const PRIMARY_MANIFEST_FILENAME = 'runtime.workspace.json';
 // Compatibility mirror for the external runtime bridge while we transition away from vendor naming.
 
-const USER_MAP_CATEGORY_ORDER: UserMapNode['nodeType'][] = ['root', 'category', 'cluster', 'fact'];
-const USER_MAP_CATEGORY_LABEL_ORDER = [
+const CONTEXT_CATEGORY_ORDER: ContextTreeNode['nodeType'][] = ['root', 'category', 'cluster', 'fact'];
+const CONTEXT_CATEGORY_LABEL_ORDER = [
   'Identity',
   'Preferences',
   'Career',
@@ -96,7 +96,7 @@ const USER_MAP_CATEGORY_LABEL_ORDER = [
   'Instructions',
   'General Context'
 ];
-const USER_MAP_VISIBILITY_ORDER: Array<UserMapNode['visibility']> = ['public', 'private'];
+const CONTEXT_VISIBILITY_ORDER: Array<ContextTreeNode['visibility']> = ['public', 'private'];
 
 function asUtcDateKey(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value);
@@ -117,43 +117,43 @@ function slugify(value: string, fallback = 'item'): string {
   return slug || fallback;
 }
 
-function compareUserMapNodes(left: UserMapNode, right: UserMapNode) {
-  const leftType = USER_MAP_CATEGORY_ORDER.indexOf(left.nodeType);
-  const rightType = USER_MAP_CATEGORY_ORDER.indexOf(right.nodeType);
+function compareContextTreeNodes(left: ContextTreeNode, right: ContextTreeNode) {
+  const leftType = CONTEXT_CATEGORY_ORDER.indexOf(left.nodeType);
+  const rightType = CONTEXT_CATEGORY_ORDER.indexOf(right.nodeType);
   if (leftType !== rightType) {
     return leftType - rightType;
   }
 
   if (left.nodeType === 'root' && right.nodeType === 'root') {
-    const leftVisibility = USER_MAP_VISIBILITY_ORDER.indexOf((left.visibility ?? '') as UserMapNode['visibility']);
-    const rightVisibility = USER_MAP_VISIBILITY_ORDER.indexOf((right.visibility ?? '') as UserMapNode['visibility']);
+    const leftVisibility = CONTEXT_VISIBILITY_ORDER.indexOf((left.visibility ?? '') as ContextTreeNode['visibility']);
+    const rightVisibility = CONTEXT_VISIBILITY_ORDER.indexOf((right.visibility ?? '') as ContextTreeNode['visibility']);
     if (leftVisibility !== rightVisibility) {
-      return (leftVisibility === -1 ? USER_MAP_VISIBILITY_ORDER.length : leftVisibility)
-        - (rightVisibility === -1 ? USER_MAP_VISIBILITY_ORDER.length : rightVisibility);
+      return (leftVisibility === -1 ? CONTEXT_VISIBILITY_ORDER.length : leftVisibility)
+        - (rightVisibility === -1 ? CONTEXT_VISIBILITY_ORDER.length : rightVisibility);
     }
   }
 
   if (left.nodeType === 'category' && right.nodeType === 'category') {
-    const leftCategory = USER_MAP_CATEGORY_LABEL_ORDER.indexOf(left.label);
-    const rightCategory = USER_MAP_CATEGORY_LABEL_ORDER.indexOf(right.label);
+    const leftCategory = CONTEXT_CATEGORY_LABEL_ORDER.indexOf(left.label);
+    const rightCategory = CONTEXT_CATEGORY_LABEL_ORDER.indexOf(right.label);
     if (leftCategory !== rightCategory) {
-      return (leftCategory === -1 ? USER_MAP_CATEGORY_LABEL_ORDER.length : leftCategory)
-        - (rightCategory === -1 ? USER_MAP_CATEGORY_LABEL_ORDER.length : rightCategory);
+      return (leftCategory === -1 ? CONTEXT_CATEGORY_LABEL_ORDER.length : leftCategory)
+        - (rightCategory === -1 ? CONTEXT_CATEGORY_LABEL_ORDER.length : rightCategory);
     }
   }
 
   return left.label.localeCompare(right.label);
 }
 
-function sortUserMapChildren(node: UserMapNode): UserMapNode[] {
-  return [...node.children].sort(compareUserMapNodes);
+function sortContextTreeChildren(node: ContextTreeNode): ContextTreeNode[] {
+  return [...node.children].sort(compareContextTreeNodes);
 }
 
 function renderBullets(lines: string[]) {
   return lines.filter(Boolean).map((line) => `- ${line}`).join('\n');
 }
 
-function renderUserMapTree(node: UserMapNode, depth = 0): string {
+function renderContextTreeTree(node: ContextTreeNode, depth = 0): string {
   const indent = '  '.repeat(depth);
   const suffix = node.value ? `: ${node.value}` : '';
   const flags = [
@@ -164,20 +164,20 @@ function renderUserMapTree(node: UserMapNode, depth = 0): string {
   const meta = flags.length ? ` (${flags.join(', ')})` : '';
   const lines = [`${indent}- ${node.label}${suffix}${meta}`];
 
-  for (const child of sortUserMapChildren(node)) {
-    lines.push(renderUserMapTree(child, depth + 1));
+  for (const child of sortContextTreeChildren(node)) {
+    lines.push(renderContextTreeTree(child, depth + 1));
   }
 
   return lines.join('\n');
 }
 
-function renderUserMapState(userMap: UserMapState) {
+function renderContextTreeState(contextTree: ContextTreeState) {
   return [
     'Public',
-    renderUserMapTree(userMap.publicTree),
+    renderContextTreeTree(contextTree.publicTree),
     '',
     'Private',
-    renderUserMapTree(userMap.privateTree)
+    renderContextTreeTree(contextTree.privateTree)
   ].join('\n');
 }
 
@@ -225,9 +225,9 @@ export class RuntimeWorkspaceManager {
 
   buildPlan(source: RuntimeWorkspaceSource): RuntimeWorkspacePlan {
     const generatedAt = source.generatedAt ?? new Date().toISOString();
-    const workspaceName = this.options.workspaceName ?? source.profile?.name ?? 'Workspace';
-    const rootSlug = slugify(workspaceName, 'workspace-app');
-    const coordinatorSlug = slugify(this.options.coordinatorWorkspaceName ?? 'Coordinator', 'coordinator');
+    const workspaceName = this.options.workspaceName ?? source.profile?.name ?? 'Raman AI';
+    const rootSlug = slugify(workspaceName, 'raman-ai');
+    const assistantSlug = slugify(this.options.assistantWorkspaceName ?? 'Raman AI', 'raman-ai');
     const agentSubjects = source.agents
       .slice()
       .sort((left, right) => left.slug.localeCompare(right.slug) || left.id.localeCompare(right.id))
@@ -237,15 +237,15 @@ export class RuntimeWorkspaceManager {
     const memorySplit = partitionMemoryFacts(source.memoryFacts);
     const memoryDays = [...new Set([...memorySplit.publicMemoryDays, ...memorySplit.privateMemoryDays])].sort((left, right) => left.localeCompare(right));
 
-    const coordinatorSubject: RuntimeWorkspaceSubjectManifest = {
-      kind: 'coordinator',
-      name: this.options.coordinatorWorkspaceName ?? 'Coordinator',
-      slug: coordinatorSlug,
-      workspacePath: 'coordinator',
+    const assistantSubject: RuntimeWorkspaceSubjectManifest = {
+      kind: 'assistant',
+      name: this.options.assistantWorkspaceName ?? 'Raman AI',
+      slug: assistantSlug,
+      workspacePath: 'assistant',
       skillsPaths: allSkills.map(renderSkillPath),
       tools: this.collectTools(source.agents),
       workspacePaths: this.collectWorkspacePaths(source.agents),
-      userMapPaths: this.collectUserMapPaths(source.agents),
+      contextPaths: this.collectContextTreePaths(source.agents),
       memoryNamespaces: this.collectMemoryNamespaces(source.agents)
     };
 
@@ -253,7 +253,7 @@ export class RuntimeWorkspaceManager {
       workspaceName,
       generatedAt,
       profile: source.profile,
-      coordinator: coordinatorSubject,
+      assistant: assistantSubject,
       agents: agentSubjects,
       groups: source.groups
         .slice()
@@ -298,7 +298,7 @@ export class RuntimeWorkspaceManager {
 
     const files = this.renderFiles({
       workspaceRoot: rootSlug,
-      coordinatorWorkspacePath: coordinatorSubject.workspacePath,
+      assistantWorkspacePath: assistantSubject.workspacePath,
       agents: agentSubjects,
       source,
       manifest
@@ -314,7 +314,7 @@ export class RuntimeWorkspaceManager {
 
   renderFiles(source: {
     workspaceRoot: string;
-    coordinatorWorkspacePath: string;
+    assistantWorkspacePath: string;
     agents: RuntimeWorkspaceSubjectManifest[];
     source: RuntimeWorkspaceSource;
     manifest: RuntimeWorkspaceManifest;
@@ -328,16 +328,16 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'AGENTS.md',
       content: renderWorkspaceDocHeader('AGENTS', [
-        `Workspace: \`${manifest.workspaceName}\``,
+        `Raman AI: \`${manifest.workspaceName}\``,
         `Generated: \`${manifest.generatedAt}\``,
         '',
-        '## Coordinator',
-        `- \`${source.coordinatorWorkspacePath}/AGENTS.md\``,
-        `- \`${source.coordinatorWorkspacePath}/SOUL.md\``,
-        `- \`${source.coordinatorWorkspacePath}/TOOLS.md\``,
-        `- \`${source.coordinatorWorkspacePath}/IDENTITY.md\``,
-        `- \`${source.coordinatorWorkspacePath}/USER.md\``,
-        `- \`${source.coordinatorWorkspacePath}/MEMORY.md\``,
+        '## Assistant',
+        `- \`${source.assistantWorkspacePath}/AGENTS.md\``,
+        `- \`${source.assistantWorkspacePath}/SOUL.md\``,
+        `- \`${source.assistantWorkspacePath}/TOOLS.md\``,
+        `- \`${source.assistantWorkspacePath}/IDENTITY.md\``,
+        `- \`${source.assistantWorkspacePath}/USER.md\``,
+        `- \`${source.assistantWorkspacePath}/MEMORY.md\``,
         '',
         '## Memory Mirrors',
         '- Public memory is mirrored in `MEMORY.md` and `memory/public/`.',
@@ -365,28 +365,28 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'SOUL.md',
       content: renderWorkspaceDocHeader('SOUL', [
-        `This workspace is the local Workspace execution surface for \`${manifest.workspaceName}\`.`,
+        `This workspace is the local Raman AI execution surface for \`${manifest.workspaceName}\`.`,
         '',
-        'Coordinator is the architect. It should stay local-first, deterministic, and explicit about workspace state.',
+        'Raman AI is the architect. It should stay local-first, deterministic, and explicit about workspace state.',
         '',
-        `Coordinator workspace: \`${source.coordinatorWorkspacePath}\``,
+        `Raman AI workspace: \`${source.assistantWorkspacePath}\``,
         `Profile: ${input.profile ? `${input.profile.name} <${input.profile.email}>` : 'unassigned local profile'}`,
         '',
         'The runtime bridge should preserve the existing Ollama execution path while mirroring durable state into filesystem workspace files.',
-        'Public memory is shared with agents and groups. Private memory remains Coordinator-only.'
+        'Public memory is shared with agents and groups. Private memory remains Raman AI-only.'
       ])
     });
 
     files.push({
       path: 'TOOLS.md',
       content: renderWorkspaceDocHeader('TOOLS', [
-        'This file lists the runtime-relevant tool and skill paths available to Coordinator and persistent chatbots.',
+        'This file lists the runtime-relevant tool and skill paths available to Raman AI and persistent chatbots.',
         '',
         `Skill workspace root: \`${manifest.skillsWorkspaceRoot}\``,
         '',
-        ...(manifest.coordinator.skillsPaths.length
-          ? ['## Coordinator Skills', ...manifest.coordinator.skillsPaths.map((skillPath) => `- \`${skillPath}\``)]
-          : ['## Coordinator Skills', '- none yet']),
+        ...(manifest.assistant.skillsPaths.length
+          ? ['## Raman AI Skills', ...manifest.assistant.skillsPaths.map((skillPath) => `- \`${skillPath}\``)]
+          : ['## Raman AI Skills', '- none yet']),
         '',
         ...(agents.length
           ? agents.flatMap((agent) => [
@@ -400,7 +400,7 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'IDENTITY.md',
       content: renderWorkspaceDocHeader('IDENTITY', [
-        `Workspace: \`${manifest.workspaceName}\``,
+        `Raman AI: \`${manifest.workspaceName}\``,
         `Generated: \`${manifest.generatedAt}\``,
         '',
         '## Local Profile',
@@ -411,10 +411,10 @@ export class RuntimeWorkspaceManager {
             ])
           : '- No local profile yet.',
         '',
-        '## Coordinator Identity',
+        '## Raman AI Identity',
         renderBullets([
-          `Name: ${manifest.coordinator.name}`,
-          `Workspace Path: ${manifest.coordinator.workspacePath}`
+          `Name: ${manifest.assistant.name}`,
+          `Workspace Path: ${manifest.assistant.workspacePath}`
         ]),
         '',
         '## Agents',
@@ -427,7 +427,7 @@ export class RuntimeWorkspaceManager {
     files.push({
       path: 'USER.md',
       content: renderWorkspaceDocHeader('USER', [
-        'This file mirrors the local human context that Coordinator and chatbots should respect.',
+        'This file mirrors the local human context that Raman AI and chatbots should respect.',
         '',
         input.profile
           ? renderBullets([
@@ -436,9 +436,9 @@ export class RuntimeWorkspaceManager {
             ])
           : '- No local profile yet.',
         '',
-        '## UserMap',
+        '## Context',
         '```text',
-        renderUserMapState(input.userMap),
+        renderContextTreeState(input.contextTree),
         '```',
         '',
         '## Public Memory',
@@ -481,9 +481,9 @@ export class RuntimeWorkspaceManager {
       content: JSON.stringify(manifest, null, 2) + '\n'
     });
 
-    files.push(...this.renderSubjectFiles(source.coordinatorWorkspacePath, manifest.coordinator, {
+    files.push(...this.renderSubjectFiles(source.assistantWorkspacePath, manifest.assistant, {
       profile: input.profile,
-      userMap: input.userMap,
+      contextTree: input.contextTree,
       memoryFacts: input.memoryFacts,
       publicMemoryFacts,
       privateMemoryFacts
@@ -493,7 +493,7 @@ export class RuntimeWorkspaceManager {
       const agent = input.agents.find((candidate) => candidate.slug === subject.slug) ?? null;
       files.push(...this.renderSubjectFiles(subject.workspacePath, subject, {
         profile: input.profile,
-        userMap: input.userMap,
+        contextTree: input.contextTree,
         memoryFacts: input.memoryFacts,
         publicMemoryFacts,
         privateMemoryFacts,
@@ -541,7 +541,7 @@ export class RuntimeWorkspaceManager {
     const rootDir = join(targetDir, plan.rootDir);
     const writtenFiles: string[] = [];
     const skillDirs = new Set<string>([
-      ...plan.manifest.coordinator.skillsPaths,
+      ...plan.manifest.assistant.skillsPaths,
       ...plan.manifest.agents.flatMap((agent) => agent.skillsPaths)
     ]);
 
@@ -577,7 +577,7 @@ export class RuntimeWorkspaceManager {
       skillsPaths: agent.skills.slice().sort((left, right) => left.localeCompare(right)).map(renderSkillPath),
       tools: agent.tools.slice().sort((left, right) => left.localeCompare(right)),
       workspacePaths: agent.context.workspacePaths.slice().sort((left, right) => left.localeCompare(right)),
-      userMapPaths: agent.context.userMapPaths.slice().sort((left, right) => left.localeCompare(right)),
+      contextPaths: agent.context.contextPaths.slice().sort((left, right) => left.localeCompare(right)),
       memoryNamespaces: agent.context.memoryNamespaces.slice().sort((left, right) => left.localeCompare(right))
     };
   }
@@ -587,7 +587,7 @@ export class RuntimeWorkspaceManager {
     subject: RuntimeWorkspaceSubjectManifest,
     context?: {
       profile: LocalProfile | null;
-      userMap: UserMapState;
+      contextTree: ContextTreeState;
       memoryFacts: MemoryFact[];
       publicMemoryFacts: MemoryFact[];
       privateMemoryFacts: MemoryFact[];
@@ -595,7 +595,7 @@ export class RuntimeWorkspaceManager {
     }
   ): RuntimeWorkspaceFile[] {
     const profile = context?.profile ?? null;
-    const userMap = context?.userMap;
+    const contextTree = context?.contextTree;
     const memoryFacts = context?.memoryFacts ?? [];
     const publicMemoryFacts = context?.publicMemoryFacts ?? memoryFacts.filter((fact) => memoryVisibility(fact) === 'public');
     const privateMemoryFacts = context?.privateMemoryFacts ?? memoryFacts.filter((fact) => memoryVisibility(fact) === 'private');
@@ -611,12 +611,12 @@ export class RuntimeWorkspaceManager {
           `Kind: \`${subject.kind}\``,
           '',
           'This workspace belongs to one persistent execution subject.',
-          'Coordinator and the local runtime should read this folder as the canonical filesystem mirror for the subject.',
+          'Raman AI and the local runtime should read this folder as the canonical filesystem mirror for the subject.',
           '',
           `Skills workspace root: \`skills\``,
           ...(subject.skillsPaths.length ? ['## Skills', ...subject.skillsPaths.map((skillPath) => `- \`${skillPath}\``)] : ['## Skills', '- none yet']),
           '',
-          ...(subject.workspacePaths.length ? ['## Workspace Paths', ...subject.workspacePaths.map((workspacePath) => `- \`${workspacePath}\``)] : ['## Workspace Paths', '- none yet'])
+          ...(subject.workspacePaths.length ? ['## Project Paths', ...subject.workspacePaths.map((workspacePath) => `- \`${workspacePath}\``)] : ['## Project Paths', '- none yet'])
         ])
       },
       {
@@ -625,15 +625,15 @@ export class RuntimeWorkspaceManager {
           `Identity: ${subject.name}`,
           `Workspace path: \`${subjectPath}\``,
           '',
-          subject.kind === 'coordinator'
-            ? 'Coordinator is the architect and should remain the deterministic local coordinator.'
+          subject.kind === 'assistant'
+            ? 'Raman AI is the architect and should remain the deterministic local assistant.'
             : `Role: ${agent?.persona.role ?? 'Specialist chatbot'}`,
           '',
-          subject.kind === 'coordinator'
+          subject.kind === 'assistant'
             ? 'Mission: turn local user intent into durable workspace state and controlled execution.'
             : `Mission: ${agent?.persona.mission ?? ''}`,
           '',
-          subject.kind === 'coordinator'
+          subject.kind === 'assistant'
             ? 'Operating stance: local-first, filesystem-backed, and compatible with the existing Ollama execution path.'
             : `Operating stance: ${agent?.persona.systemInstructions ?? ''}`
         ])
@@ -649,8 +649,8 @@ export class RuntimeWorkspaceManager {
           '## Runtime Path Semantics',
           ...(subject.workspacePaths.length ? subject.workspacePaths.map((workspacePath) => `- \`${workspacePath}\``) : ['- none yet']),
           '',
-          '## UserMap Paths',
-          ...(subject.userMapPaths.length ? subject.userMapPaths.map((userMapPath) => `- \`${userMapPath}\``) : ['- none yet'])
+          '## Context Paths',
+          ...(subject.contextPaths.length ? subject.contextPaths.map((contextTreePath) => `- \`${contextTreePath}\``) : ['- none yet'])
         ])
       },
       {
@@ -681,13 +681,13 @@ export class RuntimeWorkspaceManager {
               ])
             : '- No local profile available.',
           '',
-          userMap
-            ? ['## UserMap', '```text', subject.kind === 'coordinator' ? renderUserMapState(userMap) : renderUserMapTree(userMap.publicTree), '```'].join('\n')
-            : '## UserMap\n- unavailable',
+          contextTree
+            ? ['## Context', '```text', subject.kind === 'assistant' ? renderContextTreeState(contextTree) : renderContextTreeTree(contextTree.publicTree), '```'].join('\n')
+            : '## Context\n- unavailable',
           '',
           ['## Public Memory', ...(publicMemoryFacts.length ? publicMemoryFacts.map(renderMemoryFact) : ['- no public memory facts yet.'])].join('\n'),
           '',
-          ...(subject.kind === 'coordinator'
+          ...(subject.kind === 'assistant'
             ? ['## Private Memory', ...(privateMemoryFacts.length ? privateMemoryFacts.map(renderMemoryFact) : ['- no private memory facts yet.'])]
             : []),
           '',
@@ -699,7 +699,7 @@ export class RuntimeWorkspaceManager {
         content: renderWorkspaceDocHeader(`${subject.name} MEMORY`, [
           'Durable memory facts mirrored for this subject.',
           '',
-          ...(subject.kind === 'coordinator'
+          ...(subject.kind === 'assistant'
             ? [
                 '## Public Memory',
                 ...renderMemoryFactList(publicMemoryFacts),
@@ -713,7 +713,7 @@ export class RuntimeWorkspaceManager {
               ]),
           '',
           ...(context
-            ? subject.kind === 'coordinator'
+            ? subject.kind === 'assistant'
               ? [
                   '## Public Dated Logs',
                   ...(publicMemoryDays.length ? publicMemoryDays.map((day) => `- \`memory/public/${day}.md\``) : ['- none yet']),
@@ -739,8 +739,8 @@ export class RuntimeWorkspaceManager {
     return [...new Set(agents.flatMap((agent) => agent.context.workspacePaths))].sort((left, right) => left.localeCompare(right));
   }
 
-  private collectUserMapPaths(agents: AgentSpec[]) {
-    return [...new Set(agents.flatMap((agent) => agent.context.userMapPaths))].sort((left, right) => left.localeCompare(right));
+  private collectContextTreePaths(agents: AgentSpec[]) {
+    return [...new Set(agents.flatMap((agent) => agent.context.contextPaths))].sort((left, right) => left.localeCompare(right));
   }
 
   private collectMemoryNamespaces(agents: AgentSpec[]) {

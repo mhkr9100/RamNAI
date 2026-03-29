@@ -41,22 +41,22 @@ import type {
   OllamaRuntimeStatus,
   OllamaModelInstallStatus,
   Permission,
-  CoordinatorRequest,
-  CoordinatorProviderOverrideSettings,
+  AssistantRequest,
+  AssistantProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderAuthSelection,
   ProviderId,
   RetentionConfigInput,
   TaskSpec,
   TaskRunRecord,
-  UserMapNode,
-  UserMapState,
+  ContextTreeNode,
+  ContextTreeState,
   VoiceConfig,
   VoiceEvent,
   WorkItem
-} from '@workspace/shared';
-import { SqliteStorage } from '@workspace/storage';
-import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, BridgeAgentManager, HeartbeatService, type SecretStoreCipher } from '@workspace/runtime';
+} from '@raman-ai/shared';
+import { SqliteStorage } from '@raman-ai/storage';
+import { LocalRuntimeAdapter, RuntimeWorkspaceManager, ProviderAuthStore, BridgeAgentManager, HeartbeatService, type SecretStoreCipher } from '@raman-ai/runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -187,7 +187,7 @@ function createElectronSafeStorageCipher(): SecretStoreCipher {
 
 function createFallbackSecretCipher(): SecretStoreCipher {
   const key = createHash('sha256')
-    .update([os.homedir(), os.hostname(), process.platform, 'workspace-app'].join('|'))
+    .update([os.homedir(), os.hostname(), process.platform, 'raman-ai'].join('|'))
     .digest();
 
   return {
@@ -304,7 +304,7 @@ async function withRuntimeBridgeCompatibility<T>(action: () => Promise<T>): Prom
 
 function syncRuntimeConfig() {
   const activeStorage = requireWorkspaceReady();
-  runtime.setCoordinatorProviderOverride(activeStorage.getCoordinatorProviderOverride());
+  runtime.setAssistantProviderOverride(activeStorage.getAssistantProviderOverride());
   const stored = activeStorage.getAgentMode();
   runtime.setAgentMode(
     workspaceSecurity.isEncryptionEnabled()
@@ -315,23 +315,23 @@ function syncRuntimeConfig() {
   );
 }
 
-function cloneUserMapNode(node: UserMapNode, inheritedVisibility?: 'public' | 'private'): UserMapNode {
+function cloneContextTreeNode(node: ContextTreeNode, inheritedVisibility?: 'public' | 'private'): ContextTreeNode {
   const visibility = node.visibility ?? inheritedVisibility;
   return {
     ...node,
     ...(visibility ? { visibility } : {}),
-    children: node.children.map((child) => cloneUserMapNode(child, visibility))
+    children: node.children.map((child) => cloneContextTreeNode(child, visibility))
   };
 }
 
-function normalizeUserMapTree(tree: UserMapNode, visibility: 'public' | 'private'): UserMapNode {
-  return cloneUserMapNode(tree, visibility);
+function normalizeContextTreeTree(tree: ContextTreeNode, visibility: 'public' | 'private'): ContextTreeNode {
+  return cloneContextTreeNode(tree, visibility);
 }
 
-function normalizeUserMapState(state: UserMapState): UserMapState {
+function normalizeContextTreeState(state: ContextTreeState): ContextTreeState {
   return {
-    publicTree: normalizeUserMapTree(state.publicTree, 'public'),
-    privateTree: normalizeUserMapTree(state.privateTree, 'private')
+    publicTree: normalizeContextTreeTree(state.publicTree, 'public'),
+    privateTree: normalizeContextTreeTree(state.privateTree, 'private')
   };
 }
 
@@ -499,7 +499,7 @@ function getWorkspacePaths(): WorkspacePaths {
 }
 
 function getDatabasePath() {
-  return path.join(getWorkspacePaths().root, 'workspace-app.sqlite');
+  return path.join(getWorkspacePaths().root, 'raman-ai.sqlite');
 }
 
 function getWorkspaceFileEncoder(): WorkspaceTextEncoder | undefined {
@@ -517,7 +517,7 @@ function getWorkspaceFileEncoder(): WorkspaceTextEncoder | undefined {
 
 function requireWorkspaceReady(): SqliteStorage {
   if (!workspaceReady) {
-    throw new Error('Workspace is locked. Unlock it to continue.');
+    throw new Error('Raman AI is locked. Unlock it to continue.');
   }
 
   return storage;
@@ -553,7 +553,7 @@ function clearRuntimeWorkspaceMirror() {
   const snapshot = storage.getWorkspaceSnapshot();
   const plan = runtimeWorkspace.buildPlan({
     profile: snapshot.profile,
-    userMap: snapshot.userMap,
+    contextTree: snapshot.contextTree,
     agents: snapshot.agents,
     groups: snapshot.groups,
     memoryFacts: snapshot.memoryFacts,
@@ -738,9 +738,9 @@ async function buildSnapshot(options?: { lite?: boolean }) {
     taskRuns: snapshot.taskRuns,
     workItems: snapshot.workItems,
     artifacts: snapshot.artifacts,
-    userMap: snapshot.userMap,
-    publicUserMap: snapshot.publicUserMap,
-    privateUserMap: snapshot.privateUserMap,
+    contextTree: snapshot.contextTree,
+    publicContextTree: snapshot.publicContextTree,
+    privateContextTree: snapshot.privateContextTree,
     memoryFacts: snapshot.memoryFacts,
     publicMemoryFacts: snapshot.publicMemoryFacts,
     privateMemoryFacts: snapshot.privateMemoryFacts,
@@ -782,7 +782,7 @@ async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
     snapshot,
     providerProfiles,
     providerSelections: EXPORT_PROVIDER_IDS.map((provider) => activeStorage.getProviderAuthSelection(provider) ?? { provider, profileId: null }),
-    coordinatorOverride: activeStorage.getCoordinatorProviderOverride(),
+    assistantOverride: activeStorage.getAssistantProviderOverride(),
     runtimeStatus,
     ollamaStatus,
     health,
@@ -805,7 +805,7 @@ async function buildLocalBundleContext(agentManager: BridgeAgentManager) {
   };
 }
 
-function collectFactIdsFromTree(node: UserMapNode): Set<string> {
+function collectFactIdsFromTree(node: ContextTreeNode): Set<string> {
   const ids = new Set<string>();
   if (node.nodeType === 'fact') {
     ids.add(node.id);
@@ -818,18 +818,18 @@ function collectFactIdsFromTree(node: UserMapNode): Set<string> {
   return ids;
 }
 
-function collectAllFactIdsFromState(state: UserMapState): Set<string> {
+function collectAllFactIdsFromState(state: ContextTreeState): Set<string> {
   const ids = new Set<string>();
   for (const id of collectFactIdsFromTree(state.publicTree)) ids.add(id);
   for (const id of collectFactIdsFromTree(state.privateTree)) ids.add(id);
   return ids;
 }
 
-function upsertFactsIntoTree(tree: UserMapState, facts: MemoryFact[]): UserMapState {
-  const nextTree = normalizeUserMapState(tree);
+function upsertFactsIntoTree(tree: ContextTreeState, facts: MemoryFact[]): ContextTreeState {
+  const nextTree = normalizeContextTreeState(tree);
   const categoryRoots = {
-    public: new Map<string, UserMapNode>(),
-    private: new Map<string, UserMapNode>()
+    public: new Map<string, ContextTreeNode>(),
+    private: new Map<string, ContextTreeNode>()
   };
 
   for (const child of nextTree.publicTree.children) {
@@ -899,14 +899,14 @@ function upsertFactsIntoTree(tree: UserMapState, facts: MemoryFact[]): UserMapSt
 }
 
 async function mergeAndPersistMemoryFacts(newFacts: MemoryFact[]) {
-  if (newFacts.length === 0) return storage.getUserMap();
+  if (newFacts.length === 0) return storage.getContextTree();
   const normalizedFacts = newFacts.map((fact) => ({
     ...fact,
     visibility: fact.visibility ?? 'public'
   }));
   storage.upsertMemoryFacts(normalizedFacts);
-  const nextTree = upsertFactsIntoTree(storage.getUserMap(), storage.listMemoryFacts());
-  storage.saveUserMap(nextTree);
+  const nextTree = upsertFactsIntoTree(storage.getContextTree(), storage.listMemoryFacts());
+  storage.saveContextTree(nextTree);
   syncStructuredExports();
   return nextTree;
 }
@@ -1098,7 +1098,7 @@ async function sendAgentChat(input: AgentChatInput) {
     target: { type: 'agent', agentId: agent.id },
     objective: buildAgentChatObjective(agent, withUser, input.message.trim())
   }), {
-    userMap: snapshot.userMap,
+    contextTree: snapshot.contextTree,
     agents: snapshot.agents,
     groups: snapshot.groups
   }));
@@ -1198,7 +1198,7 @@ async function sendGroupChat(input: GroupChatInput) {
         'Reply only for your own role and perspective.'
       ].filter(Boolean).join('\n\n')
     }), {
-      userMap: snapshot.userMap,
+      contextTree: snapshot.contextTree,
       agents: snapshot.agents,
       groups: snapshot.groups
     }));
@@ -1357,7 +1357,7 @@ async function executeDueTask(task: TaskSpec) {
     syncRuntimeConfig();
     const snapshot = storage.getWorkspaceSnapshot();
     const result = await withRuntimeBridgeCompatibility(() => runtime.executeTask(task, {
-      userMap: snapshot.userMap,
+      contextTree: snapshot.contextTree,
       agents: snapshot.agents,
       groups: snapshot.groups
     }));
@@ -1559,7 +1559,7 @@ async function openArtifact(artifactId: string) {
   if (workspaceSecurity.isEncryptionEnabled()) {
     const fileContent = readFileSync(targetPath, 'utf8');
     if (workspaceSecurity.isEncryptedText(fileContent)) {
-      const decryptedDir = path.join(app.getPath('temp'), 'workspace-app-decrypted');
+      const decryptedDir = path.join(app.getPath('temp'), 'raman-ai-decrypted');
       mkdirSync(decryptedDir, { recursive: true });
       openPathTarget = path.join(decryptedDir, `${artifact.id}-${path.basename(targetPath)}`);
       writeFileSync(openPathTarget, workspaceSecurity.decryptText(fileContent), 'utf8');
@@ -1599,7 +1599,7 @@ function setupAutoUpdater() {
     const server = 'https://update.electronjs.org';
     // Read owner/repo from package.json build.publish config to avoid hardcoding personal identifiers.
     const owner = process.env.WORKSPACE_UPDATE_OWNER ?? 'YOUR_GITHUB_USERNAME';
-    const repo = process.env.WORKSPACE_UPDATE_REPO ?? 'workspace-app';
+    const repo = process.env.WORKSPACE_UPDATE_REPO ?? 'raman-ai';
     const feed = `${server}/${owner}/${repo}/${process.platform}-${process.arch}/${app.getVersion()}`;
     autoUpdater.setFeedURL({ url: feed });
 
@@ -1614,7 +1614,7 @@ function setupAutoUpdater() {
     autoUpdater.on('update-downloaded', (_event, releaseNotes, releaseName) => {
       const notification = new Notification({
         title: 'Update Ready',
-        body: `Workspace ${releaseName ?? 'update'} is ready. Click to restart and install.`
+        body: `Raman AI ${releaseName ?? 'update'} is ready. Click to restart and install.`
       });
 
       notification.on('click', () => {
@@ -1644,7 +1644,7 @@ async function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: '#08090a',
-    title: 'Workspace',
+    title: 'Raman AI',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1824,7 +1824,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(channels.securityEnable, async (_event, password: string) => {
     requirePermission('manage_settings');
     if (!password.trim()) {
-      throw new Error('Workspace password is required.');
+      throw new Error('Raman AI password is required.');
     }
 
     await workspaceSecurity.enable(password);
@@ -1873,9 +1873,9 @@ app.whenReady().then(async () => {
     syncStructuredExports();
     return createBackupExport(await buildLocalBundleContext(agentManager));
   });
-  ipcMain.handle(channels.userMapSave, async (_event, tree: UserMapState) => {
-    requirePermission('edit_usermap');
-    storage.saveUserMap(tree);
+  ipcMain.handle(channels.contextTreeSave, async (_event, tree: ContextTreeState) => {
+    requirePermission('edit_context');
+    storage.saveContextTree(tree);
     const factIdsInTree = collectAllFactIdsFromState(tree);
     const allFacts = storage.listMemoryFacts();
     const toDelete = allFacts.filter((f) => !factIdsInTree.has(f.id)).map((f) => f.id);
@@ -1883,11 +1883,11 @@ app.whenReady().then(async () => {
       storage.deleteMemoryFactsByIds(toDelete);
     }
     syncStructuredExports();
-    return storage.getUserMap();
+    return storage.getContextTree();
   });
-  ipcMain.handle(channels.userMapSync, async () => {
-    const tree = upsertFactsIntoTree(storage.getUserMap(), storage.listMemoryFacts());
-    storage.saveUserMap(tree);
+  ipcMain.handle(channels.contextTreeSync, async () => {
+    const tree = upsertFactsIntoTree(storage.getContextTree(), storage.listMemoryFacts());
+    storage.saveContextTree(tree);
     syncStructuredExports();
     return {
       tree,
@@ -1932,15 +1932,15 @@ app.whenReady().then(async () => {
     syncStructuredExports();
     return { ok: true };
   });
-  ipcMain.handle(channels.coordinatorSend, async (_event, input: CoordinatorRequest) => {
+  ipcMain.handle(channels.assistantSend, async (_event, input: AssistantRequest) => {
     requirePermission('create_agents');
     syncRuntimeConfig();
-    const reply = await withRuntimeBridgeCompatibility(() => runtime.sendCoordinatorRequest(input));
+    const reply = await withRuntimeBridgeCompatibility(() => runtime.sendAssistantRequest(input));
     if (reply.createdAgent) {
       storage.upsertAgent(reply.createdAgent);
       syncStructuredExports();
     }
-    await extractAndPersistMemories('chat', `coordinator:${reply.id}`, `${input.message}\n\n${reply.text}`);
+    await extractAndPersistMemories('chat', `assistant:${reply.id}`, `${input.message}\n\n${reply.text}`);
     return reply;
   });
   ipcMain.handle(channels.agentChat, async (_event, input: AgentChatInput) => {
@@ -1971,7 +1971,7 @@ app.whenReady().then(async () => {
     const objective = buildAgentChatObjective(agent, withUser, input.message.trim());
     const webContents = event.sender;
     const taskContext = {
-      userMap: snapshot.userMap,
+      contextTree: snapshot.contextTree,
       agents: snapshot.agents,
       groups: snapshot.groups
     };
@@ -1988,7 +1988,7 @@ app.whenReady().then(async () => {
     try {
       const result = await withRuntimeBridgeCompatibility(() =>
         runtime.streamAgentChat(
-          { agent, objective, userMap: snapshot.userMap, context: taskContext },
+          { agent, objective, contextTree: snapshot.contextTree, context: taskContext },
           (token) => {
             if (!webContents.isDestroyed()) {
               webContents.send(channels.chatStreamToken, { streamId, token, done: false });
@@ -2065,7 +2065,7 @@ app.whenReady().then(async () => {
     const streamId = input.streamId?.trim() || randomUUID();
     const webContents = event.sender;
     const taskContext = {
-      userMap: snapshot.userMap,
+      contextTree: snapshot.contextTree,
       agents: snapshot.agents,
       groups: snapshot.groups
     };
@@ -2137,7 +2137,7 @@ app.whenReady().then(async () => {
           {
             agent: routingDecision.agent,
             objective: groupObjective,
-            userMap: snapshot.userMap,
+            contextTree: snapshot.contextTree,
             context: taskContext
           },
           (token) => {
@@ -2331,17 +2331,17 @@ app.whenReady().then(async () => {
     syncStructuredExports();
     return saved;
   });
-  ipcMain.handle(channels.coordinatorOverrideGet, async () => {
-    return storage.getCoordinatorProviderOverride() as CoordinatorProviderOverrideSettings | null;
+  ipcMain.handle(channels.assistantOverrideGet, async () => {
+    return storage.getAssistantProviderOverride() as AssistantProviderOverrideSettings | null;
   });
   ipcMain.handle(channels.retentionConfigGet, async () => requireWorkspaceReady().getRetentionConfig());
   ipcMain.handle(channels.retentionConfigSave, async (_event, config: RetentionConfigInput) => {
     requirePermission('manage_settings');
     return requireWorkspaceReady().saveRetentionConfig(config);
   });
-  ipcMain.handle(channels.coordinatorOverrideSave, async (_event, override: CoordinatorProviderOverrideSettings | null) => {
+  ipcMain.handle(channels.assistantOverrideSave, async (_event, override: AssistantProviderOverrideSettings | null) => {
     requirePermission('manage_settings');
-    const saved = storage.saveCoordinatorProviderOverride(override);
+    const saved = storage.saveAssistantProviderOverride(override);
     syncStructuredExports();
     return saved;
   });
@@ -2393,7 +2393,7 @@ app.whenReady().then(async () => {
     });
     const result = await withRuntimeBridgeCompatibility(() =>
       runtime.executeTask(task, {
-        userMap: snapshot.userMap,
+        contextTree: snapshot.contextTree,
         agents: snapshot.agents,
         groups: snapshot.groups,
       }),

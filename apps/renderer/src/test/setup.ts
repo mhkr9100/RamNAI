@@ -16,7 +16,7 @@ Object.defineProperty(navigator, 'clipboard', {
 const noopAsync = () => Promise.resolve(null);
 const noopAsyncArr = () => Promise.resolve([]);
 
-Object.defineProperty(window, 'workspaceApp', {
+Object.defineProperty(window, 'ramanAI', {
   value: {
     workspace: { getSnapshot: vi.fn() },
     bridge: {

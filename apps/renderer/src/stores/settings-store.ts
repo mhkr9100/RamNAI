@@ -5,10 +5,10 @@ import type { WorkspaceSecurityState } from '@/lib/electron';
 import type {
   AgentMode,
   OllamaRuntimeStatus,
-  CoordinatorProviderOverrideSettings,
+  AssistantProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderId
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 import { useWorkspaceStore } from './workspace-store';
 
 function getErrorMessage(error: unknown): string {
@@ -16,7 +16,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
-export type SettingsSection = 'runtime' | 'providers' | 'agents' | 'coordinator';
+export type SettingsSection = 'runtime' | 'providers' | 'agents' | 'assistant';
 
 export interface SaveProviderProfileInput {
   id?: string;
@@ -31,7 +31,7 @@ export interface SaveProviderProfileInput {
 export interface SettingsStoreState {
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
-  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
+  assistantOverride: AssistantProviderOverrideSettings | null;
   workspaceSecurity: WorkspaceSecurityState | null;
   agentMode: AgentMode;
   ollamaStatus: OllamaRuntimeStatus | null;
@@ -44,7 +44,7 @@ export interface SettingsStoreState {
   deleteProviderProfile: (profile: ProviderAuthProfile) => Promise<void>;
   testProviderProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   installDefaultModels: () => Promise<void>;
-  saveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
+  saveAssistantOverride: (override: AssistantProviderOverrideSettings | null) => Promise<void>;
   saveAgentMode: (mode: AgentMode) => Promise<void>;
   setProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
   enableWorkspaceEncryption: (password: string) => Promise<void>;
@@ -60,7 +60,7 @@ const EMPTY_PROVIDER_SELECTIONS: Record<RemoteProviderId, string | null> = {
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   providerProfiles: [],
   providerSelections: { ...EMPTY_PROVIDER_SELECTIONS },
-  coordinatorOverride: null,
+  assistantOverride: null,
   workspaceSecurity: null,
   agentMode: 'auto',
   ollamaStatus: null,
@@ -79,14 +79,14 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
 
     try {
       const api = getDesktopApi();
-      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, coordinatorOverride, agentMode, workspaceSecurity] =
+      const [providerProfiles, ollamaStatus, openaiSelection, anthropicSelection, googleSelection, assistantOverride, agentMode, workspaceSecurity] =
         await Promise.all([
           api.settings.listProviderProfiles(),
           api.settings.getOllamaStatus(),
           api.settings.getProviderSelection('openai'),
           api.settings.getProviderSelection('anthropic'),
           api.settings.getProviderSelection('google'),
-          api.settings.getCoordinatorOverride(),
+          api.settings.getAssistantOverride(),
           api.settings.getAgentMode(),
           api.security.getState()
         ]);
@@ -98,7 +98,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
           anthropic: anthropicSelection?.profileId ?? null,
           google: googleSelection?.profileId ?? null
         },
-        coordinatorOverride,
+        assistantOverride,
         workspaceSecurity,
         agentMode: agentMode ?? 'auto',
         ollamaStatus,
@@ -213,17 +213,17 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       set({ loading: false });
     }
   },
-  async saveCoordinatorOverride(coordinatorOverride) {
+  async saveAssistantOverride(assistantOverride) {
     const workspaceStore = useWorkspaceStore.getState();
 
     set({ loading: true });
     workspaceStore.clearError();
 
     try {
-      await getDesktopApi().settings.saveCoordinatorOverride(coordinatorOverride);
+      await getDesktopApi().settings.saveAssistantOverride(assistantOverride);
       await get().refreshSettings();
       if (useWorkspaceStore.getState().error === null) {
-        workspaceStore.setNotice(coordinatorOverride ? 'Saved Coordinator settings.' : 'Cleared Coordinator settings.');
+        workspaceStore.setNotice(assistantOverride ? 'Saved Assistant settings.' : 'Cleared Assistant settings.');
       }
     } catch (error) {
       workspaceStore.setError(getErrorMessage(error));
@@ -277,7 +277,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       const security = await getDesktopApi().security.enable(password);
       set({ workspaceSecurity: security, loading: false });
       await workspaceStore.refreshSnapshot();
-      workspaceStore.setNotice('Workspace encryption enabled.');
+      workspaceStore.setNotice('Data encryption enabled.');
     } catch (error) {
       workspaceStore.setError(getErrorMessage(error));
       set({ loading: false });
@@ -293,7 +293,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       const security = await getDesktopApi().security.disable(password);
       set({ workspaceSecurity: security, loading: false });
       await workspaceStore.refreshSnapshot();
-      workspaceStore.setNotice('Workspace encryption disabled.');
+      workspaceStore.setNotice('Data encryption disabled.');
     } catch (error) {
       workspaceStore.setError(getErrorMessage(error));
       set({ loading: false });

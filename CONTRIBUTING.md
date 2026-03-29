@@ -1,4 +1,4 @@
-# Contributing to Workspace
+# Contributing to Raman AI
 
 Thanks for your interest in contributing!
 
@@ -42,7 +42,7 @@ packages/
 - TypeScript strict mode
 - No mocked or placeholder data in production paths (see `CRITICAL_RULES.md`)
 - Business logic stays in the desktop/runtime layer — renderer handles presentation only
-- All domain types live in `@workspace/shared`
+- All domain types live in `@raman-ai/shared`
 
 ## Pull Requests
 

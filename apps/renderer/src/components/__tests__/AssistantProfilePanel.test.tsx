@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CoordinatorProfilePanel } from '../CoordinatorProfilePanel';
-import type { CoordinatorProviderOverrideSettings, ProviderModelPreset } from '@workspace/shared';
+import { AssistantProfilePanel } from '../AssistantProfilePanel';
+import type { AssistantProviderOverrideSettings, ProviderModelPreset } from '@raman-ai/shared';
 
 const mockModels: ProviderModelPreset[] = [
   { id: 'qwen2.5-coder:3b', provider: 'ollama', installed: true, label: 'Qwen 2.5 Coder 3B', recommended: false },
@@ -10,14 +10,14 @@ const mockModels: ProviderModelPreset[] = [
   { id: 'gpt-4o', provider: 'openai', installed: false, label: 'GPT-4o', recommended: true },
 ];
 
-const mockOverride: CoordinatorProviderOverrideSettings = {
+const mockOverride: AssistantProviderOverrideSettings = {
   provider: 'ollama',
   modelId: 'qwen2.5-coder:3b',
 };
 
-describe('CoordinatorProfilePanel', () => {
+describe('AssistantProfilePanel', () => {
   const onClose = vi.fn();
-  const onSaveCoordinatorOverride = vi.fn().mockResolvedValue(undefined);
+  const onSaveAssistantOverride = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,41 +25,41 @@ describe('CoordinatorProfilePanel', () => {
 
   it('renders nothing when open is false', () => {
     const { container } = render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={false}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={false}
       />,
     );
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders Coordinator identity when open', () => {
+  it('renders Raman AI identity when open', () => {
     render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={true}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={false}
       />,
     );
-    expect(screen.getByText('Coordinator')).toBeInTheDocument();
-    expect(screen.getByText('META ARCHITECT')).toBeInTheDocument();
+    expect(screen.getByText('Raman AI')).toBeInTheDocument();
+    expect(screen.getByText('PRIMARY SYSTEM')).toBeInTheDocument();
   });
 
   it('close button calls onClose', () => {
     render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={true}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={false}
       />,
     );
@@ -67,30 +67,30 @@ describe('CoordinatorProfilePanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('shows Coordinator capabilities', () => {
+  it('shows Raman AI capabilities', () => {
     render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={true}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={false}
       />,
     );
-    expect(screen.getByText('Coordinator Profile')).toBeInTheDocument();
+    expect(screen.getByText('Raman AI Profile')).toBeInTheDocument();
     expect(screen.getByText('MODEL ROUTING')).toBeInTheDocument();
     expect(screen.getByText('SYSTEM INSTRUCTIONS')).toBeInTheDocument();
   });
 
   it('displays model routing section', () => {
     render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={true}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={false}
       />,
     );
@@ -99,12 +99,12 @@ describe('CoordinatorProfilePanel', () => {
 
   it('shows channels section with loading or empty state', () => {
     render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={true}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={false}
       />,
     );
@@ -113,12 +113,12 @@ describe('CoordinatorProfilePanel', () => {
 
   it('save button is disabled when busy', () => {
     render(
-      <CoordinatorProfilePanel
+      <AssistantProfilePanel
         open={true}
         onClose={onClose}
-        coordinatorOverride={mockOverride}
+        assistantOverride={mockOverride}
         models={mockModels}
-        onSaveCoordinatorOverride={onSaveCoordinatorOverride}
+        onSaveAssistantOverride={onSaveAssistantOverride}
         busy={true}
       />,
     );

@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
-import type { ProviderId } from '@workspace/shared';
+import type { ProviderId } from '@raman-ai/shared';
 import { EXTERNAL_SECRETS_PATH } from './runtime-compat.js';
 
 export interface SecretStoreCipher {
@@ -33,7 +33,7 @@ export interface SecretStoreOptions {
   compatPath?: string;
 }
 
-const DEFAULT_AUTH_DIR = path.join(os.homedir(), '.workspace-app', 'runtime-auth');
+const DEFAULT_AUTH_DIR = path.join(os.homedir(), '.raman-ai', 'runtime-auth');
 const DEFAULT_SECRET_FILE = 'provider-secrets.enc.json';
 
 async function readJsonFileOptional<T>(filePath: string): Promise<T | null> {

@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
-import type { AuthSecretRef, ProviderAuthProfile, ProviderId } from '@workspace/shared';
+import type { AuthSecretRef, ProviderAuthProfile, ProviderId } from '@raman-ai/shared';
 import {
   EXTERNAL_AUTH_PROFILES_PATH,
   EXTERNAL_RUNTIME_CLI,
@@ -11,7 +11,7 @@ import {
 } from './runtime-compat.js';
 import type { SecretStoreCipher } from './secret-store.js';
 
-const NATIVE_SECRETS_SERVICE = 'com.workspace-app.provider-secrets';
+const NATIVE_SECRETS_SERVICE = 'com.raman-ai.provider-secrets';
 const NATIVE_SECRETS_ACCOUNT = 'provider-secrets';
 
 interface AuthProfilesFile {
@@ -38,7 +38,7 @@ export interface ResolvedProviderCredentials {
   token?: string;
 }
 
-const APP_AUTH_DIR = path.join(os.homedir(), '.workspace-app', 'runtime-auth');
+const APP_AUTH_DIR = path.join(os.homedir(), '.raman-ai', 'runtime-auth');
 const APP_AUTH_PROFILES_PATH = path.join(APP_AUTH_DIR, 'auth-profiles.json');
 const APP_SECRETS_PATH = path.join(APP_AUTH_DIR, 'secrets.enc.json');
 const LEGACY_APP_SECRETS_PATH = path.join(APP_AUTH_DIR, 'secrets.json');

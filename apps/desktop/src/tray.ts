@@ -19,11 +19,11 @@ export function setupTray(getMainWindow: () => BrowserWindow | null): void {
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('Workspace');
+  tray.setToolTip('Raman AI');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open Workspace',
+      label: 'Open Raman AI',
       click: () => {
         const win = getMainWindow();
         if (win) {
@@ -34,14 +34,14 @@ export function setupTray(getMainWindow: () => BrowserWindow | null): void {
     },
     { type: 'separator' },
     {
-      label: 'Quick Ask Coordinator',
+      label: 'Quick Ask Raman AI',
       accelerator: 'CommandOrControl+Shift+P',
       click: () => {
         const win = getMainWindow();
         if (win) {
           win.show();
           win.focus();
-          win.webContents.send('navigate', 'coordinator');
+          win.webContents.send('navigate', 'assistant');
         }
       },
     },
@@ -89,7 +89,7 @@ export function setupTray(getMainWindow: () => BrowserWindow | null): void {
     },
     { type: 'separator' },
     {
-      label: 'Quit Workspace',
+      label: 'Quit Raman AI',
       accelerator: 'CommandOrControl+Q',
       click: () => {
         app.quit();

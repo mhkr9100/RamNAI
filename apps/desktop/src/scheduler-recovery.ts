@@ -1,5 +1,5 @@
-import type { SqliteStorage } from '@workspace/storage';
-import type { TaskSpec, TaskRunRecord, WorkItem } from '@workspace/shared';
+import type { SqliteStorage } from '@raman-ai/storage';
+import type { TaskSpec, TaskRunRecord, WorkItem } from '@raman-ai/shared';
 import { isRecurring } from './task-scheduling.js';
 
 const RECOVERY_ERROR_MESSAGE = 'Recovered after app restart during an in-progress run.';

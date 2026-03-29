@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { WorkspaceSnapshot } from '@workspace/storage';
-import type { RuntimeWorkspaceManager } from '@workspace/runtime';
+import type { WorkspaceSnapshot } from '@raman-ai/storage';
+import type { RuntimeWorkspaceManager } from '@raman-ai/runtime';
 
 export interface WorkspacePaths {
   root: string;
@@ -44,9 +44,9 @@ export function writeJsonFile(filePath: string, value: unknown, encoder?: Worksp
 
 export function writeStructuredExports(paths: WorkspacePaths, snapshot: WorkspaceSnapshot, encoder?: WorkspaceTextEncoder) {
   writeJsonFile(path.join(paths.context, 'profile.json'), snapshot.profile, encoder);
-  writeJsonFile(path.join(paths.context, 'usermap-tree.json'), snapshot.userMap, encoder);
-  writeJsonFile(path.join(paths.context, 'usermap-public-tree.json'), snapshot.publicUserMap, encoder);
-  writeJsonFile(path.join(paths.context, 'usermap-private-tree.json'), snapshot.privateUserMap, encoder);
+  writeJsonFile(path.join(paths.context, 'context-tree.json'), snapshot.contextTree, encoder);
+  writeJsonFile(path.join(paths.context, 'context-public-tree.json'), snapshot.publicContextTree, encoder);
+  writeJsonFile(path.join(paths.context, 'context-private-tree.json'), snapshot.privateContextTree, encoder);
   writeJsonFile(path.join(paths.context, 'memory-facts.json'), snapshot.memoryFacts, encoder);
   writeJsonFile(path.join(paths.context, 'memory-public-facts.json'), snapshot.publicMemoryFacts, encoder);
   writeJsonFile(path.join(paths.context, 'memory-private-facts.json'), snapshot.privateMemoryFacts, encoder);
@@ -79,7 +79,7 @@ export async function syncRuntimeWorkspace(
 
   return runtimeWorkspace.sync(paths.root, {
     profile: snapshot.profile,
-    userMap: snapshot.userMap,
+    contextTree: snapshot.contextTree,
     agents: snapshot.agents,
     groups: snapshot.groups,
     memoryFacts: snapshot.memoryFacts,

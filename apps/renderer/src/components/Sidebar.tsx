@@ -3,12 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Monitor, Moon, Settings2, Sun, User, Users } from 'lucide-react';
 import { useThemeStore } from '../stores/theme-store';
 import { AppLogo } from './AppLogo';
-import { CoordinatorIcon } from './icons/CoordinatorIcon';
-import { UserMapIcon } from './icons/UserMapIcon';
+import { AssistantIcon } from './icons/AssistantIcon';
 import { ChatIcon } from './icons/ChatIcon';
 import { Kbd } from './ui';
 
-export type ViewId = 'home' | 'coordinator' | 'chats' | 'groups' | 'work' | 'usermap' | 'settings';
+export type ViewId = 'home' | 'assistant' | 'chats' | 'groups' | 'work' | 'settings';
 
 interface SidebarProps {
   activeView: ViewId;
@@ -16,8 +15,7 @@ interface SidebarProps {
 }
 
 const mainNavItems: Array<{ id: ViewId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-  { id: 'coordinator', label: 'Coordinator', icon: CoordinatorIcon },
-  { id: 'usermap', label: 'UserMap', icon: UserMapIcon },
+  { id: 'assistant', label: 'Raman AI', icon: AssistantIcon },
   { id: 'chats', label: 'Chats', icon: ChatIcon },
   { id: 'groups', label: 'Groups', icon: Users },
 ];
@@ -109,7 +107,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
             'flex items-center gap-2.5 transition-opacity hover:opacity-80',
             activeView === 'home' ? 'opacity-100' : '',
           ].join(' ')}
-          title="Workspace Dashboard"
+          title="Raman AI Dashboard"
         >
           <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-gray-900 dark:text-white">
             <AppLogo size={28} />
@@ -124,7 +122,7 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
                 transition={{ duration: 0.15 }}
                 className="flex flex-col"
               >
-                <span className="text-[11px] font-black text-gray-900 dark:text-white whitespace-nowrap tracking-[0.2em]">Workspace</span>
+                <span className="text-[11px] font-black text-gray-900 dark:text-white whitespace-nowrap tracking-[0.2em]">Raman AI</span>
               </motion.div>
             )}
           </AnimatePresence>

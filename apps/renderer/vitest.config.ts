@@ -19,7 +19,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@workspace/shared': path.resolve(__dirname, '../../packages/shared/src'),
+      '@raman-ai/shared': path.resolve(__dirname, '../../packages/shared/src'),
     },
   },
 });

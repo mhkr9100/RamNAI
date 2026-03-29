@@ -7,9 +7,8 @@ import { DashboardView } from './components/DashboardView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { Sidebar, ViewId } from './components/Sidebar';
-import { CoordinatorWorkspace } from './components/CoordinatorWorkspace';
+import { AssistantWorkspace } from './components/AssistantWorkspace';
 import { SettingsView } from './components/SettingsView';
-import { UserMapPanel } from './components/UserMapPanel';
 import { WorkView } from './components/WorkView';
 import { GroupsWorkspace } from './components/GroupsWorkspace';
 import { VoicePanel } from './components/VoicePanel';
@@ -19,16 +18,15 @@ import { Button, Card, Input, useToast } from './components/ui';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useWorkspaceStore } from './stores/workspace-store';
 import { useNavigationStore } from './stores/navigation-store';
-import { useCoordinatorStore } from './stores/coordinator-store';
+import { useAssistantStore } from './stores/assistant-store';
 import { useChatStore } from './stores/chat-store';
 import { useSettingsStore } from './stores/settings-store';
 import { AgentChatInput, getDesktopApi, GroupChatInput, TaskCreateInput } from './lib/electron';
 import { logger } from './lib/logger';
 import type {
-  CoordinatorMode,
-  UserMapState,
+  AssistantMode,
   WorkItem,
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 import type { WorkspaceSecurityState } from './lib/electron';
 
 function getErrorMessage(e: unknown): string {
@@ -43,7 +41,7 @@ export default function App() {
   // -- Zustand stores --
   const { snapshot, loading, error, refreshSnapshot, loadMoreTasks, loadMoreWorkItems, setError, clearError, startPolling, stopPolling } = useWorkspaceStore();
   const { activeView, navigate } = useNavigationStore();
-  const coordinatorStore = useCoordinatorStore();
+  const assistantStore = useAssistantStore();
   const chatStore = useChatStore();
   const settingsStore = useSettingsStore();
   const toast = useToast();
@@ -65,9 +63,8 @@ export default function App() {
     useMemo(() => [
       { key: 'k', meta: true, handler: () => setCmdPaletteOpen(v => !v), description: 'Command palette', label: 'Command Palette' },
       { key: '0', meta: true, handler: () => navigate('home'), description: 'Dashboard', label: 'Dashboard' },
-      { key: '1', meta: true, handler: () => navigate('coordinator'), description: 'Coordinator', label: 'Coordinator' },
+      { key: '1', meta: true, handler: () => navigate('assistant'), description: 'Raman AI', label: 'Raman AI' },
       { key: '2', meta: true, handler: () => navigate('chats'), description: 'Chats', label: 'Chats' },
-      { key: '3', meta: true, handler: () => navigate('usermap'), description: 'Context Brain', label: 'Context Brain' },
       { key: '4', meta: true, handler: () => navigate('work'), description: 'Work', label: 'Work' },
       { key: ',', meta: true, handler: () => navigate('settings'), description: 'Settings', label: 'Settings' },
     ], [navigate]),
@@ -139,7 +136,7 @@ export default function App() {
         await api.profile.save({ ...profile, email: '' });
         await refreshSnapshot();
         setShowOnboarding(false);
-        toast.success('Welcome to Workspace!');
+        toast.success('Welcome to Raman AI!');
       } catch (e) {
         setError(getErrorMessage(e));
         throw e;
@@ -168,18 +165,18 @@ export default function App() {
     [api, snapshot?.profile, withBusy],
   );
 
-  // -- Coordinator --
-  const handleCoordinatorSend = useCallback(
-    async (mode: CoordinatorMode, message: string) => {
+  // -- Assistant --
+  const handleAssistantSend = useCallback(
+    async (mode: AssistantMode, message: string) => {
       if (!snapshot) return;
-      await coordinatorStore.sendMessage(mode, message, snapshot);
-      const msgs = useCoordinatorStore.getState().messages;
+      await assistantStore.sendMessage(mode, message, snapshot);
+      const msgs = useAssistantStore.getState().messages;
       const last = msgs[msgs.length - 1];
       if (last?.mode === 'create' && last.role === 'assistant') {
         navigate('chats');
       }
     },
-    [snapshot, coordinatorStore, navigate],
+    [snapshot, assistantStore, navigate],
   );
 
   // -- Tasks --
@@ -370,17 +367,17 @@ export default function App() {
         toast.info('Loaded Work result into chat composer.');
         return;
       }
-      coordinatorStore.injectWorkMessage(item);
-      navigate('coordinator');
+      assistantStore.injectWorkMessage(item);
+      navigate('assistant');
     },
-    [snapshot?.agents, chatStore, coordinatorStore, navigate, toast],
+    [snapshot?.agents, chatStore, assistantStore, navigate, toast],
   );  const handleUnlockWorkspace = useCallback(async (password: string) => {
     if (!api) throw new Error('Desktop bridge unavailable.');
     clearError();
     const security = await api.security.unlock(password);
     setWorkspaceSecurity(security);
     await Promise.all([refreshSnapshot(), settingsStore.refreshSettings()]);
-    toast.success('Workspace unlocked.');
+    toast.success('Raman AI unlocked.');
   }, [api, clearError, refreshSnapshot, settingsStore, toast]);
 
 
@@ -391,8 +388,8 @@ export default function App() {
   );
 
   const handleOpenChatDestination = useCallback(
-    (target: ChatTarget | 'coordinator') => {
-      if (target === 'coordinator') { navigate('coordinator'); return; }
+    (target: ChatTarget | 'assistant') => {
+      if (target === 'assistant') { navigate('assistant'); return; }
       chatStore.selectTarget(target); chatStore.clearDraftSeed(); navigate('chats');
     },
     [chatStore, navigate],
@@ -403,22 +400,11 @@ export default function App() {
     [chatStore],
   );
 
-  // -- UserMap --
-  const handleSaveUserMap = useCallback(
-    (tree: UserMapState) => withBusy(async () => { if (!api) throw new Error('Desktop bridge unavailable.'); await api.userMap.save(tree); }, 'UserMap saved.'),
-    [api, withBusy],
-  );
-
-  const handleSyncUserMap = useCallback(
-    () => withBusy(async () => { if (!api) throw new Error('Desktop bridge unavailable.'); await api.userMap.syncMemories(); }, 'UserMap synced with memory.'),
-    [api, withBusy],
-  );
-
   // -- Settings (delegated to store, kept for props compat) --
-  const handleClearCoordinatorTranscript = useCallback(() => {
-    coordinatorStore.clearTranscript();
-    toast.info('Coordinator history cleared.');
-  }, [coordinatorStore, toast]);
+  const handleClearAssistantTranscript = useCallback(() => {
+    assistantStore.clearTranscript();
+    toast.info('Raman AI history cleared.');
+  }, [assistantStore, toast]);
 
   // -- Render --
 
@@ -432,7 +418,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-500 dark:text-white/50">
             <LoaderCircle className="animate-spin text-brand" size={16} />
-            Loading Workspace…
+            Loading Raman AI...
           </div>
         </motion.div>
       </div>
@@ -481,8 +467,8 @@ export default function App() {
     return <OnboardingFlow {...onboardingProps} />;
   }
 
-  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', coordinator: 'Coordinator', chats: 'Chats', groups: 'Groups', usermap: 'UserMap', work: 'Work', settings: 'Settings' };
-  const viewDescriptions: Record<ViewId, string> = { home: '', coordinator: '', chats: '', groups: '', usermap: '', work: '', settings: '' };
+  const viewTitles: Record<ViewId, string> = { home: 'Dashboard', assistant: 'Raman AI', chats: 'Chats', groups: 'Groups', work: 'Work', settings: 'Settings' };
+  const viewDescriptions: Record<ViewId, string> = { home: '', assistant: '', chats: '', groups: '', work: '', settings: '' };
 
   return (
     <div className="flex h-screen overflow-hidden bg-shell-50 dark:bg-surface-0 text-slate-900 dark:text-white">
@@ -543,9 +529,9 @@ export default function App() {
                   <DashboardView snapshot={snapshot} onNavigate={navigate} />
                 </ErrorBoundary>
               )}
-              {activeView === 'coordinator' && (
-                <ErrorBoundary viewName="Coordinator">
-                  <CoordinatorWorkspace snapshot={snapshot} messages={coordinatorStore.messages} busy={coordinatorStore.busy} onSend={handleCoordinatorSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearCoordinatorTranscript} coordinatorOverride={settingsStore.coordinatorOverride} onSaveCoordinatorOverride={settingsStore.saveCoordinatorOverride} />
+              {activeView === 'assistant' && (
+                <ErrorBoundary viewName="Raman AI">
+                  <AssistantWorkspace snapshot={snapshot} messages={assistantStore.messages} busy={assistantStore.busy} onSend={handleAssistantSend} onCreateTask={handleTaskCreate} onClearTranscript={handleClearAssistantTranscript} assistantOverride={settingsStore.assistantOverride} onSaveAssistantOverride={settingsStore.saveAssistantOverride} />
                 </ErrorBoundary>
               )}
               {activeView === 'chats' && (
@@ -563,17 +549,12 @@ export default function App() {
                   <WorkView snapshot={snapshot} busy={busy} onDeleteTask={handleDeleteTask} onDuplicateTask={handleDuplicateTask} onRerunTask={handleRerunTask} onDeleteWorkItem={handleDeleteWorkItem} onSendToChat={handleSendWorkToChat} onOpenChat={handleOpenChatDestination} onOpenArtifact={handleOpenArtifact} onLoadMoreTasks={loadMoreTasks} onLoadMoreWorkItems={loadMoreWorkItems} />
                 </ErrorBoundary>
               )}
-              {activeView === 'usermap' && (
-                <ErrorBoundary viewName="UserMap">
-                  <UserMapPanel tree={snapshot.userMap} facts={snapshot.memoryFacts} busy={busy} onSave={handleSaveUserMap} onSync={handleSyncUserMap} />
-                </ErrorBoundary>
-              )}
               {activeView === 'settings' && (
                 <ErrorBoundary viewName="Settings">
                   <SettingsView
                     activeSection={settingsStore.activeSection} onSelectSection={settingsStore.setActiveSection}
                     runtimeReady={snapshot.runtime.available} providerProfiles={settingsStore.providerProfiles}
-                    providerSelections={settingsStore.providerSelections} coordinatorOverride={settingsStore.coordinatorOverride}
+                    providerSelections={settingsStore.providerSelections} assistantOverride={settingsStore.assistantOverride}
                     workspaceSecurity={settingsStore.workspaceSecurity}
                     agentMode={settingsStore.agentMode} onSaveAgentMode={settingsStore.saveAgentMode}
                     ollamaStatus={settingsStore.ollamaStatus} models={snapshot.models} snapshot={snapshot}
@@ -581,7 +562,7 @@ export default function App() {
                     onRefresh={settingsStore.refreshSettings} onInstallDefaults={settingsStore.installDefaultModels}
                     onSaveProfile={settingsStore.saveProviderProfile} onDeleteProfile={settingsStore.deleteProviderProfile}
                     onTestProfile={settingsStore.testProviderProfile} onSetProviderSelection={settingsStore.setProviderSelection}
-                    onSaveCoordinatorOverride={settingsStore.saveCoordinatorOverride}
+                    onSaveAssistantOverride={settingsStore.saveAssistantOverride}
                     onEnableWorkspaceEncryption={settingsStore.enableWorkspaceEncryption}
                     onDisableWorkspaceEncryption={settingsStore.disableWorkspaceEncryption}
                     onSaveScheduleTimezone={handleSaveScheduleTimezone}

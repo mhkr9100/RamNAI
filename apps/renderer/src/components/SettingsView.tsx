@@ -4,11 +4,11 @@ import { Download, FlaskConical, KeyRound, Trash2 } from 'lucide-react';
 import type {
   AgentMode,
   OllamaRuntimeStatus,
-  CoordinatorProviderOverrideSettings,
+  AssistantProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderId,
   ProviderModelPreset,
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 import type { WorkspaceSecurityState } from '@/lib/electron';
 import {
   Badge,
@@ -27,7 +27,7 @@ import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTarget } from './ChatsWorkspace';
 import { DirectoryView } from './DirectoryView';
 
-type SettingsSection = 'runtime' | 'providers' | 'agents' | 'coordinator';
+type SettingsSection = 'runtime' | 'providers' | 'agents' | 'assistant';
 type RemoteProviderId = Exclude<ProviderId, 'ollama'>;
 
 interface SettingsViewProps {
@@ -36,7 +36,7 @@ interface SettingsViewProps {
   runtimeReady: boolean;
   providerProfiles: ProviderAuthProfile[];
   providerSelections: Record<RemoteProviderId, string | null>;
-  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
+  assistantOverride: AssistantProviderOverrideSettings | null;
   workspaceSecurity: WorkspaceSecurityState | null;
   agentMode: AgentMode;
   onSaveAgentMode: (mode: AgentMode) => Promise<void>;
@@ -59,7 +59,7 @@ interface SettingsViewProps {
   onDeleteProfile: (profile: ProviderAuthProfile) => Promise<void>;
   onTestProfile: (profile: ProviderAuthProfile, probeWithRuntime?: boolean) => Promise<void>;
   onSetProviderSelection: (provider: RemoteProviderId, profileId: string | null) => Promise<void>;
-  onSaveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<void>;
+  onSaveAssistantOverride: (override: AssistantProviderOverrideSettings | null) => Promise<void>;
   onEnableWorkspaceEncryption: (password: string) => Promise<void>;
   onDisableWorkspaceEncryption: (password: string) => Promise<void>;
   onSaveScheduleTimezone: (timezone: string) => Promise<void>;
@@ -72,7 +72,7 @@ const sections: Array<{ id: SettingsSection; label: string }> = [
   { id: 'runtime', label: 'Local' },
   { id: 'providers', label: 'Accounts' },
   { id: 'agents', label: 'Agents' },
-  { id: 'coordinator', label: 'Coordinator' },
+  { id: 'assistant', label: 'Assistant' },
 ];
 
 const listVariants = {
@@ -95,7 +95,7 @@ export function SettingsView({
   runtimeReady,
   providerProfiles,
   providerSelections,
-  coordinatorOverride,
+  assistantOverride,
   workspaceSecurity,
   agentMode,
   onSaveAgentMode,
@@ -110,7 +110,7 @@ export function SettingsView({
   onDeleteProfile,
   onTestProfile,
   onSetProviderSelection,
-  onSaveCoordinatorOverride,
+  onSaveAssistantOverride,
   onEnableWorkspaceEncryption,
   onDisableWorkspaceEncryption,
   onSaveScheduleTimezone,
@@ -135,19 +135,19 @@ export function SettingsView({
     [models],
   );
 
-  const [coordinatorOverrideProvider, setCoordinatorOverrideProvider] = useState<ProviderId>(coordinatorOverride?.provider ?? 'ollama');
-  const [coordinatorOverrideModelId, setCoordinatorOverrideModelId] = useState<string>(coordinatorOverride?.modelId ?? '');
+  const [assistantOverrideProvider, setAssistantOverrideProvider] = useState<ProviderId>(assistantOverride?.provider ?? 'ollama');
+  const [assistantOverrideModelId, setAssistantOverrideModelId] = useState<string>(assistantOverride?.modelId ?? '');
 
   useEffect(() => {
-    if (coordinatorOverride) {
-      setCoordinatorOverrideProvider(coordinatorOverride.provider);
-      setCoordinatorOverrideModelId(coordinatorOverride.modelId);
+    if (assistantOverride) {
+      setAssistantOverrideProvider(assistantOverride.provider);
+      setAssistantOverrideModelId(assistantOverride.modelId);
       return;
     }
 
-    setCoordinatorOverrideProvider('ollama');
-    setCoordinatorOverrideModelId(installedOllamaModels[0]?.id ?? '');
-  }, [coordinatorOverride, installedOllamaModels]);
+    setAssistantOverrideProvider('ollama');
+    setAssistantOverrideModelId(installedOllamaModels[0]?.id ?? '');
+  }, [assistantOverride, installedOllamaModels]);
 
   const installedModelCount = useMemo(
     () => models.filter((model) => model.installed).length,
@@ -307,7 +307,7 @@ export function SettingsView({
               ) : null}
               {workspaceSecurity?.enabled ? (
                 <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
-                  Workspace encryption disables the plaintext runtime-workspace mirror, so direct local/cloud execution stays on and bridge execution is bypassed.
+                  Data encryption disables the plaintext runtime mirror, so direct local/cloud execution stays on and bridge execution is bypassed.
                 </div>
               ) : null}
             </CardSection>
@@ -463,7 +463,7 @@ export function SettingsView({
 
             <Divider className="my-5" />
 
-            <CardSection label="Workspace Encryption">
+            <CardSection label="Data Encryption">
               <Card variant="default" padding="md" animate={false} className="bg-surface-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -704,13 +704,13 @@ export function SettingsView({
         />
       ) : null}
 
-      {activeSection === 'coordinator' ? (
+      {activeSection === 'assistant' ? (
         <Card variant="default" padding="lg" animate={false} className="bg-surface-2">
           <CardHeader
-            title="Coordinator"
+            title="Assistant"
             action={
-              <Badge variant={coordinatorOverride ? 'brand' : 'default'}>
-                {coordinatorOverride ? `${coordinatorOverride.provider} / ${coordinatorOverride.modelId}` : 'Automatic'}
+              <Badge variant={assistantOverride ? 'brand' : 'default'}>
+                {assistantOverride ? `${assistantOverride.provider} / ${assistantOverride.modelId}` : 'Automatic'}
               </Badge>
             }
           />
@@ -721,27 +721,27 @@ export function SettingsView({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                const modelId = coordinatorOverrideModelId.trim();
+                const modelId = assistantOverrideModelId.trim();
                 if (!modelId) return;
-                await onSaveCoordinatorOverride({ provider: coordinatorOverrideProvider, modelId });
+                await onSaveAssistantOverride({ provider: assistantOverrideProvider, modelId });
               }}
               className="space-y-4"
             >
               <Select
                 label="Provider"
-                value={coordinatorOverrideProvider}
+                value={assistantOverrideProvider}
                 onChange={(e) => {
                   const nextProvider = e.target.value as ProviderId;
-                  setCoordinatorOverrideProvider(nextProvider);
+                  setAssistantOverrideProvider(nextProvider);
 
                   const installedForProvider = models.filter((m) => m.provider === nextProvider && m.installed);
-                  const isCurrentStillValid = coordinatorOverrideModelId
-                    ? installedForProvider.some((m) => m.id === coordinatorOverrideModelId)
+                  const isCurrentStillValid = assistantOverrideModelId
+                    ? installedForProvider.some((m) => m.id === assistantOverrideModelId)
                     : false;
                   if (isCurrentStillValid) return;
 
-                  const nextModelId = nextProvider === coordinatorOverride?.provider ? coordinatorOverride?.modelId : installedForProvider[0]?.id;
-                  setCoordinatorOverrideModelId(nextModelId ?? '');
+                  const nextModelId = nextProvider === assistantOverride?.provider ? assistantOverride?.modelId : installedForProvider[0]?.id;
+                  setAssistantOverrideModelId(nextModelId ?? '');
                 }}
                 disabled={busy || loading}
                 options={[
@@ -754,7 +754,7 @@ export function SettingsView({
 
               {(() => {
                 const installedForProvider = models.filter(
-                  (m) => m.provider === coordinatorOverrideProvider && m.installed,
+                  (m) => m.provider === assistantOverrideProvider && m.installed,
                 );
                 const options: Array<{ value: string; label: string; disabled?: boolean }> = installedForProvider.map((m) => ({
                   value: m.id,
@@ -763,8 +763,8 @@ export function SettingsView({
                 }));
 
                 // Keep the currently selected model visible even if it's not installed.
-                if (coordinatorOverrideModelId && !options.some((opt) => opt.value === coordinatorOverrideModelId)) {
-                  options.unshift({ value: coordinatorOverrideModelId, label: `${coordinatorOverrideModelId} (not installed)`, disabled: true });
+                if (assistantOverrideModelId && !options.some((opt) => opt.value === assistantOverrideModelId)) {
+                  options.unshift({ value: assistantOverrideModelId, label: `${assistantOverrideModelId} (not installed)`, disabled: true });
                 }
 
                 const resolvedOptions =
@@ -772,12 +772,12 @@ export function SettingsView({
                     ? options
                     : [{ value: '', label: 'No installed models', disabled: true }];
 
-                if (coordinatorOverrideProvider === 'ollama') {
+                if (assistantOverrideProvider === 'ollama') {
                   return (
                     <Select
                       label="Local Model"
-                      value={coordinatorOverrideModelId}
-                      onChange={(e) => setCoordinatorOverrideModelId(e.target.value)}
+                      value={assistantOverrideModelId}
+                      onChange={(e) => setAssistantOverrideModelId(e.target.value)}
                       disabled={busy || loading}
                       options={resolvedOptions}
                       hint="Shows installed local Ollama models."
@@ -788,8 +788,8 @@ export function SettingsView({
                 return (
                   <Select
                     label="Model"
-                    value={coordinatorOverrideModelId}
-                    onChange={(e) => setCoordinatorOverrideModelId(e.target.value)}
+                    value={assistantOverrideModelId}
+                    onChange={(e) => setAssistantOverrideModelId(e.target.value)}
                     disabled={busy || loading}
                     options={resolvedOptions}
                   />
@@ -802,7 +802,7 @@ export function SettingsView({
                   variant="brand"
                   size="md"
                   loading={busy || loading}
-                  disabled={!coordinatorOverrideModelId.trim() || busy || loading}
+                  disabled={!assistantOverrideModelId.trim() || busy || loading}
                   className="flex-1"
                 >
                   Save
@@ -811,15 +811,15 @@ export function SettingsView({
                   type="button"
                   variant="secondary"
                   size="md"
-                  disabled={busy || loading || coordinatorOverride === null}
-                  onClick={() => void onSaveCoordinatorOverride(null)}
+                  disabled={busy || loading || assistantOverride === null}
+                  onClick={() => void onSaveAssistantOverride(null)}
                 >
                   Reset to default
                 </Button>
               </div>
             </form>
 
-            {coordinatorOverrideProvider === 'ollama' && installedOllamaModels.length === 0 ? (
+            {assistantOverrideProvider === 'ollama' && installedOllamaModels.length === 0 ? (
               <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
                 No local Ollama models installed. Install a model under the Local section first.
               </div>

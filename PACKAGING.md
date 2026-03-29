@@ -1,4 +1,4 @@
-## Workspace packaging plan (desktop-only)
+## Raman AI Packaging Plan (desktop-only)
 
 This repo defaults to **unsigned preview builds** for local development.
 

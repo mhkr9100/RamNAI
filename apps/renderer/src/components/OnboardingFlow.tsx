@@ -117,7 +117,7 @@ export function OnboardingFlow({
                   transition={{ delay: 0.2 }}
                   className="text-3xl font-black uppercase tracking-tighter text-gray-950 dark:text-white mb-3"
                 >
-                  Welcome to Workspace
+                  Welcome to Raman AI
                 </motion.h1>
 
                 <motion.div
@@ -174,7 +174,7 @@ export function OnboardingFlow({
                 </Button>
 
                 <h2 className="text-2xl font-bold text-gray-950 dark:text-white mb-2">Connect your runtime</h2>
-                <p className="text-gray-500 dark:text-white/50 text-sm mb-8">Workspace works best with a local engine like Ollama.</p>
+                <p className="text-gray-500 dark:text-white/50 text-sm mb-8">Raman AI works best with a local engine like Ollama.</p>
 
                 <div className="p-5 bg-surface-3 border border-black/8 dark:border-white/[0.08] rounded-2xl mb-6 flex flex-col shadow-sm">
                   <div className="flex items-center justify-between mb-2">
@@ -307,7 +307,7 @@ export function OnboardingFlow({
                     onClick={handleComplete} 
                     loading={isSubmitting}
                   >
-                    Start using Workspace
+                    Start using Raman AI
                   </Button>
                 </motion.div>
               </div>

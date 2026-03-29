@@ -24,7 +24,7 @@ for (const filePath of requiredBuildOutputs) {
   }
 }
 
-const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'workspace-runtime-smoke-'));
+const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'raman-ai-runtime-smoke-'));
 const tempHome = path.join(tempRoot, 'home');
 await mkdir(tempHome, { recursive: true });
 process.env.HOME = tempHome;
@@ -48,7 +48,7 @@ const [
   import(pathToFileURL(path.join(repoRoot, 'apps/desktop/dist/workspace-sync.js')).href)
 ]);
 
-const { EMPTY_USERMAP_STATE, DEFAULT_MODEL_PRESETS } = sharedModule;
+const { EMPTY_CONTEXT_STATE, DEFAULT_MODEL_PRESETS } = sharedModule;
 const { ProviderAuthStore, RuntimeWorkspaceManager } = runtimeModule;
 const { buildTaskSpec } = taskSchedulingModule;
 const { recoverInterruptedWork } = schedulerRecoveryModule;
@@ -91,7 +91,7 @@ async function runCheck(name, fn) {
   console.log(`PASS ${name}`);
 }
 
-const dbPath = path.join(tempRoot, 'workspace-app.sqlite');
+const dbPath = path.join(tempRoot, 'raman-ai.sqlite');
 const workspacePaths = buildWorkspacePaths(path.join(tempRoot, 'workspace'));
 const storage = new SqliteStorage(dbPath);
 storage.init();
@@ -123,10 +123,10 @@ try {
     assert.ok(savedProfile.keyRef?.id);
     assert.ok(savedProfile.tokenRef?.id);
 
-    const appProfilesPath = path.join(tempHome, '.workspace-app', 'runtime-auth', 'auth-profiles.json');
-    const encryptedSecretsPath = path.join(tempHome, '.workspace-app', 'runtime-auth', 'secrets.enc.json');
-    const compatProfilesPath = path.join(tempHome, '.workspace-runtime', 'auth-profiles.json');
-    const compatSecretsPath = path.join(tempHome, '.workspace-runtime', 'secrets.json');
+    const appProfilesPath = path.join(tempHome, '.raman-ai', 'runtime-auth', 'auth-profiles.json');
+    const encryptedSecretsPath = path.join(tempHome, '.raman-ai', 'runtime-auth', 'secrets.enc.json');
+    const compatProfilesPath = path.join(tempHome, '.raman-ai-runtime', 'auth-profiles.json');
+    const compatSecretsPath = path.join(tempHome, '.raman-ai-runtime', 'secrets.json');
 
     const appProfilesText = await readFile(appProfilesPath, 'utf8');
     let encryptedSecretsText = null;
@@ -282,7 +282,7 @@ try {
       title: 'Recurring Active',
       objective: 'Should not recover while lease active',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now, timezone, installedModelIds, taskId: 'task-rec-active' });
 
@@ -290,7 +290,7 @@ try {
       title: 'Recurring Expired',
       objective: 'Should recover immediately',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now, timezone, installedModelIds, taskId: 'task-rec-expired' });
 
@@ -298,7 +298,7 @@ try {
       title: 'Once Expired',
       objective: 'Once task should fail on expired lease',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'once', runAtLocal: '2026-03-18 09:30' }
     }, { now, timezone, installedModelIds, taskId: 'task-once-expired' });
 
@@ -343,7 +343,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'coordinator' }
+      target: { type: 'assistant' }
     });
     storage.upsertTaskRun({
       id: 'run-rec-expired',
@@ -357,7 +357,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'coordinator' }
+      target: { type: 'assistant' }
     });
     storage.upsertTaskRun({
       id: 'run-once-expired',
@@ -371,7 +371,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'coordinator' }
+      target: { type: 'assistant' }
     });
 
     recoverInterruptedWork(storage, now);
@@ -417,7 +417,7 @@ try {
       title: 'Rerun Task',
       objective: 'Rerun should cancel active lease holders',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now: new Date(nowIso), timezone, installedModelIds, taskId: 'task-rerun' });
 
@@ -446,7 +446,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'coordinator' }
+      target: { type: 'assistant' }
     });
 
     storage.upsertWorkItem({
@@ -493,15 +493,15 @@ try {
     assert.equal(storage.hasPermission('create_agents'), true);
   });
 
-  await runCheck('coordinator override persistence', async () => {
+  await runCheck('assistant override persistence', async () => {
     const override = { provider: 'ollama', modelId: 'qwen3:8b' };
-    storage.saveCoordinatorProviderOverride(override);
-    assert.deepEqual(storage.getCoordinatorProviderOverride(), override);
+    storage.saveAssistantProviderOverride(override);
+    assert.deepEqual(storage.getAssistantProviderOverride(), override);
 
     const reopened = new SqliteStorage(dbPath);
     reopened.init();
     try {
-      assert.deepEqual(reopened.getCoordinatorProviderOverride(), override);
+      assert.deepEqual(reopened.getAssistantProviderOverride(), override);
     } finally {
       reopened.close();
     }
@@ -516,7 +516,7 @@ try {
       title: 'Once Smoke Task',
       objective: 'Validate once scheduling',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'once', runAtLocal: '2026-03-18 09:30' }
     }, { now, timezone, installedModelIds, taskId: 'task-once' });
 
@@ -524,7 +524,7 @@ try {
       title: 'Daily Smoke Task',
       objective: 'Validate daily scheduling',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'simple', preset: 'daily', time: '09:15' }
     }, { now, timezone, installedModelIds, taskId: 'task-daily' });
 
@@ -532,7 +532,7 @@ try {
       title: 'Cron Smoke Task',
       objective: 'Validate cron scheduling',
       mode: 'task',
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       schedule: { kind: 'cron', expression: '15 9 * * 1-5' }
     }, { now, timezone, installedModelIds, taskId: 'task-cron' });
 
@@ -556,8 +556,8 @@ try {
   });
 
   await runCheck('basic workspace and artifact sync', async () => {
-    const userMap = deepClone(EMPTY_USERMAP_STATE);
-    userMap.publicTree.children.push({
+    const contextTree = deepClone(EMPTY_CONTEXT_STATE);
+    contextTree.publicTree.children.push({
       id: 'public-pref',
       label: 'Preferences',
       nodeType: 'category',
@@ -574,7 +574,7 @@ try {
         }
       ]
     });
-    userMap.privateTree.children.push({
+    contextTree.privateTree.children.push({
       id: 'private-projects',
       label: 'Projects',
       nodeType: 'category',
@@ -592,14 +592,14 @@ try {
         }
       ]
     });
-    storage.saveUserMap(userMap);
+    storage.saveContextTree(contextTree);
 
     const agent = {
       id: 'agent-smoke',
       slug: 'smoke-agent',
       name: 'Smoke Agent',
       description: 'Runtime smoke agent',
-      createdBy: 'coordinator',
+      createdBy: 'assistant',
       originObjective: 'Validate runtime smoke',
       persona: {
         role: 'Verifier',
@@ -614,7 +614,7 @@ try {
       tools: ['workspace-read'],
       skills: ['analysis'],
       context: {
-        userMapPaths: ['user/preferences'],
+        contextPaths: ['user/preferences'],
         workspacePaths: ['artifacts'],
         memoryNamespaces: ['global'],
         canReadArtifacts: true,
@@ -638,7 +638,7 @@ try {
         createdAt: '2026-03-18T12:00:00.000Z',
         updatedAt: '2026-03-18T12:00:00.000Z',
         version: 1,
-        source: 'coordinator-create'
+        source: 'assistant-create'
       }
     };
     storage.upsertAgent(agent);
@@ -730,7 +730,7 @@ try {
       workerId: 'smoke-runner',
       attempt: 1,
       runIndex: 1,
-      target: { type: 'coordinator' },
+      target: { type: 'assistant' },
       provider: 'ollama',
       modelId: 'qwen3:8b',
       summary: 'Smoke run completed',
@@ -742,7 +742,7 @@ try {
     const runtimeWorkspaceManager = new RuntimeWorkspaceManager();
     const workspacePlan = runtimeWorkspaceManager.buildPlan({
       profile: snapshot.profile,
-      userMap: snapshot.userMap,
+      contextTree: snapshot.contextTree,
       agents: snapshot.agents,
       groups: snapshot.groups,
       memoryFacts: snapshot.memoryFacts,
@@ -754,12 +754,12 @@ try {
 
     const requiredFiles = [
       path.join(workspacePaths.context, 'profile.json'),
-      path.join(workspacePaths.context, 'usermap-tree.json'),
+      path.join(workspacePaths.context, 'context-tree.json'),
       path.join(workspacePaths.tasks, 'index.json'),
       path.join(workspacePaths.tasks, 'task-runs.json'),
       path.join(workspacePaths.work, 'artifacts.json'),
       path.join(syncedWorkspaceRoot, 'runtime.workspace.json'),
-      path.join(syncedWorkspaceRoot, 'workspace-runtime.workspace.json'),
+      path.join(syncedWorkspaceRoot, 'raman-ai-runtime.workspace.json'),
       path.join(workspacePaths.root, artifactRelativePath)
     ];
 

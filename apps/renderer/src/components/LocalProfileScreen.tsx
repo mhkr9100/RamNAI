@@ -48,7 +48,7 @@ export function LocalProfileScreen({
                 </div>
               </div>
               <div className="mt-6">
-                <h1 className="font-display text-2xl font-bold text-white">Workspace</h1>
+                <h1 className="font-display text-2xl font-bold text-white">Raman AI</h1>
                 <p className="mt-2 text-sm text-white/60">AI agents made simple.</p>
               </div>
             </div>
@@ -78,7 +78,7 @@ export function LocalProfileScreen({
             ) : null}
 
             <Button type="submit" variant="brand" size="lg" fullWidth loading={isSaving}>
-              {isSaving ? 'Entering Workspace...' : 'Enter Workspace'}
+              {isSaving ? 'Opening Raman AI...' : 'Open Raman AI'}
             </Button>
           </form>
         </Card>

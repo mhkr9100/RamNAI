@@ -52,7 +52,7 @@ export function WorkspaceLockScreen({ onUnlock }: WorkspaceLockScreenProps) {
           </motion.div>
 
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            Workspace Locked
+            Raman AI Locked
           </h1>
           <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-white/40">
             Enter your password to unlock the encrypted workspace.
@@ -64,7 +64,7 @@ export function WorkspaceLockScreen({ onUnlock }: WorkspaceLockScreenProps) {
             <Input
               type="password"
               autoComplete="current-password"
-              label="Workspace Password"
+              label="Raman AI Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoFocus

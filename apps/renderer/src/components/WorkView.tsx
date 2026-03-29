@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, MessageSquareMore, Play, Search, Send, Trash2, X } from 'lucide-react';
-import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@workspace/shared';
+import type { AgentSpec, ArtifactRecord, TaskSpec, WorkItem } from '@raman-ai/shared';
 import type { WorkspaceSnapshot } from '@/lib/electron';
 import type { ChatTarget } from './ChatsWorkspace';
 import {
@@ -24,7 +24,7 @@ interface WorkViewProps {
   onRerunTask: (taskId: string) => Promise<void>;
   onDeleteWorkItem: (workItemId: string) => Promise<void>;
   onSendToChat: (item: WorkItem) => void;
-  onOpenChat: (target: ChatTarget | 'coordinator') => void;
+  onOpenChat: (target: ChatTarget | 'assistant') => void;
   onOpenArtifact: (artifactId: string) => Promise<void>;
   onLoadMoreTasks?: () => Promise<void>;
   onLoadMoreWorkItems?: () => Promise<void>;
@@ -282,8 +282,8 @@ export function WorkView({
                         icon={<MessageSquareMore size={14} />}
                         onClick={() =>
                           onOpenChat(
-                            task.target.type === 'coordinator'
-                              ? 'coordinator'
+                            task.target.type === 'assistant'
+                              ? 'assistant'
                               : { type: 'agent', id: task.target.agentId },
                           )
                         }
@@ -396,7 +396,7 @@ export function WorkView({
                         <Badge variant="outline">
                           {item.sourceAgentId
                             ? `Routes to ${agentLookup.get(item.sourceAgentId)?.name ?? 'agent'}`
-                            : 'Routes to Coordinator'}
+                            : 'Routes to Assistant'}
                         </Badge>
                       </div>
 
@@ -407,7 +407,7 @@ export function WorkView({
                           variant="secondary"
                           icon={<MessageSquareMore size={14} />}
                           onClick={() =>
-                            onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'coordinator')
+                            onOpenChat(item.sourceAgentId ? { type: 'agent', id: item.sourceAgentId } : 'assistant')
                           }
                         >
                           Open Chat
@@ -548,8 +548,8 @@ export function WorkView({
 }
 
 function describeTaskTarget(task: TaskSpec, agentLookup: Map<string, AgentSpec>) {
-  if (task.target.type === 'coordinator') {
-    return 'Coordinator';
+  if (task.target.type === 'assistant') {
+    return 'Assistant';
   }
 
   return agentLookup.get(task.target.agentId)?.name ?? `Agent ${task.target.agentId}`;

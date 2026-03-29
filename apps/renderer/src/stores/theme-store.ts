@@ -9,7 +9,7 @@ interface ThemeState {
   setPreference: (preference: ThemePreference) => void;
 }
 
-const STORAGE_KEY = 'workspace-theme';
+const STORAGE_KEY = 'raman-ai-theme';
 const LEGACY_STORAGE_KEY = 'theme';
 
 function getSystemTheme(): ResolvedTheme {

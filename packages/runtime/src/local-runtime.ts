@@ -8,15 +8,15 @@ import {
   GroupSpec,
   MemoryCategory,
   MemoryFact,
-  CoordinatorReply,
-  CoordinatorRequest,
-  CoordinatorProviderOverrideSettings,
+  AssistantReply,
+  AssistantRequest,
+  AssistantProviderOverrideSettings,
   ProviderId,
   ProviderModelPreset,
   TaskSpec,
-  UserMapNode,
-  UserMapState
-} from '@workspace/shared';
+  ContextTreeNode,
+  ContextTreeState
+} from '@raman-ai/shared';
 import OpenAI from 'openai';
 import { RuntimeBridge, type BridgePromptResult } from './runtime-bridge.js';
 
@@ -88,7 +88,7 @@ export interface TaskExecutionResult {
 }
 
 export interface TaskExecutionContext {
-  userMap: UserMapState;
+  contextTree: ContextTreeState;
   agents: AgentSpec[];
   groups: GroupSpec[];
 }
@@ -114,7 +114,7 @@ export interface StreamResult {
 export class LocalRuntimeAdapter {
   private workspaceRoot?: string;
   private runtimeBridgeHooks: RuntimeBridgeHooks = {};
-  private coordinatorOverride: CoordinatorProviderOverrideSettings | null = null;
+  private assistantOverride: AssistantProviderOverrideSettings | null = null;
   private agentMode: AgentMode = 'auto';
   private remoteProviderAuthResolver: RemoteProviderAuthResolver | null = null;
   private readonly runtimeBridge = new RuntimeBridge();
@@ -127,8 +127,8 @@ export class LocalRuntimeAdapter {
     this.runtimeBridgeHooks = hooks;
   }
 
-  setCoordinatorProviderOverride(override: CoordinatorProviderOverrideSettings | null) {
-    this.coordinatorOverride = override;
+  setAssistantProviderOverride(override: AssistantProviderOverrideSettings | null) {
+    this.assistantOverride = override;
   }
 
   setAgentMode(mode: AgentMode) {
@@ -179,16 +179,16 @@ export class LocalRuntimeAdapter {
     });
   }
 
-  async sendCoordinatorRequest(input: CoordinatorRequest): Promise<CoordinatorReply> {
+  async sendAssistantRequest(input: AssistantRequest): Promise<AssistantReply> {
     const ollamaModels = await this.listOllamaModels();
-    const coordinatorExecution = this.resolveCoordinatorExecutionModel(ollamaModels);
-    if (coordinatorExecution.provider !== 'ollama') {
+    const assistantExecution = this.resolveAssistantExecutionModel(ollamaModels);
+    if (assistantExecution.provider !== 'ollama') {
       try {
         if (input.mode === 'create') {
           const response = await this.generateWithFallback({
-            execution: coordinatorExecution,
-            system: this.buildCoordinatorCreateSystemPrompt(),
-            prompt: this.buildCoordinatorCreatePrompt(input),
+            execution: assistantExecution,
+            system: this.buildAssistantCreateSystemPrompt(),
+            prompt: this.buildAssistantCreatePrompt(input),
             format: 'json'
           });
           const parsed = this.parseJsonObject<Record<string, unknown>>(response.text);
@@ -196,7 +196,7 @@ export class LocalRuntimeAdapter {
 
           return {
             id: randomUUID(),
-            text: `Created ${createdAgent.name}. Coordinator designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+            text: `Created ${createdAgent.name}. Assistant designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
             provider: response.provider,
             modelId: response.modelId,
             createdAgent
@@ -204,9 +204,9 @@ export class LocalRuntimeAdapter {
         }
 
         const response = await this.generateWithFallback({
-          execution: coordinatorExecution,
-          system: this.buildCoordinatorAskSystemPrompt(),
-          prompt: this.buildCoordinatorAskPrompt(input)
+          execution: assistantExecution,
+          system: this.buildAssistantAskSystemPrompt(),
+          prompt: this.buildAssistantAskPrompt(input)
         });
 
         return {
@@ -217,19 +217,19 @@ export class LocalRuntimeAdapter {
         };
       } catch (error) {
         console.warn(
-          `[runtime] ${coordinatorExecution.provider} Coordinator execution failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
+          `[runtime] ${assistantExecution.provider} Assistant execution failed, falling back to Ollama: ${this.redactSensitiveText(error instanceof Error ? error.message : String(error))}`
         );
       }
     }
 
-    if (coordinatorExecution.provider === 'ollama' && this.agentMode !== 'ollama') {
-      const bridgeReply = await this.tryBridgeCoordinator(input);
+    if (assistantExecution.provider === 'ollama' && this.agentMode !== 'ollama') {
+      const bridgeReply = await this.tryBridgeAssistant(input);
       if (bridgeReply) {
         return bridgeReply;
       }
     }
 
-    const overrideModelId = this.coordinatorOverride?.provider === 'ollama' ? this.coordinatorOverride.modelId : null;
+    const overrideModelId = this.assistantOverride?.provider === 'ollama' ? this.assistantOverride.modelId : null;
     const modelId = overrideModelId && ollamaModels.some((model) => model.installed && model.id === overrideModelId)
       ? overrideModelId
       : this.pickModelId(ollamaModels);
@@ -237,8 +237,8 @@ export class LocalRuntimeAdapter {
     if (input.mode === 'create') {
       const jsonText = await this.generateText({
         modelId,
-        system: this.buildCoordinatorCreateSystemPrompt(),
-        prompt: this.buildCoordinatorCreatePrompt(input),
+        system: this.buildAssistantCreateSystemPrompt(),
+        prompt: this.buildAssistantCreatePrompt(input),
         format: 'json'
       });
 
@@ -247,7 +247,7 @@ export class LocalRuntimeAdapter {
 
       return {
         id: randomUUID(),
-        text: `Created ${createdAgent.name}. Coordinator designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+        text: `Created ${createdAgent.name}. Assistant designed this chatbot for local execution with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
         provider: 'ollama',
         modelId,
         createdAgent
@@ -256,8 +256,8 @@ export class LocalRuntimeAdapter {
 
     const text = await this.generateText({
       modelId,
-      system: this.buildCoordinatorAskSystemPrompt(),
-      prompt: this.buildCoordinatorAskPrompt(input)
+      system: this.buildAssistantAskSystemPrompt(),
+      prompt: this.buildAssistantAskPrompt(input)
     });
 
     return {
@@ -281,11 +281,11 @@ export class LocalRuntimeAdapter {
     }
 
     const prompt = [
-      task.target.type === 'coordinator'
-        ? 'You are Coordinator in Workspace. Execute the following scheduled autonomous task.'
+      task.target.type === 'assistant'
+        ? 'You are Raman AI. Execute the following scheduled autonomous task.'
         : `You are executing a scheduled task for the chatbot "${targetAgent?.name ?? 'Unknown Chatbot'}". Respect its role and instructions.`,
       targetAgent ? `Role: ${targetAgent.persona.role}\nMission: ${targetAgent.persona.mission}\nInstructions: ${targetAgent.persona.systemInstructions}` : '',
-      this.formatUserMapSummary(context.userMap),
+      this.formatContextTreeSummary(context.contextTree),
       `Task Objective:\n${task.objective}`
     ].filter(Boolean).join('\n\n');
 
@@ -334,22 +334,22 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private resolveCoordinatorExecutionModel(ollamaModels: ProviderModelPreset[]): ExecutionModelRef {
-    if (this.coordinatorOverride) {
-      if (this.coordinatorOverride.provider === 'ollama') {
+  private resolveAssistantExecutionModel(ollamaModels: ProviderModelPreset[]): ExecutionModelRef {
+    if (this.assistantOverride) {
+      if (this.assistantOverride.provider === 'ollama') {
         return {
           provider: 'ollama',
           modelId: this.resolveSupportedModel(
             'ollama',
-            this.stripProviderPrefix('ollama', this.coordinatorOverride.modelId),
+            this.stripProviderPrefix('ollama', this.assistantOverride.modelId),
             ollamaModels.filter((model) => model.installed).map((model) => model.id)
           )
         };
       }
 
       return {
-        provider: this.coordinatorOverride.provider,
-        modelId: this.stripProviderPrefix(this.coordinatorOverride.provider, this.coordinatorOverride.modelId),
+        provider: this.assistantOverride.provider,
+        modelId: this.stripProviderPrefix(this.assistantOverride.provider, this.assistantOverride.modelId),
         ...(this.safePickOllamaModelId(ollamaModels) ? { fallbackOllamaModelId: this.safePickOllamaModelId(ollamaModels) } : {})
       };
     }
@@ -910,7 +910,7 @@ export class LocalRuntimeAdapter {
     }
   }
 
-  private async tryBridgeCoordinator(input: CoordinatorRequest): Promise<CoordinatorReply | null> {
+  private async tryBridgeAssistant(input: AssistantRequest): Promise<AssistantReply | null> {
     const available = await this.isBridgeAvailable();
     if (!available) {
       return null;
@@ -918,20 +918,20 @@ export class LocalRuntimeAdapter {
 
     try {
       const models = await this.listModels();
-      const selectedModel = this.pickCoordinatorBridgeModel(models);
+      const selectedModel = this.pickAssistantBridgeModel(models);
 
       if (input.mode === 'create') {
         const response = await this.sendWithBridge({
           modelRef: selectedModel,
-          system: this.buildCoordinatorCreateSystemPrompt(),
-          prompt: this.buildCoordinatorCreatePrompt(input)
+          system: this.buildAssistantCreateSystemPrompt(),
+          prompt: this.buildAssistantCreatePrompt(input)
         });
         const parsed = this.parseJsonObject<Record<string, unknown>>(response.text);
         const createdAgent = this.normalizeAgentSpec(parsed, input.message, models);
 
         return {
           id: randomUUID(),
-          text: `Created ${createdAgent.name}. Coordinator designed this chatbot through the runtime bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
+          text: `Created ${createdAgent.name}. Assistant designed this chatbot through the runtime bridge with ${createdAgent.providerStrategy.mode.replaceAll('_', ' ')} strategy.`,
           provider: this.normalizeProviderId(response.provider),
           modelId: response.modelId,
           createdAgent
@@ -940,8 +940,8 @@ export class LocalRuntimeAdapter {
 
       const response = await this.sendWithBridge({
         modelRef: selectedModel,
-        system: this.buildCoordinatorAskSystemPrompt(),
-        prompt: this.buildCoordinatorAskPrompt(input)
+        system: this.buildAssistantAskSystemPrompt(),
+        prompt: this.buildAssistantAskPrompt(input)
       });
 
       return {
@@ -976,13 +976,13 @@ export class LocalRuntimeAdapter {
       }
 
       const prompt = [
-        task.target.type === 'coordinator'
-          ? 'You are Coordinator in Workspace. Execute the following scheduled autonomous task.'
+        task.target.type === 'assistant'
+          ? 'You are Assistant in Workspace. Execute the following scheduled autonomous task.'
           : `You are executing a scheduled task for the chatbot "${targetAgent?.name ?? 'Unknown Chatbot'}". Respect its role and instructions.`,
         targetAgent
           ? `Role: ${targetAgent.persona.role}\nMission: ${targetAgent.persona.mission}\nInstructions: ${targetAgent.persona.systemInstructions}`
           : '',
-        this.formatUserMapSummary(context.userMap),
+        this.formatContextTreeSummary(context.contextTree),
         `Task Objective:\n${task.objective}`
       ].filter(Boolean).join('\n\n');
 
@@ -1102,9 +1102,9 @@ export class LocalRuntimeAdapter {
       : (workers[0] ?? defaultExecution);
 
     const sharedBrief = [
-      'You are part of a council run in Workspace.',
+      'You are part of a council run in Raman AI.',
       'Produce a strong answer to the task objective using the supplied context.',
-      this.formatUserMapSummary(context.userMap),
+      this.formatContextTreeSummary(context.contextTree),
       `Objective:\n${task.objective}`
     ].join('\n\n');
 
@@ -1180,9 +1180,9 @@ export class LocalRuntimeAdapter {
       : (workers[0] ?? (runtime === 'bridge' ? this.pickBridgeModel(models) : this.pickModelId(models)));
 
     const sharedBrief = [
-      'You are part of a council run in Workspace.',
+      'You are part of a council run in Raman AI.',
       'Produce a strong answer to the task objective using the supplied context.',
-      this.formatUserMapSummary(context.userMap),
+      this.formatContextTreeSummary(context.contextTree),
       `Objective:\n${task.objective}`
     ].join('\n\n');
 
@@ -1258,10 +1258,10 @@ export class LocalRuntimeAdapter {
     };
   }
 
-  private buildCoordinatorAskSystemPrompt() {
+  private buildAssistantAskSystemPrompt() {
     return [
-      'You are Coordinator inside Workspace.',
-      'You are a prompt, context, and execution architect for a local-first AI workspace.',
+      'You are Raman AI, the built-in assistant.',
+      'You are a prompt, context, and execution architect for a local-first AI system.',
       'If the user simply says "Hi", "Hello", or provides a casual greeting, respond warmly and conversationally without trying to build an agent.',
       'Only provide advice on setting up an agent if the user explicitly asks for it or provides an objective.',
       'Be concise, practical, and specific.',
@@ -1269,29 +1269,29 @@ export class LocalRuntimeAdapter {
     ].join(' ');
   }
 
-  private buildCoordinatorAskPrompt(input: CoordinatorRequest) {
+  private buildAssistantAskPrompt(input: AssistantRequest) {
     return [
       `User objective:\n${input.message}`,
-      this.formatUserMapSummary(input.userMap),
+      this.formatContextTreeSummary(input.contextTree),
       input.existingAgents.length ? `Existing chatbots:\n${input.existingAgents.map((agent) => `- ${agent.name}: ${agent.description}`).join('\n')}` : 'Existing chatbots:\n- none yet',
       input.existingGroups.length ? `Existing groups:\n${input.existingGroups.map((group) => `- ${group.name}`).join('\n')}` : 'Existing groups:\n- none yet'
     ].join('\n\n');
   }
 
-  private buildCoordinatorCreateSystemPrompt() {
+  private buildAssistantCreateSystemPrompt() {
     return [
-      'You are Coordinator inside Workspace.',
+      'You are Raman AI, the built-in assistant.',
       'Create a single JSON object representing a local-execution chatbot spec.',
       'Return JSON only. No markdown. No prose.',
       'Respect these runtime rules: local-first, Ollama-first, group chats may auto-route by default, explicit @mentions pin routing, scheduled tasks supported, recurring tasks supported, council eligible when useful.'
     ].join(' ');
   }
 
-  private buildCoordinatorCreatePrompt(input: CoordinatorRequest) {
+  private buildAssistantCreatePrompt(input: AssistantRequest) {
     return [
       'Design one persistent chatbot from the following user objective.',
       `Objective:\n${input.message}`,
-      this.formatUserMapSummary(input.userMap),
+      this.formatContextTreeSummary(input.contextTree),
       'Schema requirements:',
       JSON.stringify({
         name: 'string',
@@ -1309,7 +1309,7 @@ export class LocalRuntimeAdapter {
         tools: ['list of tool ids'],
         skills: ['list of skill ids'],
         context: {
-          userMapPaths: ['user/preferences', 'user/projects'],
+          contextPaths: ['user/preferences', 'user/projects'],
           workspacePaths: ['artifacts'],
           memoryNamespaces: ['global'],
           canReadArtifacts: true,
@@ -1336,7 +1336,7 @@ export class LocalRuntimeAdapter {
   private normalizeAgentSpec(parsed: Record<string, unknown>, objective: string, models: ProviderModelPreset[]): AgentSpec {
     const now = new Date().toISOString();
     const defaultModelIds = models.filter((model) => model.installed).slice(0, 3).map((model) => model.id);
-    const name = this.asString(parsed.name) || 'Coordinator Chatbot';
+    const name = this.asString(parsed.name) || 'Assistant Chatbot';
     const providerStrategy: AgentSpec['providerStrategy'] = typeof parsed.providerStrategy === 'object' && parsed.providerStrategy
       ? parsed.providerStrategy as AgentSpec['providerStrategy']
       : {
@@ -1354,7 +1354,7 @@ export class LocalRuntimeAdapter {
     const context = typeof parsed.context === 'object' && parsed.context
       ? parsed.context as AgentSpec['context']
       : {
-          userMapPaths: ['user/preferences', 'user/projects'],
+          contextPaths: ['user/preferences', 'user/projects'],
           workspacePaths: ['artifacts'],
           memoryNamespaces: ['global'],
           canReadArtifacts: true,
@@ -1384,7 +1384,7 @@ export class LocalRuntimeAdapter {
       slug: this.slugify(name),
       name,
       description: this.asString(parsed.description) || objective,
-      createdBy: 'coordinator',
+      createdBy: 'assistant',
       originObjective: objective,
       persona: {
         role: this.asString(persona.role) || 'Specialist chatbot',
@@ -1395,7 +1395,7 @@ export class LocalRuntimeAdapter {
       tools: this.asStringArray(parsed.tools),
       skills: this.asStringArray(parsed.skills),
       context: {
-        userMapPaths: this.asStringArray(context.userMapPaths) || ['user/preferences', 'user/projects'],
+        contextPaths: this.asStringArray(context.contextPaths) || ['user/preferences', 'user/projects'],
         workspacePaths: this.asStringArray(context.workspacePaths) || ['artifacts'],
         memoryNamespaces: this.asStringArray(context.memoryNamespaces) || ['global'],
         canReadArtifacts: Boolean(context.canReadArtifacts ?? true),
@@ -1419,7 +1419,7 @@ export class LocalRuntimeAdapter {
         createdAt: now,
         updatedAt: now,
         version: 1,
-        source: 'coordinator-create'
+        source: 'assistant-create'
       }
     };
   }
@@ -1693,7 +1693,7 @@ export class LocalRuntimeAdapter {
     input: {
       agent: AgentSpec;
       objective: string;
-      userMap: UserMapState;
+      contextTree: ContextTreeState;
       context: TaskExecutionContext;
     },
     onToken: StreamTokenCallback
@@ -1713,7 +1713,7 @@ export class LocalRuntimeAdapter {
     ].filter(Boolean).join('\n');
 
     const prompt = [
-      this.formatUserMapSummary(input.userMap),
+      this.formatContextTreeSummary(input.contextTree),
       input.objective
     ].filter(Boolean).join('\n\n');
 
@@ -1800,9 +1800,9 @@ export class LocalRuntimeAdapter {
     return this.pickBridgeModel(models);
   }
 
-  private pickCoordinatorBridgeModel(models: ProviderModelPreset[]): string {
-    if (this.coordinatorOverride) {
-      return this.resolveBridgeModel(this.coordinatorOverride.provider, this.coordinatorOverride.modelId, models.filter((model) => model.installed));
+  private pickAssistantBridgeModel(models: ProviderModelPreset[]): string {
+    if (this.assistantOverride) {
+      return this.resolveBridgeModel(this.assistantOverride.provider, this.assistantOverride.modelId, models.filter((model) => model.installed));
     }
 
     return this.pickBridgeModel(models);
@@ -1860,9 +1860,9 @@ export class LocalRuntimeAdapter {
       .replace(/\b\w/g, (char) => char.toUpperCase()) + (variant ? ` ${variant}` : '');
   }
 
-  private formatUserMapTree(root: UserMapNode) {
+  private formatContextTreeTree(root: ContextTreeNode) {
     const lines: string[] = [];
-    const visit = (node: UserMapNode, depth: number) => {
+    const visit = (node: ContextTreeNode, depth: number) => {
       const prefix = '  '.repeat(depth);
       const descriptor = node.value ? `${node.label}: ${node.value}` : node.label;
       lines.push(`${prefix}- ${descriptor}`);
@@ -1875,15 +1875,15 @@ export class LocalRuntimeAdapter {
     return lines.join('\n');
   }
 
-  private formatUserMapSummary(userMap: UserMapState) {
+  private formatContextTreeSummary(contextTree: ContextTreeState) {
     const sections = [
-      'UserMap:',
+      'Context:',
       '',
       'Public:',
-      this.formatUserMapTree(userMap.publicTree),
+      this.formatContextTreeTree(contextTree.publicTree),
       '',
       'Private:',
-      this.formatUserMapTree(userMap.privateTree)
+      this.formatContextTreeTree(contextTree.privateTree)
     ];
     return sections.join('\n');
   }

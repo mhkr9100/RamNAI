@@ -16,7 +16,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { TaskCreateInput, WorkspaceSnapshot } from '@/lib/electron';
-import { CAPABILITY_DEFINITIONS } from '@workspace/shared';
+import { CAPABILITY_DEFINITIONS } from '@raman-ai/shared';
 import { TaskComposerCard } from './TaskComposerCard';
 import { AgentProfilePanel } from './AgentProfilePanel';
 import type { ChatTarget } from './ChatsWorkspace';

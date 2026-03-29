@@ -1,8 +1,8 @@
-# Workspace Handoff
+# Raman AI Handoff
 
 ## What This Repo Is
 
-This repo is the new implementation base for Workspace, a desktop-first local AI workspace. It replaces the idea of continuing the cloud-first Workspace codebase for this product direction.
+This repo is the implementation base for Raman AI, a desktop-first local AI system with local execution, local storage, and provider-aware fallback.
 
 ## Locked Product Decisions
 
@@ -14,18 +14,17 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 - SQLite and filesystem local storage
 - no cloud auth at launch
 - local profile only: `name` and `email`
-- Coordinator modes:
+- Assistant modes:
   - Ask
   - Create
   - Task
   - Council
-- chatbots are created only through Coordinator
+- chatbots are created only through Raman AI
 - Directory is display and management, not manual create
 - Groups are manual `@mention` only in v1
-- UserMap is tree-first at launch
-- no import flow in UserMap at launch
+- context memory remains internal in this repo
 - no external channels at launch
-- Telegram for Coordinator later
+- Telegram for Raman AI later
 - WhatsApp excluded from launch
 
 ## What Has Been Implemented
@@ -43,7 +42,7 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 - runtime workspace sync with compatibility mirroring
 - renderer Settings surface
 
-### Coordinator
+### Raman AI
 
 - Ask mode runs through local Ollama
 - Create mode produces a structured local chatbot spec
@@ -58,14 +57,14 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 - council runs are supported locally
 - work items are created from completed runs
 - optional artifacts are written to disk
-- Work `Send to Chat` now routes back to the originating chatbot thread when `sourceAgentId` exists; otherwise it injects into Coordinator
+- Work `Send to Chat` now routes back to the originating chatbot thread when `sourceAgentId` exists; otherwise it injects into Assistant
 
-### UserMap
+### Context Memory
 
-- tree editor exists
-- protected nodes exist
-- memory extraction can merge durable facts into the tree
-- structured UserMap and memory facts are mirrored to the local workspace
+- context memory remains available internally for grounding and durable facts
+- protected nodes still exist at the storage/runtime layer
+- memory extraction can merge durable facts into the internal context tree
+- structured context data and memory facts are mirrored to the local workspace
 
 ### Chats and Directory
 
@@ -74,12 +73,12 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 - chatbot chat keeps the Task button beside the input
 - thread reset is available in Chats for both chatbot and group threads
 - Directory deep-links directly into chatbot and group chats
-- Coordinator create now opens the newly created chatbot chat directly
+- Assistant create now opens the newly created chatbot chat directly
 - group chat remains manual `@mention` only
 - group member handles are surfaced consistently in Directory and Chats
 - Work can open the relevant chat destination directly in addition to send-to-chat
 - Work now supports local search and filter controls across tasks and results
-- Coordinator transcript now supports search, role filtering, copy, reuse, and clear controls
+- Assistant transcript now supports search, role filtering, copy, reuse, and clear controls
 - chat surfaces now show clearer runtime/thread status affordances
 
 ### Settings
@@ -94,10 +93,10 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 
 - deeper runtime-bridge execution beyond the current CLI-first adapter
 - provider profile delete/test flows
-- persisted Coordinator provider override selection
+- persisted Raman AI provider override selection
 - bundled Ollama runtime packaging and polished first-run setup flow
 - scheduler timezone correction in the desktop lane
-- Telegram integration for Coordinator
+- Telegram integration for Raman AI
 
 ## Important Architectural Boundaries
 
@@ -111,7 +110,7 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 ## Recommended Next Steps
 
 1. Finish the deeper runtime-bridge execution path while keeping Ollama fallback safe.
-2. Complete provider profile delete/test and persisted Coordinator provider override support.
+2. Complete provider profile delete/test and persisted Assistant provider override support.
 3. Fix scheduler timezone handling in the desktop lane.
 4. Finish bundled Ollama runtime packaging and first-run install polish.
 5. Add packaging polish for macOS and Windows.
@@ -122,4 +121,4 @@ This repo is the new implementation base for Workspace, a desktop-first local AI
 - `npm run typecheck`
 - `npm run build`
 
-If Ollama is running locally, Coordinator ask/create and scheduled task execution should use the local runtime.
+If Ollama is running locally, Assistant ask/create and scheduled task execution should use the local runtime.

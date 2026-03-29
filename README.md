@@ -1,8 +1,8 @@
-# Workspace
+# Raman AI
 
-Desktop-first, privacy-first AI workspace combining Workspace's product layer with a local execution engine.
+Desktop-first, privacy-first local AI system with real desktop execution, local storage, and provider-aware runtime fallback.
 
-## Workspace Layout
+## Repo Layout
 
 - `apps/renderer` — React renderer UI
 - `apps/desktop` — Electron shell and IPC bridge
@@ -19,10 +19,10 @@ This repo already contains a working local foundation:
 - SQLite persistence
 - filesystem workspace export
 - local Ollama runtime adapter
-- Coordinator ask and create flows
+- Raman AI ask and create flows
 - scheduled tasks and council runs
 - Work surface
-- tree-first UserMap editor
+- internal context memory and durable facts
 
 Runtime-bridge vendoring is still pending. The current runtime is real and local, but still Ollama-first.
 

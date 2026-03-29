@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { TaskSpec } from '@workspace/shared';
+import type { TaskSpec } from '@raman-ai/shared';
 
 export interface TaskCreateInput {
   title: string;

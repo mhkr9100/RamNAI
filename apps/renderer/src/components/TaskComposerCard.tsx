@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { CalendarClock, SendHorizontal } from 'lucide-react';
-import type { TaskSpec } from '@workspace/shared';
+import type { TaskSpec } from '@raman-ai/shared';
 import type { TaskCreateInput } from '@/lib/electron';
 import { Badge, Button, Card, CardHeader, Input, SectionLabel, Select, Textarea } from './ui';
 
@@ -154,7 +154,7 @@ export function TaskComposerCard({
                   placeholder={
                     mode === 'council'
                       ? 'Have multiple models evaluate the same brief, critique each other once, and synthesize the strongest final recommendation.'
-                      : 'Tell Coordinator exactly what should be executed when this task runs.'
+                      : 'Tell Assistant exactly what should be executed when this task runs.'
                   }
                 />
               </div>
@@ -351,7 +351,7 @@ export function TaskComposerCard({
                 Target
               </div>
               <div className="text-sm text-slate-600 dark:text-white/70">
-                {target.type === 'coordinator' ? 'Coordinator' : `Agent ${target.agentId}`}
+                {target.type === 'assistant' ? 'Assistant' : `Agent ${target.agentId}`}
               </div>
             </div>
             <Button

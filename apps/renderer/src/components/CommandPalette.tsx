@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bot,
-  BrainCircuit,
   FolderKanban,
   MessageSquareMore,
   Search,
@@ -248,13 +247,13 @@ export function buildDefaultCommands(navigate: (view: ViewId) => void): CommandI
       action: () => navigate('home'),
     },
     {
-      id: 'nav-coordinator',
-      label: 'Coordinator',
+      id: 'nav-assistant',
+      label: 'Raman AI',
       icon: <Sparkles size={16} />,
       group: 'Navigation',
-      keywords: ['ask', 'create', 'architect', 'coordinator'],
+      keywords: ['ask', 'create', 'architect', 'assistant', 'raman ai'],
       shortcut: ['⌘', '1'],
-      action: () => navigate('coordinator'),
+      action: () => navigate('assistant'),
     },
     {
       id: 'nav-chats',
@@ -264,15 +263,6 @@ export function buildDefaultCommands(navigate: (view: ViewId) => void): CommandI
       keywords: ['messages', 'conversation', 'talk', 'agents'],
       shortcut: ['⌘', '2'],
       action: () => navigate('chats'),
-    },
-    {
-      id: 'nav-usermap',
-      label: 'UserMap',
-      icon: <BrainCircuit size={16} />,
-      group: 'Navigation',
-      keywords: ['memory', 'context', 'profile', 'tree', 'usermap'],
-      shortcut: ['⌘', '3'],
-      action: () => navigate('usermap'),
     },
     {
       id: 'nav-groups',

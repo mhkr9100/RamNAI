@@ -1,4 +1,4 @@
-# Workspace — Full Implementation Plan
+# Raman AI — Full Implementation Plan
 
 Consolidated roadmap with completion status. Phase numbering follows product direction (ARCHITECTURE.md) plus enterprise rollout (ENTERPRISE_PLAN.md).
 
@@ -8,8 +8,8 @@ Consolidated roadmap with completion status. Phase numbering follows product dir
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| **Phase 1** | v1 launch — desktop, local-only, Coordinator, tasks, chats | ✅ Complete |
-| **Phase 2** | External channels — Telegram for Coordinator | ✅ Complete |
+| **Phase 1** | v1 launch — desktop, local-only, Raman AI, tasks, chats | ✅ Complete |
+| **Phase 2** | External channels — Telegram for Raman AI | ✅ Complete |
 | **Phase 3** | Agent mode UX, runtime bridge depth | In progress |
 | **Phase 4** | Enterprise foundations | Planned |
 | **Phase 5** | RBAC, observability, scale | Future |
@@ -18,14 +18,14 @@ Consolidated roadmap with completion status. Phase numbering follows product dir
 
 ## Phase 1: v1 Launch (Desktop, Local-Only)
 
-Core product for desktop-first, privacy-first, local AI workspace.
+Core product for a desktop-first, privacy-first local AI system.
 
 ### Foundation
 
-- [x] Workspace monorepo
+- [x] Raman AI monorepo
 - [x] Electron app shell
 - [x] Renderer app (React)
-- [x] Shared domain types (`@workspace/shared`)
+- [x] Shared domain types (`@raman-ai/shared`)
 - [x] SQLite storage layer
 - [x] Filesystem workspace export
 - [x] Local profile flow (name, email)
@@ -34,15 +34,15 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [ ] Bundled Ollama binary (future)
 - [ ] Auto-update with code signing
 
-### Coordinator
+### Raman AI
 
 - [x] Ask mode (runs through Ollama or runtime bridge)
 - [x] Create mode (produces structured chatbot spec)
 - [x] Created chatbots persist locally
 - [x] Created chatbots appear in Directory/Settings
-- [x] Coordinator provider override (persisted)
-- [x] Coordinator transcript controls (search, role filter, copy, reuse, clear)
-- [ ] Telegram for Coordinator (Phase 2)
+- [x] Raman AI provider override (persisted)
+- [x] Raman AI transcript controls (search, role filter, copy, reuse, clear)
+- [ ] Telegram for Raman AI (Phase 2)
 
 ### Tasks & Work
 
@@ -53,17 +53,16 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [x] Work items from completed runs
 - [x] Artifacts written to disk
 - [x] Work send-to-chat routes to chatbot thread when `sourceAgentId` exists
-- [x] Work send-to-chat falls back to Coordinator otherwise
+- [x] Work send-to-chat falls back to Assistant otherwise
 - [x] Work search/filter controls
 - [x] Scheduler timezone correction (profile timezone for task creation; Settings selector)
 
-### UserMap
+### Context Memory
 
-- [x] Tree editor
 - [x] Protected nodes
-- [x] Memory extraction merges durable facts into tree
-- [x] UserMap and memory facts mirrored to workspace
-- [ ] Import flow (not in v1 scope)
+- [x] Memory extraction merges durable facts into internal context state
+- [x] Context data and memory facts mirrored to workspace
+- [ ] Dedicated context editing lives in the separate mapping repo
 
 ### Chats
 
@@ -72,7 +71,7 @@ Core product for desktop-first, privacy-first, local AI workspace.
 - [x] Persistent thread per group
 - [x] Task button beside chatbot chat input
 - [x] Thread reset for chatbot and group threads
-- [x] Coordinator create opens newly created chatbot chat directly
+- [x] Assistant create opens newly created chatbot chat directly
 - [x] Runtime/thread status cues in chat surfaces
 
 ### Groups
@@ -85,14 +84,14 @@ Core product for desktop-first, privacy-first, local AI workspace.
 
 ### Settings
 
-- [x] Settings view (Local, Accounts, Agents, Coordinator)
+- [x] Settings view (Local, Accounts, Agents, Assistant)
 - [x] Ollama runtime status visible
 - [x] Default model installation from UI
 - [x] Provider profiles (OpenAI, Anthropic, Google) list and save
 - [x] Provider profile delete
 - [x] Provider profile test
 - [x] Provider selection per provider
-- [x] Coordinator override get/save (persisted)
+- [x] Assistant override get/save (persisted)
 - [x] Agent mode (ollama / bridge / auto) with Settings UI
 
 ### Agent Spin-Off (A1–A6)
@@ -113,14 +112,14 @@ Core product for desktop-first, privacy-first, local AI workspace.
 
 ---
 
-## Phase 2: External Channels (Telegram for Coordinator)
+## Phase 2: External Channels (Telegram for Assistant)
 
-*From ARCHITECTURE: "Telegram for Coordinator is phase 2"*
+*From ARCHITECTURE: "Telegram for Assistant is phase 2"*
 
 - [ ] Runtime bridge Telegram adapter (external)
 - [x] Connect Telegram bot via runtime CLI `channels add` (CLI)
-- [ ] Coordinator receives and responds to Telegram messages (runtime bridge gateway)
-- [x] UI: channel add flow for Telegram (bot token) in Coordinator Profile
+- [ ] Assistant receives and responds to Telegram messages (runtime bridge gateway)
+- [x] UI: channel add flow for Telegram (bot token) in Assistant Profile
 - [x] UI: remove channel button
 - [x] RUNTIME_BRIDGE.md: Telegram setup (BotFather, token)
 - [ ] (WhatsApp excluded at launch per HANDOFF)
@@ -163,7 +162,7 @@ Core product for desktop-first, privacy-first, local AI workspace.
 |----|-------------|--------|
 | E4 | Workspace-level isolation (one workspace = one tenant) | [x] Implicit |
 | E5 | Role model: owner, admin, member, viewer | [x] Done |
-| E6 | Permissions (create agents, run tasks, edit UserMap, manage settings) | [x] Done |
+| E6 | Permissions (create agents, run tasks, edit ContextTree, manage settings) | [x] Done |
 | E12 | Metrics (task success/fail, latency, model usage) | [x] Done |
 
 ---
@@ -206,8 +205,8 @@ Core product for desktop-first, privacy-first, local AI workspace.
 ## Summary: What's Done vs Pending
 
 **Done (approx. 85% of Phase 1):**
-- Full desktop shell, storage, Coordinator, tasks, chats, groups, UserMap, Settings
-- Provider profiles (CRUD, test, selection), Coordinator override, agent mode
+- Full desktop shell, storage, Assistant, tasks, chats, groups, ContextTree, Settings
+- Provider profiles (CRUD, test, selection), Assistant override, agent mode
 - Agent spin-off A1–A4
 
 **Pending (Phase 1):**

@@ -1,4 +1,4 @@
-import type { SqliteStorage } from '@workspace/storage';
+import type { SqliteStorage } from '@raman-ai/storage';
 
 export interface TaskRunHeartbeatController {
   stop: () => void;

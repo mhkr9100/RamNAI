@@ -27,7 +27,7 @@ describe('useNavigationStore', () => {
   });
 
   it('allows navigating to all valid ViewId values', () => {
-    const views = ['home', 'coordinator', 'chats', 'groups', 'work', 'usermap', 'settings'] as const;
+    const views = ['home', 'assistant', 'chats', 'groups', 'work', 'settings'] as const;
     
     for (const view of views) {
       useNavigationStore.getState().navigate(view);

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bot, MessageSquare, Send } from 'lucide-react';
-import type { AgentSpec } from '@workspace/shared';
+import type { AgentSpec } from '@raman-ai/shared';
 import { Badge, Button, Card, Divider, SectionLabel } from './ui';
 
 interface AgentProfilePanelProps {
@@ -222,7 +222,7 @@ export function AgentProfilePanel({
               </div>
 
               {/* Channels placeholder */}
-              {agent.persona.role?.toLowerCase().includes('coordinator') && (
+              {agent.persona.role?.toLowerCase().includes('assistant') && (
                 <>
                   <Divider />
                   <div>

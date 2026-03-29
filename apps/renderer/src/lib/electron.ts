@@ -8,8 +8,8 @@ import type {
   LocalProfile,
   MemoryFact,
   OllamaRuntimeStatus,
-  CoordinatorReply,
-  CoordinatorProviderOverrideSettings,
+  AssistantReply,
+  AssistantProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderAuthSelection,
   ProviderId,
@@ -17,11 +17,11 @@ import type {
   RetentionConfig,
   RetentionConfigInput,
   TaskSpec,
-  UserMapState,
+  ContextTreeState,
   VoiceConfig,
   VoiceEvent,
   WorkItem
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 
 export type { LocalProfile };
 
@@ -39,7 +39,7 @@ export interface WorkspaceSnapshot {
   tasks: TaskSpec[];
   workItems: WorkItem[];
   artifacts: ArtifactRecord[];
-  userMap: UserMapState;
+  contextTree: ContextTreeState;
   memoryFacts: MemoryFact[];
   models: ProviderModelPreset[];
   runtime: {
@@ -115,7 +115,7 @@ export interface WorkspaceSecurityState {
   ready: boolean;
 }
 
-export interface WorkspaceDesktopApi {
+export interface RamanAIDesktopApi {
   profile: {
     get: () => Promise<LocalProfile | null>;
     save: (profile: LocalProfile) => Promise<LocalProfile>;
@@ -127,9 +127,9 @@ export interface WorkspaceDesktopApi {
     listWorkItemsPaginated: (limit: number, offset: number) => Promise<WorkItem[]>;
     listChatThreadsPaginated: (limit: number, offset: number) => Promise<ChatThread[]>;
   };
-  userMap: {
-    save: (tree: UserMapState) => Promise<UserMapState>;
-    syncMemories: () => Promise<{ tree: UserMapState; facts: MemoryFact[] }>;
+  contextTree: {
+    save: (tree: ContextTreeState) => Promise<ContextTreeState>;
+    syncMemories: () => Promise<{ tree: ContextTreeState; facts: MemoryFact[] }>;
   };
   groups: {
     upsert: (group: GroupSpec) => Promise<GroupSpec>;
@@ -138,8 +138,8 @@ export interface WorkspaceDesktopApi {
   agents: {
     delete: (agentId: string) => Promise<{ ok: true }>;
   };
-  coordinator: {
-    sendMessage: (input: { mode: 'ask' | 'create'; message: string; userMap: UserMapState; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<CoordinatorReply>;
+  assistant: {
+    sendMessage: (input: { mode: 'ask' | 'create'; message: string; contextTree: ContextTreeState; existingAgents: AgentSpec[]; existingGroups: GroupSpec[] }) => Promise<AssistantReply>;
   };
   chat: {
     sendAgentMessage: (input: AgentChatInput) => Promise<ChatSendResult>;
@@ -184,8 +184,8 @@ export interface WorkspaceDesktopApi {
     setProviderSelection: (selection: ProviderAuthSelection) => Promise<ProviderAuthSelection>;
     getRetentionConfig: () => Promise<RetentionConfig>;
     saveRetentionConfig: (config: RetentionConfigInput) => Promise<RetentionConfig>;
-    getCoordinatorOverride: () => Promise<CoordinatorProviderOverrideSettings | null>;
-    saveCoordinatorOverride: (override: CoordinatorProviderOverrideSettings | null) => Promise<CoordinatorProviderOverrideSettings | null>;
+    getAssistantOverride: () => Promise<AssistantProviderOverrideSettings | null>;
+    saveAssistantOverride: (override: AssistantProviderOverrideSettings | null) => Promise<AssistantProviderOverrideSettings | null>;
     getAgentMode: () => Promise<AgentMode>;
     saveAgentMode: (mode: AgentMode) => Promise<AgentMode>;
     getOllamaStatus: () => Promise<OllamaRuntimeStatus>;
@@ -227,14 +227,14 @@ export interface WorkspaceDesktopApi {
 
 declare global {
   interface Window {
-    workspaceApp?: WorkspaceDesktopApi;
+    ramanAI?: RamanAIDesktopApi;
   }
 }
 
-export function getDesktopApi(): WorkspaceDesktopApi {
-  if (!window.workspaceApp) {
+export function getDesktopApi(): RamanAIDesktopApi {
+  if (!window.ramanAI) {
     throw new Error('Workspace desktop bridge is unavailable.');
   }
 
-  return window.workspaceApp;
+  return window.ramanAI;
 }

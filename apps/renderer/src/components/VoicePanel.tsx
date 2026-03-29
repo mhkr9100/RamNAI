@@ -45,7 +45,7 @@ declare const SpeechRecognition: { new(): SpeechRecognition };
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Volume2, X, Sparkles, Settings2, AlertCircle } from 'lucide-react';
-import type { VoiceState, VoiceEvent, VoiceConfig } from '@workspace/shared';
+import type { VoiceState, VoiceEvent, VoiceConfig } from '@raman-ai/shared';
 import { getDesktopApi } from '@/lib/electron';
 import { Badge, Button, Card, SectionLabel, Input, Select } from './ui';
 
@@ -64,7 +64,7 @@ const TTS_PROVIDER_OPTIONS = [
 
 const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   enabled: false,
-  wakeWord: 'Hey Workspace',
+  wakeWord: 'Hey Raman AI',
   preferredVoice: 'Nova',
   autoListen: false,
   ttsProvider: 'system',

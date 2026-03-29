@@ -4,15 +4,15 @@ import {
   EXTERNAL_WORKSPACE_MANIFEST_FILENAME,
   type RuntimeStatus,
   type RuntimeWorkspaceManager
-} from '@workspace/runtime';
-import type { WorkspaceSnapshot } from '@workspace/storage';
+} from '@raman-ai/runtime';
+import type { WorkspaceSnapshot } from '@raman-ai/storage';
 import type {
   OllamaRuntimeStatus,
-  CoordinatorProviderOverrideSettings,
+  AssistantProviderOverrideSettings,
   ProviderAuthProfile,
   ProviderAuthSelection,
   ProviderId
-} from '@workspace/shared';
+} from '@raman-ai/shared';
 import type { WorkspacePaths, WorkspaceTextEncoder } from './workspace-sync.js';
 
 type ExportKind = 'backup-export' | 'support-bundle';
@@ -28,7 +28,7 @@ interface LocalBundleContext {
   snapshot: WorkspaceSnapshot;
   providerProfiles: ProviderAuthProfile[];
   providerSelections: ProviderAuthSelection[];
-  coordinatorOverride: CoordinatorProviderOverrideSettings | null;
+  assistantOverride: AssistantProviderOverrideSettings | null;
   runtimeStatus: RuntimeStatus;
   ollamaStatus: OllamaRuntimeStatus;
   health?: {
@@ -234,7 +234,7 @@ async function writeStructuredSnapshot(
   snapshot: WorkspaceSnapshot,
   providerProfiles: ProviderAuthProfile[],
   providerSelections: ProviderAuthSelection[],
-  coordinatorOverride: CoordinatorProviderOverrideSettings | null,
+  assistantOverride: AssistantProviderOverrideSettings | null,
   encoder?: WorkspaceTextEncoder
 ) {
   const structuredDir = path.join(rootDir, 'structured');
@@ -246,16 +246,16 @@ async function writeStructuredSnapshot(
   await writeJsonFile(path.join(structuredDir, 'task-runs.json'), snapshot.taskRuns, encoder);
   await writeJsonFile(path.join(structuredDir, 'work-items.json'), snapshot.workItems, encoder);
   await writeJsonFile(path.join(structuredDir, 'artifacts.json'), snapshot.artifacts, encoder);
-  await writeJsonFile(path.join(structuredDir, 'user-map-state.json'), snapshot.userMap, encoder);
-  await writeJsonFile(path.join(structuredDir, 'public-user-map.json'), snapshot.publicUserMap, encoder);
-  await writeJsonFile(path.join(structuredDir, 'private-user-map.json'), snapshot.privateUserMap, encoder);
+  await writeJsonFile(path.join(structuredDir, 'context-state.json'), snapshot.contextTree, encoder);
+  await writeJsonFile(path.join(structuredDir, 'public-context.json'), snapshot.publicContextTree, encoder);
+  await writeJsonFile(path.join(structuredDir, 'private-context.json'), snapshot.privateContextTree, encoder);
   await writeJsonFile(path.join(structuredDir, 'memory-facts.json'), snapshot.memoryFacts, encoder);
   await writeJsonFile(path.join(structuredDir, 'public-memory-facts.json'), snapshot.publicMemoryFacts, encoder);
   await writeJsonFile(path.join(structuredDir, 'private-memory-facts.json'), snapshot.privateMemoryFacts, encoder);
   await writeJsonFile(path.join(structuredDir, 'models.json'), snapshot.models, encoder);
   await writeJsonFile(path.join(structuredDir, 'provider-profiles.json'), sanitizeProviderProfiles(providerProfiles), encoder);
   await writeJsonFile(path.join(structuredDir, 'provider-selections.json'), makeProviderSelectionSnapshot(providerSelections), encoder);
-  await writeJsonFile(path.join(structuredDir, 'coordinator-provider-override.json'), coordinatorOverride, encoder);
+  await writeJsonFile(path.join(structuredDir, 'assistant-provider-override.json'), assistantOverride, encoder);
 }
 
 async function writeRuntimeWorkspaceExport(
@@ -266,7 +266,7 @@ async function writeRuntimeWorkspaceExport(
 ) {
   const plan = runtimeWorkspace.buildPlan({
     profile: snapshot.profile,
-    userMap: snapshot.userMap,
+    contextTree: snapshot.contextTree,
     agents: snapshot.agents,
     groups: snapshot.groups,
     memoryFacts: snapshot.memoryFacts,
@@ -386,7 +386,7 @@ async function writeSupportDiagnostics(rootDir: string, context: LocalBundleCont
   await writeJsonFile(path.join(rootDir, 'diagnostics', 'provider-profiles.json'), providerProfiles, context.textEncoder);
   await writeJsonFile(path.join(rootDir, 'diagnostics', 'provider-state.json'), {
     selections,
-    coordinatorOverride: context.coordinatorOverride
+    assistantOverride: context.assistantOverride
   }, context.textEncoder);
   await writeJsonFile(path.join(rootDir, 'diagnostics', 'runtime-status.json'), {
     runtime: context.runtimeStatus,
@@ -456,7 +456,7 @@ async function buildBundle(kind: ExportKind, context: LocalBundleContext): Promi
     context.snapshot,
     context.providerProfiles,
     context.providerSelections,
-    context.coordinatorOverride,
+    context.assistantOverride,
     context.textEncoder
   );
 

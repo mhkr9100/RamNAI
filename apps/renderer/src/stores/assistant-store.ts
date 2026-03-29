@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { getDesktopApi } from '@/lib/electron';
 import type { WorkspaceSnapshot } from '@/lib/electron';
-import type { CoordinatorMode, WorkItem } from '@workspace/shared';
+import type { AssistantMode, WorkItem } from '@raman-ai/shared';
 import { useWorkspaceStore } from './workspace-store';
 
 function getErrorMessage(error: unknown): string {
@@ -13,24 +13,24 @@ function formatWorkMessage(item: WorkItem): string {
   return `Injected from Work — ${item.title}\n\n${item.summary ?? item.lastError ?? 'No saved body.'}`;
 }
 
-export interface CoordinatorMessage {
+export interface AssistantMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   text: string;
-  mode?: CoordinatorMode | 'work';
+  mode?: AssistantMode | 'work';
 }
 
-export interface CoordinatorStoreState {
-  messages: CoordinatorMessage[];
+export interface AssistantStoreState {
+  messages: AssistantMessage[];
   busy: boolean;
-  activeMode: CoordinatorMode | 'task' | 'council';
-  sendMessage: (mode: CoordinatorMode, message: string, snapshot: WorkspaceSnapshot) => Promise<void>;
+  activeMode: AssistantMode | 'task' | 'council';
+  sendMessage: (mode: AssistantMode, message: string, snapshot: WorkspaceSnapshot) => Promise<void>;
   clearTranscript: () => void;
-  setActiveMode: (mode: CoordinatorMode | 'task' | 'council') => void;
+  setActiveMode: (mode: AssistantMode | 'task' | 'council') => void;
   injectWorkMessage: (item: WorkItem) => void;
 }
 
-export const useCoordinatorStore = create<CoordinatorStoreState>((set, get) => ({
+export const useAssistantStore = create<AssistantStoreState>((set, get) => ({
   messages: [],
   busy: false,
   activeMode: 'ask',
@@ -46,7 +46,7 @@ export const useCoordinatorStore = create<CoordinatorStoreState>((set, get) => (
     }
 
     const workspaceStore = useWorkspaceStore.getState();
-    const userMessage: CoordinatorMessage = {
+    const userMessage: AssistantMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       text: trimmedMessage,
@@ -62,10 +62,10 @@ export const useCoordinatorStore = create<CoordinatorStoreState>((set, get) => (
     workspaceStore.clearError();
 
     try {
-      const reply = await getDesktopApi().coordinator.sendMessage({
+      const reply = await getDesktopApi().assistant.sendMessage({
         mode,
         message: trimmedMessage,
-        userMap: snapshot.userMap,
+        contextTree: snapshot.contextTree,
         existingAgents: snapshot.agents,
         existingGroups: snapshot.groups
       });
