@@ -1,40 +1,50 @@
 # Raman AI
 
-Desktop-first, privacy-first local AI system with real desktop execution, local storage, and provider-aware runtime fallback.
+> **A desktop-first, privacy-first local AI workspace.**
 
-## Repo Layout
+Raman AI is an Electron-based local AI system with real desktop execution, local persistence, workspace export, scheduled tasks, council runs, and provider-aware runtime support.
 
-- `apps/renderer` — React renderer UI
-- `apps/desktop` — Electron shell and IPC bridge
-- `packages/shared` — canonical domain types and defaults
-- `packages/storage` — local SQLite-backed storage layer
-- `packages/runtime` — local runtime adapter for Ollama and runtime-bridge integration
+## Current foundation
 
-## Current Status
-
-This repo already contains a working local foundation:
-
-- Electron shell
-- local profile flow
-- SQLite persistence
-- filesystem workspace export
-- local Ollama runtime adapter
-- Raman AI ask and create flows
-- scheduled tasks and council runs
+- Electron desktop shell with renderer and IPC bridge
+- Local profile flow
+- SQLite-backed persistence
+- Filesystem workspace export
+- Local Ollama runtime adapter
+- Ask and create flows
+- Scheduled tasks and council runs
 - Work surface
-- internal context memory and durable facts
+- Internal context memory and durable facts
 
-Runtime-bridge vendoring is still pending. The current runtime is real and local, but still Ollama-first.
+## Repository layout
+
+```text
+apps/renderer   React renderer UI
+apps/desktop    Electron shell and IPC bridge
+packages/shared Canonical domain types and defaults
+packages/storage Local SQLite-backed storage
+packages/runtime Ollama and runtime-bridge adapters
+```
+
+## Runtime direction
+
+The current runtime is real and local, with Ollama as the primary provider. Runtime-bridge vendoring remains a separate follow-up area.
 
 ## Commands
 
-- `npm install`
-- `npm run typecheck`
-- `npm run build`
-- `npm run desktop:dev`
-- `npm run desktop:package`
+```bash
+npm install
+npm run typecheck
+npm run build
+npm run desktop:dev
+npm run desktop:package
+```
 
-## Docs
+## Why it exists
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md)
-- [HANDOFF.md](./HANDOFF.md)
+Raman AI explores a private desktop workspace where AI interaction, durable local context, task execution, and personal data remain close to the user instead of requiring a hosted control plane.
+
+## Documentation
+
+- [Architecture](./ARCHITECTURE.md)
+- [Handoff](./HANDOFF.md)
