@@ -3,6 +3,7 @@
 > **A desktop-first, privacy-first local AI workspace.**
 
 Raman AI is an Electron-based local AI system with real desktop execution, local persistence, workspace export, scheduled tasks, council runs, and provider-aware runtime support.
+It is the current project and successor to the earlier RamN-AI exploration.
 
 ## Current foundation
 
@@ -42,7 +43,19 @@ npm run desktop:package
 
 ## Why it exists
 
-Raman AI explores a private desktop workspace where AI interaction, durable local context, task execution, and personal data remain close to the user instead of requiring a hosted control plane.
+Hosted/control-plane AI products often do not preserve dependable local context or provide a private desktop workspace you can trust end to end.
+Raman AI exists to keep AI interaction, durable context, and task execution close to the user on their own machine.
+
+## What Raman AI carries forward from RamN-AI (predecessor)
+
+- Specialized-agent orchestration ideas, including Prism-style coordination, are being carried forward in reworked form.
+- Provider/model routing abstraction remains a core direction so runtime choices can evolve without changing user workflows.
+- Local workspaces and asynchronous workflow patterns continue to inform how tasks and execution are organized.
+- Knowledge ingestion concepts (PDF/TXT/DOCX and related local context processing) are retained as practical direction for local-first context.
+
+## Security note
+
+API keys and provider credentials must be supplied through local environment variables or local configuration, and must never be committed to this repository.
 
 ## Documentation
 
